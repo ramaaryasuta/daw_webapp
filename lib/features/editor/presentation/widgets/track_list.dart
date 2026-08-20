@@ -2,16 +2,59 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/editor_controller.dart';
+import '../../domain/timeline_scale.dart';
 import 'track_header.dart';
 import 'timeline_view.dart';
 
-class TrackList extends ConsumerWidget {
-  const TrackList({super.key});
+class TrackHeaderList extends ConsumerWidget {
+  const TrackHeaderList({super.key, required this.scrollController});
+
+  final ScrollController scrollController;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final editorState = ref.watch(editorControllerProvider);
+    final controller = ref.read(editorControllerProvider.notifier);
 
+    return ListView.builder(
+      controller: scrollController,
+      itemCount: editorState.tracks.length,
+      itemExtent: trackHeight,
+      itemBuilder: (context, index) {
+        final track = editorState.tracks[index];
+
+        return TrackHeader(
+          name: track.name,
+          volume: track.volume,
+          isMuted: track.isMuted,
+          isSolo: track.isSolo,
+          isSelected: editorState.selectedTrackId == track.id,
+          onTap: () => controller.selectTrack(track.id),
+          onMutePressed: () => controller.toggleMute(track.id),
+          onSoloPressed: () => controller.toggleSolo(track.id),
+          onDeletePressed: () => controller.removeTrack(track.id),
+          onVolumeChanged: (value) => controller.setVolume(track.id, value),
+        );
+      },
+    );
+  }
+}
+
+class TimelineTrackList extends ConsumerWidget {
+  const TimelineTrackList({
+    super.key,
+    required this.scrollController,
+    required this.scale,
+    required this.scrollPhysics,
+  });
+
+  final ScrollController scrollController;
+  final TimelineScale scale;
+  final ScrollPhysics scrollPhysics;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final editorState = ref.watch(editorControllerProvider);
     final controller = ref.read(editorControllerProvider.notifier);
 
     if (editorState.tracks.isEmpty) {
@@ -19,48 +62,21 @@ class TrackList extends ConsumerWidget {
     }
 
     return ListView.builder(
+      controller: scrollController,
+      physics: scrollPhysics,
       itemCount: editorState.tracks.length,
       itemExtent: trackHeight,
       itemBuilder: (context, index) {
         final track = editorState.tracks[index];
 
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TrackHeader(
-              name: track.name,
-              volume: track.volume,
-              isMuted: track.isMuted,
-              isSolo: track.isSolo,
-              isSelected: editorState.selectedTrackId == track.id,
-              onTap: () {
-                controller.selectTrack(track.id);
-              },
-              onMutePressed: () {
-                controller.toggleMute(track.id);
-              },
-              onSoloPressed: () {
-                controller.toggleSolo(track.id);
-              },
-              onDeletePressed: () {
-                controller.removeTrack(track.id);
-              },
-              onVolumeChanged: (value) {
-                controller.setVolume(track.id, value);
-              },
-            ),
-
-            Expanded(
-              child: TimelineTrackLane(
-                fileName: track.audio.name,
-                durationSeconds: track.audio.durationSeconds,
-                startTimeSeconds: track.startTimeSeconds,
-                waveformPeaks: track.audio.waveformPeaks,
-                playheadSeconds: editorState.playheadSeconds,
-                onSeek: controller.seek,
-              ),
-            ),
-          ],
+        return TimelineTrackLane(
+          fileName: track.audio.name,
+          durationSeconds: track.audio.durationSeconds,
+          startTimeSeconds: track.startTimeSeconds,
+          waveformPeaks: track.audio.waveformPeaks,
+          playheadSeconds: editorState.playheadSeconds,
+          scale: scale,
+          onSeek: controller.seek,
         );
       },
     );

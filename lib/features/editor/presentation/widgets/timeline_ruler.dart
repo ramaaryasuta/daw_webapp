@@ -1,16 +1,21 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+
+import '../../domain/timeline_scale.dart';
 
 class TimelineRuler extends StatelessWidget {
   const TimelineRuler({
     super.key,
     required this.playheadSeconds,
+    required this.scale,
     required this.onSeek,
   });
 
   static const double height = 32;
-  static const double secondWidth = 100;
 
   final double playheadSeconds;
+  final TimelineScale scale;
   final ValueChanged<double> onSeek;
 
   @override
@@ -20,7 +25,7 @@ class TimelineRuler extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTapDown: (details) {
-        onSeek(details.localPosition.dx / secondWidth);
+        onSeek(scale.pixelsToSeconds(details.localPosition.dx));
       },
       child: SizedBox(
         height: height,
@@ -29,6 +34,7 @@ class TimelineRuler extends StatelessWidget {
             color: colorScheme.outline,
             playheadColor: colorScheme.tertiary,
             playheadSeconds: playheadSeconds,
+            scale: scale,
           ),
           child: const SizedBox.expand(),
         ),
@@ -42,40 +48,64 @@ class _TimelineRulerPainter extends CustomPainter {
     required this.color,
     required this.playheadColor,
     required this.playheadSeconds,
+    required this.scale,
   });
 
   final Color color;
   final Color playheadColor;
   final double playheadSeconds;
+  final TimelineScale scale;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
+    final majorPaint = Paint()
       ..color = color
       ..strokeWidth = 1;
-
-    const secondWidth = TimelineRuler.secondWidth;
-
+    final minorPaint = Paint()
+      ..color = color.withValues(alpha: 0.45)
+      ..strokeWidth = 1;
     final textPainter = TextPainter(textDirection: TextDirection.ltr);
+    final clipBounds = canvas.getLocalClipBounds();
+    final minorSpacing = scale.secondsToPixels(scale.minorTickIntervalSeconds);
+    final firstIndex = math.max(
+      0,
+      (clipBounds.left / minorSpacing).floor() - 1,
+    );
+    final lastIndex = math.min(
+      (size.width / minorSpacing).ceil(),
+      (clipBounds.right / minorSpacing).ceil() + 1,
+    );
+    var previousLabelRight = double.negativeInfinity;
 
-    var second = 0;
+    for (var index = firstIndex; index <= lastIndex; index++) {
+      final x = index * minorSpacing;
+      final isMajor = index % scale.minorDivisions == 0;
 
-    for (double x = 0; x <= size.width; x += secondWidth) {
-      canvas.drawLine(Offset(x, 18), Offset(x, size.height), paint);
-
-      textPainter.text = TextSpan(
-        text: '${second}s',
-        style: TextStyle(color: color, fontSize: 10),
+      canvas.drawLine(
+        Offset(x, isMajor ? 18 : 25),
+        Offset(x, size.height),
+        isMajor ? majorPaint : minorPaint,
       );
 
+      if (!isMajor) {
+        continue;
+      }
+
+      final seconds = index * scale.minorTickIntervalSeconds;
+      textPainter.text = TextSpan(
+        text: scale.formatTickLabel(seconds),
+        style: TextStyle(color: color, fontSize: 10),
+      );
       textPainter.layout();
 
-      textPainter.paint(canvas, Offset(x + 4, 2));
-
-      second++;
+      final labelX = x + 4;
+      if (labelX >= previousLabelRight + 6) {
+        textPainter.paint(canvas, Offset(labelX, 2));
+        previousLabelRight = labelX + textPainter.width;
+      }
     }
 
-    final playheadX = playheadSeconds * secondWidth;
+    final playheadX = scale.secondsToPixels(playheadSeconds);
     final playheadPaint = Paint()
       ..color = playheadColor
       ..strokeWidth = 2;
@@ -99,6 +129,7 @@ class _TimelineRulerPainter extends CustomPainter {
   bool shouldRepaint(covariant _TimelineRulerPainter oldDelegate) {
     return oldDelegate.color != color ||
         oldDelegate.playheadColor != playheadColor ||
-        oldDelegate.playheadSeconds != playheadSeconds;
+        oldDelegate.playheadSeconds != playheadSeconds ||
+        oldDelegate.scale.pixelsPerSecond != scale.pixelsPerSecond;
   }
 }

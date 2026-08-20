@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../domain/audio_asset.dart';
 import '../domain/daw_track.dart';
 import '../domain/imported_audio_file.dart';
+import '../domain/timeline_scale.dart';
 import '../infrastructure/web_audio_engine.dart';
 
 class EditorState {
@@ -12,6 +13,7 @@ class EditorState {
     this.isPlaying = false,
     this.isImporting = false,
     this.playheadSeconds = 0,
+    this.pixelsPerSecond = TimelineScale.defaultPixelsPerSecond,
     this.tracks = const [],
     this.selectedTrackId,
   });
@@ -20,6 +22,7 @@ class EditorState {
   final bool isImporting;
 
   final double playheadSeconds;
+  final double pixelsPerSecond;
 
   final List<DawTrack> tracks;
   final String? selectedTrackId;
@@ -40,6 +43,7 @@ class EditorState {
     bool? isPlaying,
     bool? isImporting,
     double? playheadSeconds,
+    double? pixelsPerSecond,
     List<DawTrack>? tracks,
     String? selectedTrackId,
     bool clearSelectedTrack = false,
@@ -48,6 +52,7 @@ class EditorState {
       isPlaying: isPlaying ?? this.isPlaying,
       isImporting: isImporting ?? this.isImporting,
       playheadSeconds: playheadSeconds ?? this.playheadSeconds,
+      pixelsPerSecond: pixelsPerSecond ?? this.pixelsPerSecond,
       tracks: tracks ?? this.tracks,
       selectedTrackId: clearSelectedTrack
           ? null
@@ -129,6 +134,16 @@ class EditorController extends Notifier<EditorState> {
     return failedFiles;
   }
 
+  void setPixelsPerSecond(double pixelsPerSecond) {
+    final clamped = TimelineScale.clampPixelsPerSecond(pixelsPerSecond);
+
+    if (clamped == state.pixelsPerSecond) {
+      return;
+    }
+
+    state = state.copyWith(pixelsPerSecond: clamped);
+  }
+
   Future<void> play() async {
     if (state.tracks.isEmpty) {
       return;
@@ -203,7 +218,7 @@ class EditorController extends Notifier<EditorState> {
   void _startPlayheadTicker() {
     _playheadTimer?.cancel();
 
-    _playheadTimer = Timer.periodic(const Duration(milliseconds: 33), (_) {
+    _playheadTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
       final position = _audioEngine.currentPositionSeconds;
 
       final duration = state.projectDurationSeconds;

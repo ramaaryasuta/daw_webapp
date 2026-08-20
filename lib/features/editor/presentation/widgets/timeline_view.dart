@@ -2,8 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../domain/timeline_scale.dart';
 import 'track_header.dart';
-import 'timeline_ruler.dart';
 
 class TimelineTrackLane extends StatelessWidget {
   const TimelineTrackLane({
@@ -13,6 +13,7 @@ class TimelineTrackLane extends StatelessWidget {
     required this.startTimeSeconds,
     required this.waveformPeaks,
     required this.playheadSeconds,
+    required this.scale,
     required this.onSeek,
   });
 
@@ -23,20 +24,21 @@ class TimelineTrackLane extends StatelessWidget {
 
   final List<double> waveformPeaks;
   final double playheadSeconds;
+  final TimelineScale scale;
   final ValueChanged<double> onSeek;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    final clipWidth = durationSeconds * TimelineRuler.secondWidth;
+    final clipWidth = scale.secondsToPixels(durationSeconds);
 
-    final left = startTimeSeconds * TimelineRuler.secondWidth;
+    final left = scale.secondsToPixels(startTimeSeconds);
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTapDown: (details) {
-        onSeek(details.localPosition.dx / TimelineRuler.secondWidth);
+        onSeek(scale.pixelsToSeconds(details.localPosition.dx));
       },
       child: Container(
         height: trackHeight,
@@ -50,7 +52,10 @@ class TimelineTrackLane extends StatelessWidget {
             // Timeline vertical grid
             Positioned.fill(
               child: CustomPaint(
-                painter: _GridPainter(color: colorScheme.outlineVariant),
+                painter: _GridPainter(
+                  color: colorScheme.outlineVariant,
+                  scale: scale,
+                ),
               ),
             ),
 
@@ -125,7 +130,7 @@ class TimelineTrackLane extends StatelessWidget {
             ),
 
             Positioned(
-              left: playheadSeconds * TimelineRuler.secondWidth,
+              left: scale.secondsToPixels(playheadSeconds),
               top: 0,
               bottom: 0,
               child: IgnorePointer(
@@ -203,25 +208,44 @@ class _WaveformPainter extends CustomPainter {
 }
 
 class _GridPainter extends CustomPainter {
-  const _GridPainter({required this.color});
+  const _GridPainter({required this.color, required this.scale});
 
   final Color color;
+  final TimelineScale scale;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color.withValues(alpha: 0.35)
+    final majorPaint = Paint()
+      ..color = color.withValues(alpha: 0.5)
       ..strokeWidth = 1;
+    final minorPaint = Paint()
+      ..color = color.withValues(alpha: 0.2)
+      ..strokeWidth = 1;
+    final clipBounds = canvas.getLocalClipBounds();
+    final minorSpacing = scale.secondsToPixels(scale.minorTickIntervalSeconds);
+    final firstIndex = math.max(
+      0,
+      (clipBounds.left / minorSpacing).floor() - 1,
+    );
+    final lastIndex = math.min(
+      (size.width / minorSpacing).ceil(),
+      (clipBounds.right / minorSpacing).ceil() + 1,
+    );
 
-    const width = TimelineRuler.secondWidth;
-
-    for (double x = 0; x <= size.width; x += width) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    for (var index = firstIndex; index <= lastIndex; index++) {
+      final x = index * minorSpacing;
+      final isMajor = index % scale.minorDivisions == 0;
+      canvas.drawLine(
+        Offset(x, 0),
+        Offset(x, size.height),
+        isMajor ? majorPaint : minorPaint,
+      );
     }
   }
 
   @override
   bool shouldRepaint(covariant _GridPainter oldDelegate) {
-    return oldDelegate.color != color;
+    return oldDelegate.color != color ||
+        oldDelegate.scale.pixelsPerSecond != scale.pixelsPerSecond;
   }
 }
