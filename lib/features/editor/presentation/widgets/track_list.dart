@@ -46,16 +46,17 @@ class TimelineTrackList extends ConsumerWidget {
     required this.scrollController,
     required this.scale,
     required this.scrollPhysics,
+    required this.onSeek,
   });
 
   final ScrollController scrollController;
   final TimelineScale scale;
   final ScrollPhysics scrollPhysics;
+  final ValueChanged<double> onSeek;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final editorState = ref.watch(editorControllerProvider);
-    final controller = ref.read(editorControllerProvider.notifier);
 
     if (editorState.tracks.isEmpty) {
       return const _EmptyTracks();
@@ -76,7 +77,7 @@ class TimelineTrackList extends ConsumerWidget {
           waveformPeaks: track.audio.waveformPeaks,
           playheadSeconds: editorState.playheadSeconds,
           scale: scale,
-          onSeek: controller.seek,
+          onSeek: onSeek,
         );
       },
     );

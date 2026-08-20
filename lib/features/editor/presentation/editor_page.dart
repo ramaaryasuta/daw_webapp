@@ -4,6 +4,7 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
@@ -15,6 +16,12 @@ import 'widgets/track_list.dart';
 import 'widgets/timeline_ruler.dart';
 import 'widgets/transport_bar.dart';
 
+typedef _PlaybackFollowState = ({
+  bool isPlaying,
+  double playheadSeconds,
+  double pixelsPerSecond,
+});
+
 class EditorPage extends ConsumerStatefulWidget {
   const EditorPage({super.key});
 
@@ -23,11 +30,20 @@ class EditorPage extends ConsumerStatefulWidget {
 }
 
 class _EditorPageState extends ConsumerState<EditorPage> {
+  static const _playheadFollowResumeDelay = Duration(seconds: 3);
+  static const _playheadFollowThresholdFraction = 0.75;
+  static const _followDebugThrottle = Duration(milliseconds: 500);
+
   bool _isDragging = false;
   bool _isSyncingVerticalScroll = false;
   bool _isPointerInsideTimelineViewport = false;
+  bool _isProgrammaticTimelineScroll = false;
+  bool _isPlayheadFollowSuspended = false;
   double? _pendingHorizontalOffset;
   double? _lastPanZoomScale;
+  DateTime? _lastTimelineInteraction;
+  DateTime? _lastFollowStatusLog;
+  DateTime? _lastFollowScrollLog;
 
   final GlobalKey _timelineViewportKey = GlobalKey(
     debugLabel: 'timeline-viewport',
@@ -48,6 +64,16 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     _trackHeaderScrollController.addListener(_syncLanesToHeaders);
     _trackLaneScrollController.addListener(_syncHeadersToLanes);
     HardwareKeyboard.instance.addHandler(_handleKeyboardDiagnostic);
+    ref.listenManual<_PlaybackFollowState>(
+      editorControllerProvider.select(
+        (state) => (
+          isPlaying: state.isPlaying,
+          playheadSeconds: state.playheadSeconds,
+          pixelsPerSecond: state.pixelsPerSecond,
+        ),
+      ),
+      _handlePlaybackFollowState,
+    );
   }
 
   @override
@@ -95,6 +121,211 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     _isSyncingVerticalScroll = true;
     target.jumpTo(targetOffset);
     _isSyncingVerticalScroll = false;
+  }
+
+  void _handlePlaybackFollowState(
+    _PlaybackFollowState? previous,
+    _PlaybackFollowState next,
+  ) {
+    if (!next.isPlaying) {
+      if (previous?.isPlaying == true) {
+        _timelineFollowDebug(
+          'follow-stopped reason=playback-not-running '
+          'playback=${next.playheadSeconds.toStringAsFixed(3)}s',
+        );
+      }
+      return;
+    }
+
+    final playbackStarted = previous?.isPlaying != true;
+    if (playbackStarted) {
+      _lastTimelineInteraction = null;
+      _isPlayheadFollowSuspended = false;
+      _timelineFollowDebug(
+        'follow-started reason=playback-start '
+        'playback=${next.playheadSeconds.toStringAsFixed(3)}s',
+      );
+    }
+
+    _updatePlayheadFollow(next, playbackStarted: playbackStarted);
+  }
+
+  void _updatePlayheadFollow(
+    _PlaybackFollowState playback, {
+    required bool playbackStarted,
+  }) {
+    if (!_horizontalTimelineController.hasClients) {
+      return;
+    }
+
+    final viewportRenderObject = _timelineViewportKey.currentContext
+        ?.findRenderObject();
+    if (viewportRenderObject is! RenderBox ||
+        !viewportRenderObject.hasSize ||
+        viewportRenderObject.size.width <= 0) {
+      return;
+    }
+
+    final now = DateTime.now();
+    final lastInteraction = _lastTimelineInteraction;
+    final followAllowed =
+        lastInteraction == null ||
+        now.difference(lastInteraction) >= _playheadFollowResumeDelay;
+    final viewportWidth = viewportRenderObject.size.width;
+    final scrollOffset = _horizontalTimelineController.offset;
+    final playheadContentX = TimelineScale(
+      playback.pixelsPerSecond,
+    ).secondsToPixels(playback.playheadSeconds);
+    final playheadViewportX = playheadContentX - scrollOffset;
+    final followThreshold = viewportWidth * _playheadFollowThresholdFraction;
+
+    _logFollowStatusThrottled(
+      now: now,
+      playback: playback,
+      playheadContentX: playheadContentX,
+      playheadViewportX: playheadViewportX,
+      viewportWidth: viewportWidth,
+      scrollOffset: scrollOffset,
+      followThreshold: followThreshold,
+      followAllowed: followAllowed,
+    );
+
+    if (!followAllowed) {
+      return;
+    }
+
+    if (_isPlayheadFollowSuspended) {
+      _isPlayheadFollowSuspended = false;
+      _timelineFollowDebug('follow-resumed reason=idle-timeout');
+    }
+
+    final playheadIsOutsideViewport =
+        playheadViewportX < 0 || playheadViewportX > viewportWidth;
+    final shouldScroll = playbackStarted
+        ? playheadIsOutsideViewport
+        : playheadIsOutsideViewport || playheadViewportX > followThreshold;
+
+    if (!shouldScroll) {
+      return;
+    }
+
+    final targetScrollOffset = (playheadContentX - followThreshold)
+        .clamp(
+          _horizontalTimelineController.position.minScrollExtent,
+          _horizontalTimelineController.position.maxScrollExtent,
+        )
+        .toDouble();
+
+    if ((targetScrollOffset - scrollOffset).abs() < 0.5) {
+      return;
+    }
+
+    _logFollowScrollThrottled(
+      now: now,
+      currentOffset: scrollOffset,
+      targetOffset: targetScrollOffset,
+    );
+
+    _isProgrammaticTimelineScroll = true;
+    try {
+      _horizontalTimelineController.jumpTo(targetScrollOffset);
+    } finally {
+      _isProgrammaticTimelineScroll = false;
+    }
+  }
+
+  void _markTimelineUserInteraction(String reason) {
+    _lastTimelineInteraction = DateTime.now();
+
+    if (_isPlayheadFollowSuspended) {
+      return;
+    }
+
+    _isPlayheadFollowSuspended = true;
+    _timelineFollowDebug(
+      'follow-suspended reason=$reason initiator=user '
+      'resumeAfter=${_playheadFollowResumeDelay.inSeconds}s',
+    );
+  }
+
+  bool _handleTimelineScrollNotification(ScrollNotification notification) {
+    if (notification.metrics.axis != Axis.horizontal) {
+      return false;
+    }
+
+    final isMovement =
+        notification is ScrollStartNotification ||
+        notification is ScrollUpdateNotification ||
+        notification is OverscrollNotification ||
+        (notification is UserScrollNotification &&
+            notification.direction != ScrollDirection.idle);
+
+    if (!isMovement) {
+      return false;
+    }
+
+    if (_isProgrammaticTimelineScroll) {
+      return false;
+    }
+
+    _markTimelineUserInteraction('user-scroll');
+    return false;
+  }
+
+  void _handleTimelineSeek(double positionSeconds) {
+    _markTimelineUserInteraction('timeline-seek');
+    ref.read(editorControllerProvider.notifier).seek(positionSeconds);
+  }
+
+  void _logFollowStatusThrottled({
+    required DateTime now,
+    required _PlaybackFollowState playback,
+    required double playheadContentX,
+    required double playheadViewportX,
+    required double viewportWidth,
+    required double scrollOffset,
+    required double followThreshold,
+    required bool followAllowed,
+  }) {
+    final lastLog = _lastFollowStatusLog;
+    if (lastLog != null && now.difference(lastLog) < _followDebugThrottle) {
+      return;
+    }
+
+    _lastFollowStatusLog = now;
+    final reason = followAllowed ? 'active' : 'recent-user-interaction';
+    _timelineFollowDebug(
+      'playback=${playback.playheadSeconds.toStringAsFixed(3)}s '
+      'playheadX=${playheadContentX.toStringAsFixed(1)} '
+      'viewportX=${playheadViewportX.toStringAsFixed(1)} '
+      'viewportWidth=${viewportWidth.toStringAsFixed(1)} '
+      'scrollOffset=${scrollOffset.toStringAsFixed(1)} '
+      'threshold=${followThreshold.toStringAsFixed(1)} '
+      'follow=$followAllowed reason=$reason',
+    );
+  }
+
+  void _logFollowScrollThrottled({
+    required DateTime now,
+    required double currentOffset,
+    required double targetOffset,
+  }) {
+    final lastLog = _lastFollowScrollLog;
+    if (lastLog != null && now.difference(lastLog) < _followDebugThrottle) {
+      return;
+    }
+
+    _lastFollowScrollLog = now;
+    _timelineFollowDebug(
+      'auto-scroll current=${currentOffset.toStringAsFixed(1)} '
+      'target=${targetOffset.toStringAsFixed(1)} initiator=programmatic',
+    );
+  }
+
+  void _timelineFollowDebug(String message) {
+    if (kDebugMode) {
+      debugPrint('[TimelineFollowDebug] $message');
+    }
   }
 
   // TEMPORARY: timeline input diagnostics. These logs do not consume input.
@@ -176,6 +407,9 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     );
 
     if ((rawZoomFactor - 1).abs() < 0.0001) {
+      if (event.panDelta.dx != 0) {
+        _markTimelineUserInteraction('trackpad-pan');
+      }
       _timelineDebug(
         'pan-zoom ignored reason=pan-only scale=$incomingScale '
         'panDelta=${event.panDelta}',
@@ -183,6 +417,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       return;
     }
 
+    _markTimelineUserInteraction('pinch-zoom');
     _applyTimelineZoom(
       focalX: event.localPosition.dx,
       zoomFactor: zoomFactor,
@@ -236,6 +471,11 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       );
 
       if (!ctrlPressed) {
+        if (event.scrollDelta.dx != 0 ||
+            (HardwareKeyboard.instance.isShiftPressed &&
+                event.scrollDelta.dy != 0)) {
+          _markTimelineUserInteraction('horizontal-scroll');
+        }
         _timelineDebug(
           'zoom-handler ignored reason=ctrl-not-pressed '
           'scrollDelta=${event.scrollDelta}',
@@ -258,6 +498,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       final rawZoomFactor = math.exp(-scrollDelta * 0.002);
       final zoomFactor = _normalizeZoomFactor(rawZoomFactor);
 
+      _markTimelineUserInteraction('ctrl-wheel-zoom');
       _registerPointerSignalZoom(
         event: event,
         focalX: event.localPosition.dx,
@@ -299,6 +540,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         return;
       }
 
+      _markTimelineUserInteraction('pointer-scale-zoom');
       _registerPointerSignalZoom(
         event: event,
         focalX: event.localPosition.dx,
@@ -557,53 +799,60 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                               ),
                             ),
                             Expanded(
-                              child: MouseRegion(
-                                opaque: false,
-                                onEnter: _handleTimelinePointerEnter,
-                                onExit: _handleTimelinePointerExit,
-                                child: Listener(
-                                  key: _timelineViewportKey,
-                                  behavior: HitTestBehavior.translucent,
-                                  onPointerSignal: _handleTimelinePointerSignal,
-                                  onPointerPanZoomStart:
-                                      _handleTimelinePanZoomStart,
-                                  onPointerPanZoomUpdate:
-                                      _handleTimelinePanZoomUpdate,
-                                  onPointerPanZoomEnd:
-                                      _handleTimelinePanZoomEnd,
-                                  child: Scrollbar(
-                                    controller: _horizontalTimelineController,
-                                    thumbVisibility: true,
-                                    notificationPredicate: (notification) {
-                                      return notification.metrics.axis ==
-                                          Axis.horizontal;
-                                    },
-                                    child: SingleChildScrollView(
+                              child: NotificationListener<ScrollNotification>(
+                                onNotification:
+                                    _handleTimelineScrollNotification,
+                                child: MouseRegion(
+                                  opaque: false,
+                                  onEnter: _handleTimelinePointerEnter,
+                                  onExit: _handleTimelinePointerExit,
+                                  child: Listener(
+                                    key: _timelineViewportKey,
+                                    behavior: HitTestBehavior.translucent,
+                                    onPointerSignal:
+                                        _handleTimelinePointerSignal,
+                                    onPointerPanZoomStart:
+                                        _handleTimelinePanZoomStart,
+                                    onPointerPanZoomUpdate:
+                                        _handleTimelinePanZoomUpdate,
+                                    onPointerPanZoomEnd:
+                                        _handleTimelinePanZoomEnd,
+                                    child: Scrollbar(
                                       controller: _horizontalTimelineController,
-                                      scrollDirection: Axis.horizontal,
-                                      physics:
-                                          const _ControlReservedScrollPhysics(),
-                                      child: SizedBox(
-                                        width: contentWidth,
-                                        height: constraints.maxHeight,
-                                        child: Column(
-                                          children: [
-                                            TimelineRuler(
-                                              playheadSeconds:
-                                                  editorState.playheadSeconds,
-                                              scale: scale,
-                                              onSeek: controller.seek,
-                                            ),
-                                            Expanded(
-                                              child: TimelineTrackList(
-                                                scrollController:
-                                                    _trackLaneScrollController,
+                                      thumbVisibility: true,
+                                      notificationPredicate: (notification) {
+                                        return notification.metrics.axis ==
+                                            Axis.horizontal;
+                                      },
+                                      child: SingleChildScrollView(
+                                        controller:
+                                            _horizontalTimelineController,
+                                        scrollDirection: Axis.horizontal,
+                                        physics:
+                                            const _ControlReservedScrollPhysics(),
+                                        child: SizedBox(
+                                          width: contentWidth,
+                                          height: constraints.maxHeight,
+                                          child: Column(
+                                            children: [
+                                              TimelineRuler(
+                                                playheadSeconds:
+                                                    editorState.playheadSeconds,
                                                 scale: scale,
-                                                scrollPhysics:
-                                                    const _ControlReservedScrollPhysics(),
+                                                onSeek: _handleTimelineSeek,
                                               ),
-                                            ),
-                                          ],
+                                              Expanded(
+                                                child: TimelineTrackList(
+                                                  scrollController:
+                                                      _trackLaneScrollController,
+                                                  scale: scale,
+                                                  scrollPhysics:
+                                                      const _ControlReservedScrollPhysics(),
+                                                  onSeek: _handleTimelineSeek,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ),
