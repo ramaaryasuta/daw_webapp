@@ -18,6 +18,7 @@ class TrackHeaderList extends ConsumerWidget {
 
     return ListView.builder(
       controller: scrollController,
+      padding: EdgeInsets.zero,
       itemCount: editorState.tracks.length,
       itemExtent: trackHeight,
       itemBuilder: (context, index) {
@@ -44,13 +45,13 @@ class TimelineTrackList extends ConsumerWidget {
   const TimelineTrackList({
     super.key,
     required this.scrollController,
-    required this.scale,
+    required this.gridMetrics,
     required this.scrollPhysics,
     required this.onSeek,
   });
 
   final ScrollController scrollController;
-  final TimelineScale scale;
+  final TimelineGridMetrics gridMetrics;
   final ScrollPhysics scrollPhysics;
   final ValueChanged<double> onSeek;
 
@@ -65,6 +66,7 @@ class TimelineTrackList extends ConsumerWidget {
     return ListView.builder(
       controller: scrollController,
       physics: scrollPhysics,
+      padding: EdgeInsets.zero,
       itemCount: editorState.tracks.length,
       itemExtent: trackHeight,
       itemBuilder: (context, index) {
@@ -76,7 +78,7 @@ class TimelineTrackList extends ConsumerWidget {
           startTimeSeconds: track.startTimeSeconds,
           waveformPeaks: track.audio.waveformPeaks,
           playheadSeconds: editorState.playheadSeconds,
-          scale: scale,
+          gridMetrics: gridMetrics,
           onSeek: onSeek,
         );
       },

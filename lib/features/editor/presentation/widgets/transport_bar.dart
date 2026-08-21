@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'tempo_controls.dart';
+
 class TransportBar extends StatelessWidget {
   const TransportBar({
     super.key,
@@ -8,7 +10,6 @@ class TransportBar extends StatelessWidget {
     required this.positionSeconds,
     required this.onPlayPressed,
     required this.onStopPressed,
-    required this.onAddTrackPressed,
   });
 
   final bool isPlaying;
@@ -17,7 +18,6 @@ class TransportBar extends StatelessWidget {
 
   final VoidCallback onPlayPressed;
   final VoidCallback onStopPressed;
-  final VoidCallback? onAddTrackPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -44,24 +44,28 @@ class TransportBar extends StatelessWidget {
 
           Text(_formatTime(positionSeconds)),
 
+          const SizedBox(width: 24),
+
+          const TempoControls(),
+
           const Spacer(),
 
-          // Tambahkan di sini
           if (isImporting)
             const Padding(
-              padding: EdgeInsets.only(right: 16),
-              child: SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
+              padding: EdgeInsets.only(left: 16),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  SizedBox(width: 8),
+                  Text('Importing audio...'),
+                ],
               ),
             ),
-
-          FilledButton.icon(
-            onPressed: onAddTrackPressed,
-            icon: const Icon(Icons.library_music),
-            label: const Text('Import Audio'),
-          ),
         ],
       ),
     );

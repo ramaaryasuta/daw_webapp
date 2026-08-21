@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../../domain/timeline_scale.dart';
@@ -8,14 +6,14 @@ class TimelineRuler extends StatelessWidget {
   const TimelineRuler({
     super.key,
     required this.playheadSeconds,
-    required this.scale,
+    required this.gridMetrics,
     required this.onSeek,
   });
 
   static const double height = 32;
 
   final double playheadSeconds;
-  final TimelineScale scale;
+  final TimelineGridMetrics gridMetrics;
   final ValueChanged<double> onSeek;
 
   @override
@@ -25,7 +23,7 @@ class TimelineRuler extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTapDown: (details) {
-        onSeek(scale.pixelsToSeconds(details.localPosition.dx));
+        onSeek(gridMetrics.transform.contentXToTime(details.localPosition.dx));
       },
       child: SizedBox(
         height: height,
@@ -34,7 +32,8 @@ class TimelineRuler extends StatelessWidget {
             color: colorScheme.outline,
             playheadColor: colorScheme.tertiary,
             playheadSeconds: playheadSeconds,
-            scale: scale,
+            gridMetrics: gridMetrics,
+            devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
           ),
           child: const SizedBox.expand(),
         ),
@@ -48,13 +47,15 @@ class _TimelineRulerPainter extends CustomPainter {
     required this.color,
     required this.playheadColor,
     required this.playheadSeconds,
-    required this.scale,
+    required this.gridMetrics,
+    required this.devicePixelRatio,
   });
 
   final Color color;
   final Color playheadColor;
   final double playheadSeconds;
-  final TimelineScale scale;
+  final TimelineGridMetrics gridMetrics;
+  final double devicePixelRatio;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -66,34 +67,30 @@ class _TimelineRulerPainter extends CustomPainter {
       ..strokeWidth = 1;
     final textPainter = TextPainter(textDirection: TextDirection.ltr);
     final clipBounds = canvas.getLocalClipBounds();
-    final minorSpacing = scale.secondsToPixels(scale.minorTickIntervalSeconds);
-    final firstIndex = math.max(
-      0,
-      (clipBounds.left / minorSpacing).floor() - 1,
-    );
-    final lastIndex = math.min(
-      (size.width / minorSpacing).ceil(),
-      (clipBounds.right / minorSpacing).ceil() + 1,
-    );
     var previousLabelRight = double.negativeInfinity;
 
-    for (var index = firstIndex; index <= lastIndex; index++) {
-      final x = index * minorSpacing;
-      final isMajor = index % scale.minorDivisions == 0;
-
-      canvas.drawLine(
-        Offset(x, isMajor ? 18 : 25),
-        Offset(x, size.height),
-        isMajor ? majorPaint : minorPaint,
+    for (final tick in gridMetrics.ticksInContentRange(
+      left: clipBounds.left,
+      right: clipBounds.right,
+      contentWidth: size.width,
+    )) {
+      final x = gridMetrics.alignStrokeCenter(
+        tick.contentX,
+        devicePixelRatio: devicePixelRatio,
       );
 
-      if (!isMajor) {
+      canvas.drawLine(
+        Offset(x, tick.isMajor ? 18 : 25),
+        Offset(x, size.height),
+        tick.isMajor ? majorPaint : minorPaint,
+      );
+
+      if (!tick.isMajor) {
         continue;
       }
 
-      final seconds = index * scale.minorTickIntervalSeconds;
       textPainter.text = TextSpan(
-        text: scale.formatTickLabel(seconds),
+        text: gridMetrics.scale.formatTickLabel(tick.timeSeconds),
         style: TextStyle(color: color, fontSize: 10),
       );
       textPainter.layout();
@@ -105,7 +102,11 @@ class _TimelineRulerPainter extends CustomPainter {
       }
     }
 
-    final playheadX = scale.secondsToPixels(playheadSeconds);
+    final playheadX = gridMetrics.alignStrokeCenter(
+      gridMetrics.transform.timeToContentX(playheadSeconds),
+      devicePixelRatio: devicePixelRatio,
+      strokeWidth: 2,
+    );
     final playheadPaint = Paint()
       ..color = playheadColor
       ..strokeWidth = 2;
@@ -130,6 +131,8 @@ class _TimelineRulerPainter extends CustomPainter {
     return oldDelegate.color != color ||
         oldDelegate.playheadColor != playheadColor ||
         oldDelegate.playheadSeconds != playheadSeconds ||
-        oldDelegate.scale.pixelsPerSecond != scale.pixelsPerSecond;
+        oldDelegate.gridMetrics.scale.pixelsPerSecond !=
+            gridMetrics.scale.pixelsPerSecond ||
+        oldDelegate.devicePixelRatio != devicePixelRatio;
   }
 }

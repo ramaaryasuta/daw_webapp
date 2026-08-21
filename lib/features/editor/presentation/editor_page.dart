@@ -35,9 +35,13 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   static const _playheadFollowResumeDelay = Duration(seconds: 3);
   static const _playheadFollowThresholdFraction = 0.75;
 
-  bool _isDragging = false;
+  bool _isDraggingOverWorkspace = false;
   bool _isSyncingVerticalScroll = false;
   bool _isProgrammaticTimelineScroll = false;
+  bool _isTimelinePanning = false;
+  int? _timelinePanPointer;
+  double _timelinePanStartGlobalX = 0;
+  double _timelinePanStartScrollOffset = 0;
   double? _pendingHorizontalOffset;
   double? _lastPanZoomScale;
   DateTime? _lastTimelineInteraction;
@@ -47,7 +51,6 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   late final ScrollController _horizontalTimelineController;
   late final ScrollController _trackHeaderScrollController;
   late final ScrollController _trackLaneScrollController;
-  late final List<EditorMenuSection> _menuSections;
 
   @override
   void initState() {
@@ -56,18 +59,6 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     _horizontalTimelineController = ScrollController();
     _trackHeaderScrollController = ScrollController();
     _trackLaneScrollController = ScrollController();
-    _menuSections = [
-      EditorMenuSection(
-        label: 'Help',
-        actions: [
-          EditorMenuAction(
-            label: 'Commands',
-            icon: Icons.keyboard_alt_outlined,
-            onSelected: _openCommandsDialog,
-          ),
-        ],
-      ),
-    ];
 
     _trackHeaderScrollController.addListener(_syncLanesToHeaders);
     _trackLaneScrollController.addListener(_syncHeadersToLanes);
@@ -149,7 +140,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     _PlaybackFollowState playback, {
     required bool playbackStarted,
   }) {
-    if (!_horizontalTimelineController.hasClients) {
+    if (_isTimelinePanning || !_horizontalTimelineController.hasClients) {
       return;
     }
 
@@ -168,10 +159,14 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         now.difference(lastInteraction) >= _playheadFollowResumeDelay;
     final viewportWidth = viewportRenderObject.size.width;
     final scrollOffset = _horizontalTimelineController.offset;
-    final playheadContentX = TimelineScale(
-      playback.pixelsPerSecond,
-    ).secondsToPixels(playback.playheadSeconds);
-    final playheadViewportX = playheadContentX - scrollOffset;
+    final transform = TimelineTransform(
+      scale: TimelineScale(playback.pixelsPerSecond),
+      horizontalScrollOffset: scrollOffset,
+    );
+    final playheadContentX = transform.timeToContentX(playback.playheadSeconds);
+    final playheadViewportX = transform.timeToViewportX(
+      playback.playheadSeconds,
+    );
     final followThreshold = viewportWidth * _playheadFollowThresholdFraction;
 
     if (!followAllowed) {
@@ -244,6 +239,31 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     showCommandsDialog(context, commands: EditorCommands.all);
   }
 
+  List<EditorMenuSection> _buildMenuSections({required bool isImporting}) {
+    return [
+      EditorMenuSection(
+        label: 'File',
+        actions: [
+          EditorMenuAction(
+            label: 'Import Audio...',
+            icon: Icons.library_music_outlined,
+            onSelected: isImporting ? null : _pickAudioFiles,
+          ),
+        ],
+      ),
+      EditorMenuSection(
+        label: 'Help',
+        actions: [
+          EditorMenuAction(
+            label: 'Commands',
+            icon: Icons.keyboard_alt_outlined,
+            onSelected: _openCommandsDialog,
+          ),
+        ],
+      ),
+    ];
+  }
+
   void _handleTimelinePanZoomStart(PointerPanZoomStartEvent _) {
     _lastPanZoomScale = 1;
   }
@@ -280,32 +300,44 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     final ctrlPressed = HardwareKeyboard.instance.isControlPressed;
 
     if (event is PointerScrollEvent) {
-      if (!ctrlPressed) {
-        if (event.scrollDelta.dx != 0 ||
-            (HardwareKeyboard.instance.isShiftPressed &&
-                event.scrollDelta.dy != 0)) {
-          _markTimelineUserInteraction();
+      if (ctrlPressed) {
+        final scrollDelta = event.scrollDelta.dy != 0
+            ? event.scrollDelta.dy
+            : event.scrollDelta.dx;
+
+        if (scrollDelta == 0) {
+          return;
+        }
+
+        final rawZoomFactor = math.exp(-scrollDelta * 0.002);
+        final zoomFactor = _normalizeZoomFactor(rawZoomFactor);
+
+        _markTimelineUserInteraction();
+        _registerPointerSignalZoom(
+          event: event,
+          focalX: event.localPosition.dx,
+          zoomFactor: zoomFactor,
+        );
+        return;
+      }
+
+      if (HardwareKeyboard.instance.isShiftPressed) {
+        final scrollDelta = event.scrollDelta.dy != 0
+            ? event.scrollDelta.dy
+            : event.scrollDelta.dx;
+
+        if (scrollDelta != 0) {
+          _registerPointerSignalHorizontalScroll(
+            event: event,
+            scrollDelta: scrollDelta,
+          );
         }
         return;
       }
 
-      final scrollDelta = event.scrollDelta.dy != 0
-          ? event.scrollDelta.dy
-          : event.scrollDelta.dx;
-
-      if (scrollDelta == 0) {
-        return;
+      if (event.scrollDelta.dx != 0) {
+        _markTimelineUserInteraction();
       }
-
-      final rawZoomFactor = math.exp(-scrollDelta * 0.002);
-      final zoomFactor = _normalizeZoomFactor(rawZoomFactor);
-
-      _markTimelineUserInteraction();
-      _registerPointerSignalZoom(
-        event: event,
-        focalX: event.localPosition.dx,
-        zoomFactor: zoomFactor,
-      );
       return;
     }
 
@@ -328,6 +360,105 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         zoomFactor: zoomFactor,
       );
       return;
+    }
+  }
+
+  void _registerPointerSignalHorizontalScroll({
+    required PointerScrollEvent event,
+    required double scrollDelta,
+  }) {
+    GestureBinding.instance.pointerSignalResolver.register(event, (
+      resolvedEvent,
+    ) {
+      resolvedEvent.respond(allowPlatformDefault: false);
+      _scrollTimelineBy(scrollDelta);
+    });
+  }
+
+  void _scrollTimelineBy(double delta) {
+    if (!delta.isFinite ||
+        delta == 0 ||
+        !_horizontalTimelineController.hasClients) {
+      return;
+    }
+
+    _markTimelineUserInteraction();
+    _scrollTimelineTo(_horizontalTimelineController.offset + delta);
+  }
+
+  void _scrollTimelineTo(double requestedOffset) {
+    if (!requestedOffset.isFinite ||
+        !_horizontalTimelineController.hasClients) {
+      return;
+    }
+
+    final position = _horizontalTimelineController.position;
+    final targetOffset = requestedOffset
+        .clamp(position.minScrollExtent, position.maxScrollExtent)
+        .toDouble();
+
+    if ((targetOffset - _horizontalTimelineController.offset).abs() < 0.01) {
+      return;
+    }
+
+    _horizontalTimelineController.jumpTo(targetOffset);
+  }
+
+  void _handleTimelinePointerDown(PointerDownEvent event) {
+    if ((event.buttons & kMiddleMouseButton) == 0 ||
+        !_horizontalTimelineController.hasClients) {
+      return;
+    }
+
+    _timelinePanPointer = event.pointer;
+    _timelinePanStartGlobalX = event.position.dx;
+    _timelinePanStartScrollOffset = _horizontalTimelineController.offset;
+    _markTimelineUserInteraction();
+
+    if (!_isTimelinePanning) {
+      setState(() {
+        _isTimelinePanning = true;
+      });
+    }
+  }
+
+  void _handleTimelinePointerMove(PointerMoveEvent event) {
+    if (!_isTimelinePanning || event.pointer != _timelinePanPointer) {
+      return;
+    }
+
+    if ((event.buttons & kMiddleMouseButton) == 0) {
+      _endTimelinePan(event.pointer);
+      return;
+    }
+
+    final dragDeltaX = event.position.dx - _timelinePanStartGlobalX;
+    _markTimelineUserInteraction();
+    _scrollTimelineTo(_timelinePanStartScrollOffset - dragDeltaX);
+  }
+
+  void _handleTimelinePointerUp(PointerUpEvent event) {
+    _endTimelinePan(event.pointer);
+  }
+
+  void _handleTimelinePointerCancel(PointerCancelEvent event) {
+    _endTimelinePan(event.pointer);
+  }
+
+  void _endTimelinePan(int pointer) {
+    if (!_isTimelinePanning || pointer != _timelinePanPointer) {
+      return;
+    }
+
+    _timelinePanPointer = null;
+    _markTimelineUserInteraction();
+
+    if (mounted) {
+      setState(() {
+        _isTimelinePanning = false;
+      });
+    } else {
+      _isTimelinePanning = false;
     }
   }
 
@@ -374,11 +505,10 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         (_horizontalTimelineController.hasClients
             ? _horizontalTimelineController.offset
             : 0.0);
-    final requestedOffset = oldScale.scrollOffsetKeepingAnchor(
-      newScale: newScale,
-      currentScrollOffset: currentOffset,
-      viewportX: focalX,
-    );
+    final requestedOffset = TimelineTransform(
+      scale: oldScale,
+      horizontalScrollOffset: currentOffset,
+    ).scrollOffsetKeepingAnchor(newScale: newScale, viewportX: focalX);
 
     _pendingHorizontalOffset = requestedOffset;
     ref
@@ -420,8 +550,12 @@ class _EditorPageState extends ConsumerState<EditorPage> {
 
   Future<void> _handleDrop(DropDoneDetails details) async {
     setState(() {
-      _isDragging = false;
+      _isDraggingOverWorkspace = false;
     });
+
+    if (ref.read(editorControllerProvider).isImporting) {
+      return;
+    }
 
     final importer = ref.read(audioImportServiceProvider);
 
@@ -468,40 +602,41 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     final controller = ref.read(editorControllerProvider.notifier);
 
     return Scaffold(
-      body: DropTarget(
-        onDragEntered: (_) {
-          setState(() {
-            _isDragging = true;
-          });
-        },
-        onDragExited: (_) {
-          setState(() {
-            _isDragging = false;
-          });
-        },
-        onDragDone: (details) {
-          _handleDrop(details);
-        },
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: Column(
+      body: Column(
+        children: [
+          EditorMenuBar(
+            sections: _buildMenuSections(isImporting: editorState.isImporting),
+          ),
+
+          TransportBar(
+            isPlaying: editorState.isPlaying,
+            isImporting: editorState.isImporting,
+            positionSeconds: editorState.playheadSeconds,
+            onPlayPressed: controller.togglePlayback,
+            onStopPressed: controller.stop,
+          ),
+
+          Expanded(
+            child: DropTarget(
+              enable: !editorState.isImporting,
+              onDragEntered: (_) {
+                if (!_isDraggingOverWorkspace) {
+                  setState(() {
+                    _isDraggingOverWorkspace = true;
+                  });
+                }
+              },
+              onDragExited: (_) {
+                if (_isDraggingOverWorkspace) {
+                  setState(() {
+                    _isDraggingOverWorkspace = false;
+                  });
+                }
+              },
+              onDragDone: _handleDrop,
+              child: Stack(
                 children: [
-                  EditorMenuBar(sections: _menuSections),
-
-                  TransportBar(
-                    isPlaying: editorState.isPlaying,
-                    isImporting: editorState.isImporting,
-                    positionSeconds: editorState.playheadSeconds,
-                    onPlayPressed: controller.togglePlayback,
-                    onStopPressed: controller.stop,
-
-                    onAddTrackPressed: editorState.isImporting
-                        ? null
-                        : _pickAudioFiles,
-                  ),
-
-                  Expanded(
+                  Positioned.fill(
                     child: LayoutBuilder(
                       builder: (context, constraints) {
                         final viewportWidth = math.max(
@@ -510,6 +645,9 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                         );
                         final scale = TimelineScale(
                           editorState.pixelsPerSecond,
+                        );
+                        final gridMetrics = TimelineGridMetrics(
+                          transform: TimelineTransform(scale: scale),
                         );
                         final contentWidth = scale.timelineContentWidth(
                           durationSeconds: editorState.projectDurationSeconds,
@@ -536,50 +674,62 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                               child: NotificationListener<ScrollNotification>(
                                 onNotification:
                                     _handleTimelineScrollNotification,
-                                child: Listener(
-                                  key: _timelineViewportKey,
-                                  behavior: HitTestBehavior.translucent,
-                                  onPointerSignal: _handleTimelinePointerSignal,
-                                  onPointerPanZoomStart:
-                                      _handleTimelinePanZoomStart,
-                                  onPointerPanZoomUpdate:
-                                      _handleTimelinePanZoomUpdate,
-                                  onPointerPanZoomEnd:
-                                      _handleTimelinePanZoomEnd,
-                                  child: Scrollbar(
-                                    controller: _horizontalTimelineController,
-                                    thumbVisibility: true,
-                                    notificationPredicate: (notification) {
-                                      return notification.metrics.axis ==
-                                          Axis.horizontal;
-                                    },
-                                    child: SingleChildScrollView(
-                                      controller: _horizontalTimelineController,
-                                      scrollDirection: Axis.horizontal,
-                                      physics:
-                                          const _ControlReservedScrollPhysics(),
-                                      child: SizedBox(
-                                        width: contentWidth,
-                                        height: constraints.maxHeight,
-                                        child: Column(
-                                          children: [
-                                            TimelineRuler(
-                                              playheadSeconds:
-                                                  editorState.playheadSeconds,
-                                              scale: scale,
-                                              onSeek: _handleTimelineSeek,
-                                            ),
-                                            Expanded(
-                                              child: TimelineTrackList(
-                                                scrollController:
-                                                    _trackLaneScrollController,
-                                                scale: scale,
-                                                scrollPhysics:
-                                                    const _ControlReservedScrollPhysics(),
+                                child: Scrollbar(
+                                  controller: _horizontalTimelineController,
+                                  thumbVisibility: true,
+                                  notificationPredicate: (notification) {
+                                    return notification.metrics.axis ==
+                                        Axis.horizontal;
+                                  },
+                                  child: MouseRegion(
+                                    cursor: _isTimelinePanning
+                                        ? SystemMouseCursors.grabbing
+                                        : MouseCursor.defer,
+                                    child: Listener(
+                                      key: _timelineViewportKey,
+                                      behavior: HitTestBehavior.translucent,
+                                      onPointerDown: _handleTimelinePointerDown,
+                                      onPointerMove: _handleTimelinePointerMove,
+                                      onPointerUp: _handleTimelinePointerUp,
+                                      onPointerCancel:
+                                          _handleTimelinePointerCancel,
+                                      onPointerSignal:
+                                          _handleTimelinePointerSignal,
+                                      onPointerPanZoomStart:
+                                          _handleTimelinePanZoomStart,
+                                      onPointerPanZoomUpdate:
+                                          _handleTimelinePanZoomUpdate,
+                                      onPointerPanZoomEnd:
+                                          _handleTimelinePanZoomEnd,
+                                      child: SingleChildScrollView(
+                                        controller:
+                                            _horizontalTimelineController,
+                                        scrollDirection: Axis.horizontal,
+                                        physics:
+                                            const _ControlReservedScrollPhysics(),
+                                        child: SizedBox(
+                                          width: contentWidth,
+                                          height: constraints.maxHeight,
+                                          child: Column(
+                                            children: [
+                                              TimelineRuler(
+                                                playheadSeconds:
+                                                    editorState.playheadSeconds,
+                                                gridMetrics: gridMetrics,
                                                 onSeek: _handleTimelineSeek,
                                               ),
-                                            ),
-                                          ],
+                                              Expanded(
+                                                child: TimelineTrackList(
+                                                  scrollController:
+                                                      _trackLaneScrollController,
+                                                  gridMetrics: gridMetrics,
+                                                  scrollPhysics:
+                                                      const _ControlReservedScrollPhysics(),
+                                                  onSeek: _handleTimelineSeek,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -592,13 +742,19 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                       },
                     ),
                   ),
+
+                  Positioned.fill(
+                    child: AnimatedOpacity(
+                      opacity: _isDraggingOverWorkspace ? 1 : 0,
+                      duration: const Duration(milliseconds: 120),
+                      child: const _DropOverlay(),
+                    ),
+                  ),
                 ],
               ),
             ),
-
-            if (_isDragging) const Positioned.fill(child: _DropOverlay()),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

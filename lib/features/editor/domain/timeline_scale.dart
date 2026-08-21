@@ -44,9 +44,10 @@ class TimelineScale {
     required double currentScrollOffset,
     required double viewportX,
   }) {
-    final timeUnderAnchor = pixelsToSeconds(currentScrollOffset + viewportX);
-
-    return newScale.secondsToPixels(timeUnderAnchor) - viewportX;
+    return TimelineTransform(
+      scale: this,
+      horizontalScrollOffset: currentScrollOffset,
+    ).scrollOffsetKeepingAnchor(newScale: newScale, viewportX: viewportX);
   }
 
   /// Chooses the interval whose rendered width is closest to a readable target.
@@ -105,5 +106,125 @@ class TimelineScale {
 
   static double clampPixelsPerSecond(double value) {
     return value.clamp(minPixelsPerSecond, maxPixelsPerSecond).toDouble();
+  }
+}
+
+/// Converts between timeline content coordinates and the visible viewport.
+///
+/// Content X is independent of scrolling. Viewport X has the horizontal scroll
+/// offset removed and is therefore suitable for pointer anchors and follow
+/// calculations.
+class TimelineTransform {
+  const TimelineTransform({
+    required this.scale,
+    this.horizontalScrollOffset = 0,
+  });
+
+  final TimelineScale scale;
+  final double horizontalScrollOffset;
+
+  double timeToContentX(double seconds) => scale.secondsToPixels(seconds);
+
+  double contentXToTime(double contentX) => scale.pixelsToSeconds(contentX);
+
+  double contentToViewportX(double contentX) {
+    return contentX - horizontalScrollOffset;
+  }
+
+  double viewportToContentX(double viewportX) {
+    return viewportX + horizontalScrollOffset;
+  }
+
+  double timeToViewportX(double seconds) {
+    return contentToViewportX(timeToContentX(seconds));
+  }
+
+  double viewportXToTime(double viewportX) {
+    return contentXToTime(viewportToContentX(viewportX));
+  }
+
+  double scrollOffsetKeepingAnchor({
+    required TimelineScale newScale,
+    required double viewportX,
+  }) {
+    final timeUnderAnchor = viewportXToTime(viewportX);
+
+    return newScale.secondsToPixels(timeUnderAnchor) - viewportX;
+  }
+}
+
+class TimelineTick {
+  const TimelineTick({
+    required this.index,
+    required this.timeSeconds,
+    required this.contentX,
+    required this.isMajor,
+  });
+
+  final int index;
+  final double timeSeconds;
+  final double contentX;
+  final bool isMajor;
+}
+
+/// Shared adaptive tick boundaries and paint coordinates for ruler and grid.
+class TimelineGridMetrics {
+  const TimelineGridMetrics({required this.transform});
+
+  final TimelineTransform transform;
+
+  TimelineScale get scale => transform.scale;
+
+  double get majorTickIntervalSeconds => scale.majorTickIntervalSeconds;
+
+  int get minorDivisions => scale.minorDivisions;
+
+  double get minorTickIntervalSeconds {
+    return scale.minorTickIntervalSeconds;
+  }
+
+  double get minorTickSpacing {
+    return transform.timeToContentX(minorTickIntervalSeconds);
+  }
+
+  Iterable<TimelineTick> ticksInContentRange({
+    required double left,
+    required double right,
+    required double contentWidth,
+  }) sync* {
+    final spacing = minorTickSpacing;
+    final firstIndex = math.max(0, (left / spacing).floor() - 1);
+    final lastIndex = math.min(
+      (contentWidth / spacing).ceil(),
+      (right / spacing).ceil() + 1,
+    );
+
+    for (var index = firstIndex; index <= lastIndex; index++) {
+      final seconds = index * minorTickIntervalSeconds;
+
+      yield TimelineTick(
+        index: index,
+        timeSeconds: seconds,
+        contentX: transform.timeToContentX(seconds),
+        isMajor: index % minorDivisions == 0,
+      );
+    }
+  }
+
+  /// Places a stroke so its edges share the same physical-pixel alignment in
+  /// every timeline painter. This is applied only after the logical content X
+  /// has been calculated by [TimelineTransform].
+  double alignStrokeCenter(
+    double contentX, {
+    required double devicePixelRatio,
+    double strokeWidth = 1,
+  }) {
+    if (!devicePixelRatio.isFinite || devicePixelRatio <= 0) {
+      return contentX;
+    }
+
+    final physicalLeft = (contentX - strokeWidth / 2) * devicePixelRatio;
+
+    return physicalLeft.round() / devicePixelRatio + strokeWidth / 2;
   }
 }

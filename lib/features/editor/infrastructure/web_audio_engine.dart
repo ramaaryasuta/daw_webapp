@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:web/web.dart' as web;
 
 import '../domain/daw_track.dart';
+import 'web_metronome_scheduler.dart';
 
 class DecodedAudioInfo {
   const DecodedAudioInfo({
@@ -23,9 +24,12 @@ class DecodedAudioInfo {
 }
 
 class WebAudioEngine {
-  WebAudioEngine() : _audioContext = web.AudioContext();
+  WebAudioEngine() : _audioContext = web.AudioContext() {
+    _metronomeScheduler = WebMetronomeScheduler(_audioContext);
+  }
 
   final web.AudioContext _audioContext;
+  late final WebMetronomeScheduler _metronomeScheduler;
 
   final Map<String, web.AudioBuffer> _buffers = {};
 
@@ -166,6 +170,10 @@ class WebAudioEngine {
       }
     }
 
+    _metronomeScheduler.startTransport(
+      timelineStartSeconds: _timelineStartSeconds,
+      contextStartTime: _contextStartTime,
+    );
     _isPlaying = true;
   }
 
@@ -215,6 +223,8 @@ class WebAudioEngine {
   }
 
   void stopSources() {
+    _metronomeScheduler.stopTransport();
+
     for (final source in _activeSources.values) {
       try {
         source.stop();
@@ -235,6 +245,14 @@ class WebAudioEngine {
 
     _activeSources.clear();
     _trackGains.clear();
+  }
+
+  void setTempoBpm(double tempoBpm) {
+    _metronomeScheduler.setTempoBpm(tempoBpm);
+  }
+
+  void setMetronomeEnabled(bool enabled) {
+    _metronomeScheduler.setEnabled(enabled);
   }
 
   void syncMixer(List<DawTrack> tracks) {
@@ -334,6 +352,7 @@ class WebAudioEngine {
   Future<void> dispose() async {
     _playRequestId++;
     stopSources();
+    _metronomeScheduler.dispose();
     _buffers.clear();
 
     await _audioContext.close().toDart;

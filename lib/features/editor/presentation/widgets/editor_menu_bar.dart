@@ -15,7 +15,7 @@ class EditorMenuAction {
   });
 
   final String label;
-  final VoidCallback onSelected;
+  final VoidCallback? onSelected;
   final IconData? icon;
 }
 

@@ -13,7 +13,7 @@ class TimelineTrackLane extends StatelessWidget {
     required this.startTimeSeconds,
     required this.waveformPeaks,
     required this.playheadSeconds,
-    required this.scale,
+    required this.gridMetrics,
     required this.onSeek,
   });
 
@@ -24,21 +24,22 @@ class TimelineTrackLane extends StatelessWidget {
 
   final List<double> waveformPeaks;
   final double playheadSeconds;
-  final TimelineScale scale;
+  final TimelineGridMetrics gridMetrics;
   final ValueChanged<double> onSeek;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final transform = gridMetrics.transform;
 
-    final clipWidth = scale.secondsToPixels(durationSeconds);
+    final clipWidth = transform.timeToContentX(durationSeconds);
 
-    final left = scale.secondsToPixels(startTimeSeconds);
+    final left = transform.timeToContentX(startTimeSeconds);
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTapDown: (details) {
-        onSeek(scale.pixelsToSeconds(details.localPosition.dx));
+        onSeek(transform.contentXToTime(details.localPosition.dx));
       },
       child: Container(
         height: trackHeight,
@@ -54,7 +55,8 @@ class TimelineTrackLane extends StatelessWidget {
               child: CustomPaint(
                 painter: _GridPainter(
                   color: colorScheme.outlineVariant,
-                  scale: scale,
+                  gridMetrics: gridMetrics,
+                  devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
                 ),
               ),
             ),
@@ -130,7 +132,7 @@ class TimelineTrackLane extends StatelessWidget {
             ),
 
             Positioned(
-              left: scale.secondsToPixels(playheadSeconds),
+              left: transform.timeToContentX(playheadSeconds) - 1,
               top: 0,
               bottom: 0,
               child: IgnorePointer(
@@ -208,10 +210,15 @@ class _WaveformPainter extends CustomPainter {
 }
 
 class _GridPainter extends CustomPainter {
-  const _GridPainter({required this.color, required this.scale});
+  const _GridPainter({
+    required this.color,
+    required this.gridMetrics,
+    required this.devicePixelRatio,
+  });
 
   final Color color;
-  final TimelineScale scale;
+  final TimelineGridMetrics gridMetrics;
+  final double devicePixelRatio;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -222,23 +229,20 @@ class _GridPainter extends CustomPainter {
       ..color = color.withValues(alpha: 0.2)
       ..strokeWidth = 1;
     final clipBounds = canvas.getLocalClipBounds();
-    final minorSpacing = scale.secondsToPixels(scale.minorTickIntervalSeconds);
-    final firstIndex = math.max(
-      0,
-      (clipBounds.left / minorSpacing).floor() - 1,
-    );
-    final lastIndex = math.min(
-      (size.width / minorSpacing).ceil(),
-      (clipBounds.right / minorSpacing).ceil() + 1,
-    );
 
-    for (var index = firstIndex; index <= lastIndex; index++) {
-      final x = index * minorSpacing;
-      final isMajor = index % scale.minorDivisions == 0;
+    for (final tick in gridMetrics.ticksInContentRange(
+      left: clipBounds.left,
+      right: clipBounds.right,
+      contentWidth: size.width,
+    )) {
+      final x = gridMetrics.alignStrokeCenter(
+        tick.contentX,
+        devicePixelRatio: devicePixelRatio,
+      );
       canvas.drawLine(
         Offset(x, 0),
         Offset(x, size.height),
-        isMajor ? majorPaint : minorPaint,
+        tick.isMajor ? majorPaint : minorPaint,
       );
     }
   }
@@ -246,6 +250,8 @@ class _GridPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _GridPainter oldDelegate) {
     return oldDelegate.color != color ||
-        oldDelegate.scale.pixelsPerSecond != scale.pixelsPerSecond;
+        oldDelegate.gridMetrics.scale.pixelsPerSecond !=
+            gridMetrics.scale.pixelsPerSecond ||
+        oldDelegate.devicePixelRatio != devicePixelRatio;
   }
 }

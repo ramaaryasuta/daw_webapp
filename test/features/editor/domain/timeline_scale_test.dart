@@ -58,4 +58,72 @@ void main() {
       );
     });
   });
+
+  group('TimelineTransform', () {
+    test('uses one content and viewport coordinate system', () {
+      const transform = TimelineTransform(
+        scale: TimelineScale(125),
+        horizontalScrollOffset: 275,
+      );
+
+      expect(transform.timeToContentX(4), 500);
+      expect(transform.timeToViewportX(4), 225);
+      expect(transform.viewportToContentX(225), 500);
+      expect(transform.viewportXToTime(225), 4);
+    });
+
+    test('keeps a viewport anchor stable while scale changes', () {
+      const transform = TimelineTransform(
+        scale: TimelineScale(100),
+        horizontalScrollOffset: 200,
+      );
+
+      final newOffset = transform.scrollOffsetKeepingAnchor(
+        newScale: const TimelineScale(200),
+        viewportX: 300,
+      );
+
+      expect(newOffset, 700);
+    });
+  });
+
+  group('TimelineGridMetrics', () {
+    test('derives major and minor ticks from shared adaptive boundaries', () {
+      const metrics = TimelineGridMetrics(
+        transform: TimelineTransform(scale: TimelineScale(100)),
+      );
+
+      final ticks = metrics
+          .ticksInContentRange(left: 0, right: 250, contentWidth: 1000)
+          .take(11)
+          .toList();
+
+      expect(metrics.majorTickIntervalSeconds, 1);
+      expect(metrics.minorTickIntervalSeconds, 0.2);
+      expect(ticks[5].timeSeconds, 1);
+      expect(ticks[5].contentX, 100);
+      expect(ticks[5].isMajor, isTrue);
+      expect(ticks[6].isMajor, isFalse);
+    });
+
+    test('aligns identical stroke coordinates identically', () {
+      const metrics = TimelineGridMetrics(
+        transform: TimelineTransform(scale: TimelineScale(333)),
+      );
+      final tick = metrics
+          .ticksInContentRange(left: 0, right: 400, contentWidth: 1000)
+          .elementAt(3);
+
+      final rulerX = metrics.alignStrokeCenter(
+        tick.contentX,
+        devicePixelRatio: 1.5,
+      );
+      final gridX = metrics.alignStrokeCenter(
+        tick.contentX,
+        devicePixelRatio: 1.5,
+      );
+
+      expect(gridX, rulerX);
+    });
+  });
 }
