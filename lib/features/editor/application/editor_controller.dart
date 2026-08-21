@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/audio_asset.dart';
+import '../domain/audio_clip.dart';
 import '../domain/daw_track.dart';
 import '../domain/imported_audio_file.dart';
 import '../domain/timeline_scale.dart';
@@ -16,6 +17,7 @@ class EditorState {
     this.pixelsPerSecond = TimelineScale.defaultPixelsPerSecond,
     this.tracks = const [],
     this.selectedTrackId,
+    this.selectedClipId,
   });
 
   final bool isPlaying;
@@ -26,17 +28,10 @@ class EditorState {
 
   final List<DawTrack> tracks;
   final String? selectedTrackId;
+  final String? selectedClipId;
 
   double get projectDurationSeconds {
-    var duration = 0.0;
-
-    for (final track in tracks) {
-      if (track.endTimeSeconds > duration) {
-        duration = track.endTimeSeconds;
-      }
-    }
-
-    return duration;
+    return calculateProjectDurationSeconds(tracks);
   }
 
   EditorState copyWith({
@@ -46,7 +41,9 @@ class EditorState {
     double? pixelsPerSecond,
     List<DawTrack>? tracks,
     String? selectedTrackId,
+    String? selectedClipId,
     bool clearSelectedTrack = false,
+    bool clearSelectedClip = false,
   }) {
     return EditorState(
       isPlaying: isPlaying ?? this.isPlaying,
@@ -57,6 +54,9 @@ class EditorState {
       selectedTrackId: clearSelectedTrack
           ? null
           : selectedTrackId ?? this.selectedTrackId,
+      selectedClipId: clearSelectedClip
+          ? null
+          : selectedClipId ?? this.selectedClipId,
     );
   }
 }
@@ -64,6 +64,8 @@ class EditorState {
 class EditorController extends Notifier<EditorState> {
   int _trackCounter = 0;
   int _assetCounter = 0;
+  int _clipCounter = 0;
+  int _clipMoveRequestId = 0;
 
   Timer? _playheadTimer;
 
@@ -95,10 +97,12 @@ class EditorController extends Notifier<EditorState> {
     for (final file in files) {
       _assetCounter++;
       _trackCounter++;
+      _clipCounter++;
 
       final assetId = 'asset-$_assetCounter';
 
       final trackId = 'track-$_trackCounter';
+      final clipId = 'clip-$_clipCounter';
 
       try {
         final decoded = await _audioEngine.decode(
@@ -117,7 +121,13 @@ class EditorController extends Notifier<EditorState> {
           waveformPeaks: decoded.waveformPeaks,
         );
 
-        newTracks.add(DawTrack(id: trackId, name: file.name, audio: audio));
+        newTracks.add(
+          DawTrack(
+            id: trackId,
+            name: file.name,
+            clip: AudioClip(id: clipId, audio: audio),
+          ),
+        );
       } catch (_) {
         failedFiles.add(file.name);
       }
@@ -129,6 +139,9 @@ class EditorController extends Notifier<EditorState> {
       selectedTrackId: newTracks.isEmpty
           ? state.selectedTrackId
           : newTracks.last.id,
+      selectedClipId: newTracks.isEmpty
+          ? state.selectedClipId
+          : newTracks.last.clip.id,
     );
 
     return failedFiles;
@@ -241,7 +254,66 @@ class EditorController extends Notifier<EditorState> {
     state = state.copyWith(selectedTrackId: trackId);
   }
 
+  void selectClip({required String trackId, required String clipId}) {
+    state = state.copyWith(selectedTrackId: trackId, selectedClipId: clipId);
+  }
+
+  Future<void> moveClip(String clipId, double timelineStartSeconds) async {
+    if (!timelineStartSeconds.isFinite) {
+      return;
+    }
+
+    final normalizedStart = timelineStartSeconds
+        .clamp(0.0, double.infinity)
+        .toDouble();
+    DawTrack? movedTrack;
+
+    for (final track in state.tracks) {
+      if (track.clip.id == clipId) {
+        movedTrack = track;
+        break;
+      }
+    }
+
+    if (movedTrack == null ||
+        (movedTrack.clip.timelineStartSeconds - normalizedStart).abs() <
+            0.000001) {
+      return;
+    }
+
+    final requestId = ++_clipMoveRequestId;
+    final tracks = [
+      for (final track in state.tracks)
+        if (track.clip.id == clipId)
+          track.copyWith(
+            clip: track.clip.copyWith(timelineStartSeconds: normalizedStart),
+          )
+        else
+          track,
+    ];
+    final previousPosition = _audioEngine.currentPositionSeconds;
+
+    state = state.copyWith(tracks: tracks, selectedClipId: clipId);
+    _playheadTimer?.cancel();
+
+    await _audioEngine.seek(tracks: tracks, positionSeconds: previousPosition);
+
+    if (requestId != _clipMoveRequestId) {
+      return;
+    }
+
+    state = state.copyWith(
+      isPlaying: _audioEngine.isPlaying,
+      playheadSeconds: _audioEngine.currentPositionSeconds,
+    );
+
+    if (_audioEngine.isPlaying) {
+      _startPlayheadTicker();
+    }
+  }
+
   void removeTrack(String trackId) {
+    _clipMoveRequestId++;
     _audioEngine.removeTrack(trackId);
 
     final tracks = state.tracks.where((track) => track.id != trackId).toList();
@@ -249,6 +321,9 @@ class EditorController extends Notifier<EditorState> {
     state = state.copyWith(
       tracks: tracks,
       clearSelectedTrack: state.selectedTrackId == trackId,
+      clearSelectedClip: state.tracks.any(
+        (track) => track.id == trackId && track.clip.id == state.selectedClipId,
+      ),
     );
 
     _audioEngine.syncMixer(tracks);

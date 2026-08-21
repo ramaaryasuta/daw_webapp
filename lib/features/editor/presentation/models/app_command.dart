@@ -42,5 +42,17 @@ abstract final class EditorCommands {
     category: AppCommandCategory.timeline,
   );
 
-  static const all = <AppCommand>[zoomTimeline, scrollTimeline, panTimeline];
+  static const moveAudioClip = AppCommand(
+    title: 'Move Audio Clip',
+    description: 'Move an audio clip horizontally on the timeline.',
+    shortcutParts: ['Left Mouse', 'Drag'],
+    category: AppCommandCategory.timeline,
+  );
+
+  static const all = <AppCommand>[
+    zoomTimeline,
+    scrollTimeline,
+    panTimeline,
+    moveAudioClip,
+  ];
 }

@@ -1,11 +1,10 @@
-import 'audio_asset.dart';
+import 'audio_clip.dart';
 
 class DawTrack {
   const DawTrack({
     required this.id,
     required this.name,
-    required this.audio,
-    this.startTimeSeconds = 0,
+    required this.clip,
     this.volume = 1,
     this.isMuted = false,
     this.isSolo = false,
@@ -14,22 +13,18 @@ class DawTrack {
   final String id;
   final String name;
 
-  final AudioAsset audio;
-
-  /// Posisi file audio pada project timeline.
-  final double startTimeSeconds;
+  final AudioClip clip;
 
   final double volume;
   final bool isMuted;
   final bool isSolo;
 
-  double get endTimeSeconds => startTimeSeconds + audio.durationSeconds;
+  double get endTimeSeconds => clip.timelineEndSeconds;
 
   DawTrack copyWith({
     String? id,
     String? name,
-    AudioAsset? audio,
-    double? startTimeSeconds,
+    AudioClip? clip,
     double? volume,
     bool? isMuted,
     bool? isSolo,
@@ -37,11 +32,22 @@ class DawTrack {
     return DawTrack(
       id: id ?? this.id,
       name: name ?? this.name,
-      audio: audio ?? this.audio,
-      startTimeSeconds: startTimeSeconds ?? this.startTimeSeconds,
+      clip: clip ?? this.clip,
       volume: volume ?? this.volume,
       isMuted: isMuted ?? this.isMuted,
       isSolo: isSolo ?? this.isSolo,
     );
   }
+}
+
+double calculateProjectDurationSeconds(Iterable<DawTrack> tracks) {
+  var duration = 0.0;
+
+  for (final track in tracks) {
+    if (track.endTimeSeconds > duration) {
+      duration = track.endTimeSeconds;
+    }
+  }
+
+  return duration;
 }

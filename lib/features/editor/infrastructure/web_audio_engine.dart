@@ -106,9 +106,7 @@ class WebAudioEngine {
       return;
     }
 
-    _projectDurationSeconds = tracks.fold(0.0, (current, track) {
-      return track.endTimeSeconds > current ? track.endTimeSeconds : current;
-    });
+    _projectDurationSeconds = calculateProjectDurationSeconds(tracks);
 
     if (fromSeconds >= _projectDurationSeconds) {
       fromSeconds = 0;
@@ -127,17 +125,17 @@ class WebAudioEngine {
     final hasSolo = tracks.any((track) => track.isSolo);
 
     for (final track in tracks) {
-      final buffer = _buffers[track.audio.id];
+      final buffer = _buffers[track.clip.audio.id];
 
       if (buffer == null) {
         continue;
       }
 
-      final trackStart = track.startTimeSeconds;
-      final trackEnd = track.startTimeSeconds + buffer.duration;
+      final playbackTiming = track.clip.playbackTimingFrom(fromSeconds);
 
-      // Track sudah habis sebelum posisi playhead.
-      if (trackEnd <= fromSeconds) {
+      // Clip sudah habis sebelum posisi playhead.
+      if (playbackTiming == null ||
+          playbackTiming.bufferOffsetSeconds >= buffer.duration) {
         continue;
       }
 
@@ -155,19 +153,10 @@ class WebAudioEngine {
       _activeSources[track.id] = source;
       _trackGains[track.id] = gain;
 
-      if (trackStart >= fromSeconds) {
-        // Clip berada di depan playhead.
-        final delay = trackStart - fromSeconds;
-
-        source.start(startAt + delay, 0);
-      } else {
-        // Playhead berada di tengah clip.
-        final offset = fromSeconds - trackStart;
-
-        if (offset < buffer.duration) {
-          source.start(startAt, offset);
-        }
-      }
+      source.start(
+        startAt + playbackTiming.delaySeconds,
+        playbackTiming.bufferOffsetSeconds,
+      );
     }
 
     _metronomeScheduler.startTransport(
@@ -181,9 +170,7 @@ class WebAudioEngine {
     required List<DawTrack> tracks,
     required double positionSeconds,
   }) async {
-    _projectDurationSeconds = tracks.fold(0.0, (current, track) {
-      return track.endTimeSeconds > current ? track.endTimeSeconds : current;
-    });
+    _projectDurationSeconds = calculateProjectDurationSeconds(tracks);
 
     final position = positionSeconds.clamp(0.0, _projectDurationSeconds);
     final shouldResumePlayback =

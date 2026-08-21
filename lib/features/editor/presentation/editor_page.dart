@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import '../application/editor_controller.dart';
 import '../domain/timeline_scale.dart';
 import '../infrastructure/audio_import_service.dart';
+import 'controllers/timeline_clip_drag_controller.dart';
 import 'models/app_command.dart';
 import 'widgets/commands_dialog.dart';
 import 'widgets/editor_menu_bar.dart';
@@ -51,6 +52,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   late final ScrollController _horizontalTimelineController;
   late final ScrollController _trackHeaderScrollController;
   late final ScrollController _trackLaneScrollController;
+  late final TimelineClipDragController _clipDragController;
 
   @override
   void initState() {
@@ -59,6 +61,11 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     _horizontalTimelineController = ScrollController();
     _trackHeaderScrollController = ScrollController();
     _trackLaneScrollController = ScrollController();
+    _clipDragController = TimelineClipDragController(
+      _horizontalTimelineController,
+      _timelineViewportKey,
+      _markTimelineUserInteraction,
+    );
 
     _trackHeaderScrollController.addListener(_syncLanesToHeaders);
     _trackLaneScrollController.addListener(_syncHeadersToLanes);
@@ -78,6 +85,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   void dispose() {
     _trackHeaderScrollController.removeListener(_syncLanesToHeaders);
     _trackLaneScrollController.removeListener(_syncHeadersToLanes);
+    _clipDragController.dispose();
     _horizontalTimelineController.dispose();
     _trackHeaderScrollController.dispose();
     _trackLaneScrollController.dispose();
@@ -140,7 +148,9 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     _PlaybackFollowState playback, {
     required bool playbackStarted,
   }) {
-    if (_isTimelinePanning || !_horizontalTimelineController.hasClients) {
+    if (_isTimelinePanning ||
+        _clipDragController.isDragging ||
+        !_horizontalTimelineController.hasClients) {
       return;
     }
 
@@ -649,11 +659,6 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                         final gridMetrics = TimelineGridMetrics(
                           transform: TimelineTransform(scale: scale),
                         );
-                        final contentWidth = scale.timelineContentWidth(
-                          durationSeconds: editorState.projectDurationSeconds,
-                          viewportWidth: viewportWidth,
-                        );
-
                         return Row(
                           children: [
                             SizedBox(
@@ -707,29 +712,50 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                                         scrollDirection: Axis.horizontal,
                                         physics:
                                             const _ControlReservedScrollPhysics(),
-                                        child: SizedBox(
-                                          width: contentWidth,
-                                          height: constraints.maxHeight,
-                                          child: Column(
-                                            children: [
-                                              TimelineRuler(
-                                                playheadSeconds:
-                                                    editorState.playheadSeconds,
-                                                gridMetrics: gridMetrics,
-                                                onSeek: _handleTimelineSeek,
+                                        child: ValueListenableBuilder<TimelineClipDragState?>(
+                                          valueListenable: _clipDragController,
+                                          builder: (context, dragState, _) {
+                                            final previewDuration = math.max(
+                                              editorState
+                                                  .projectDurationSeconds,
+                                              dragState?.previewEndSeconds ??
+                                                  0.0,
+                                            );
+                                            final contentWidth = scale
+                                                .timelineContentWidth(
+                                                  durationSeconds:
+                                                      previewDuration,
+                                                  viewportWidth: viewportWidth,
+                                                );
+
+                                            return SizedBox(
+                                              width: contentWidth,
+                                              height: constraints.maxHeight,
+                                              child: Column(
+                                                children: [
+                                                  TimelineRuler(
+                                                    playheadSeconds: editorState
+                                                        .playheadSeconds,
+                                                    gridMetrics: gridMetrics,
+                                                    onSeek: _handleTimelineSeek,
+                                                  ),
+                                                  Expanded(
+                                                    child: TimelineTrackList(
+                                                      scrollController:
+                                                          _trackLaneScrollController,
+                                                      gridMetrics: gridMetrics,
+                                                      clipDragController:
+                                                          _clipDragController,
+                                                      scrollPhysics:
+                                                          const _ControlReservedScrollPhysics(),
+                                                      onSeek:
+                                                          _handleTimelineSeek,
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
-                                              Expanded(
-                                                child: TimelineTrackList(
-                                                  scrollController:
-                                                      _trackLaneScrollController,
-                                                  gridMetrics: gridMetrics,
-                                                  scrollPhysics:
-                                                      const _ControlReservedScrollPhysics(),
-                                                  onSeek: _handleTimelineSeek,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
+                                            );
+                                          },
                                         ),
                                       ),
                                     ),

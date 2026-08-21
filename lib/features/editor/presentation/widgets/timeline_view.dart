@@ -1,22 +1,30 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../domain/timeline_scale.dart';
+import '../controllers/timeline_clip_drag_controller.dart';
 import 'track_header.dart';
 
 class TimelineTrackLane extends StatelessWidget {
   const TimelineTrackLane({
     super.key,
+    required this.clipId,
     required this.fileName,
     required this.durationSeconds,
     required this.startTimeSeconds,
     required this.waveformPeaks,
     required this.playheadSeconds,
     required this.gridMetrics,
+    required this.isSelected,
+    required this.clipDragController,
     required this.onSeek,
+    required this.onSelect,
+    required this.onMoveCommitted,
   });
 
+  final String clipId;
   final String fileName;
 
   final double durationSeconds;
@@ -25,33 +33,39 @@ class TimelineTrackLane extends StatelessWidget {
   final List<double> waveformPeaks;
   final double playheadSeconds;
   final TimelineGridMetrics gridMetrics;
+  final bool isSelected;
+  final TimelineClipDragController clipDragController;
   final ValueChanged<double> onSeek;
+  final VoidCallback onSelect;
+  final ValueChanged<double> onMoveCommitted;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final transform = gridMetrics.transform;
 
-    final clipWidth = transform.timeToContentX(durationSeconds);
+    void commitDrag(int pointer) {
+      final result = clipDragController.end(pointer);
+      if (result?.didMove ?? false) {
+        onMoveCommitted(result!.startSeconds);
+      }
+    }
 
-    final left = transform.timeToContentX(startTimeSeconds);
-
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (details) {
-        onSeek(transform.contentXToTime(details.localPosition.dx));
-      },
-      child: Container(
-        height: trackHeight,
-        decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerLowest,
-          border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
-        ),
-        child: Stack(
-          clipBehavior: Clip.hardEdge,
-          children: [
-            // Timeline vertical grid
-            Positioned.fill(
+    return Container(
+      height: trackHeight,
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLowest,
+        border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
+      ),
+      child: Stack(
+        clipBehavior: Clip.hardEdge,
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (details) {
+                onSeek(transform.contentXToTime(details.localPosition.dx));
+              },
               child: CustomPaint(
                 painter: _GridPainter(
                   color: colorScheme.outlineVariant,
@@ -60,83 +74,167 @@ class TimelineTrackLane extends StatelessWidget {
                 ),
               ),
             ),
+          ),
+          ValueListenableBuilder<TimelineClipDragState?>(
+            valueListenable: clipDragController,
+            builder: (context, dragState, child) {
+              final isDragging = dragState?.clipId == clipId;
+              final visualStartSeconds = isDragging
+                  ? dragState!.previewStartSeconds
+                  : startTimeSeconds;
+              final clipWidth = transform.timeToContentX(durationSeconds);
 
-            // Audio clip
-            Positioned(
-              left: left,
-              top: 8,
-              bottom: 8,
-              width: math.max(clipWidth, 1),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: colorScheme.primaryContainer,
-                    border: Border.all(color: colorScheme.primary),
-                    borderRadius: BorderRadius.circular(6),
+              return Positioned(
+                left: transform.timeToContentX(visualStartSeconds),
+                top: 8,
+                bottom: 8,
+                width: math.max(clipWidth, 1),
+                child: MouseRegion(
+                  cursor: isDragging
+                      ? SystemMouseCursors.grabbing
+                      : SystemMouseCursors.grab,
+                  child: Listener(
+                    behavior: HitTestBehavior.opaque,
+                    onPointerDown: (event) {
+                      if ((event.buttons & kPrimaryMouseButton) == 0) {
+                        return;
+                      }
+
+                      onSelect();
+                      clipDragController.begin(
+                        pointer: event.pointer,
+                        clipId: clipId,
+                        pointerGlobalX: event.position.dx,
+                        clipStartSeconds: startTimeSeconds,
+                        clipDurationSeconds: durationSeconds,
+                        pixelsPerSecond: transform.scale.pixelsPerSecond,
+                      );
+                    },
+                    onPointerMove: (event) {
+                      if ((event.buttons & kPrimaryMouseButton) == 0) {
+                        commitDrag(event.pointer);
+                        return;
+                      }
+
+                      clipDragController.update(
+                        pointer: event.pointer,
+                        pointerGlobalX: event.position.dx,
+                      );
+                    },
+                    onPointerUp: (event) => commitDrag(event.pointer),
+                    onPointerCancel: (event) {
+                      clipDragController.cancel(event.pointer);
+                    },
+                    child: _AudioClipSurface(
+                      fileName: fileName,
+                      durationSeconds: durationSeconds,
+                      waveformPeaks: waveformPeaks,
+                      isSelected: isSelected,
+                      isDragging: isDragging,
+                    ),
                   ),
-                  child: Stack(
-                    children: [
-                      // Waveform
-                      Positioned.fill(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          child: CustomPaint(
-                            painter: _WaveformPainter(
-                              peaks: waveformPeaks,
-                              color: colorScheme.onPrimaryContainer.withValues(
-                                alpha: 0.6,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
+                ),
+              );
+            },
+          ),
+          Positioned(
+            left: transform.timeToContentX(playheadSeconds) - 1,
+            top: 0,
+            bottom: 0,
+            child: IgnorePointer(
+              child: Container(width: 2, color: colorScheme.tertiary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
-                      // Filename
-                      Positioned(
-                        left: 8,
-                        top: 5,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 5,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: colorScheme.primaryContainer.withValues(
-                              alpha: 0.85,
-                            ),
-                            borderRadius: BorderRadius.circular(3),
-                          ),
-                          child: Text(
-                            fileName,
-                            style: Theme.of(context).textTheme.labelSmall,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
+class _AudioClipSurface extends StatelessWidget {
+  const _AudioClipSurface({
+    required this.fileName,
+    required this.durationSeconds,
+    required this.waveformPeaks,
+    required this.isSelected,
+    required this.isDragging,
+  });
 
-                      // Duration
-                      Positioned(
-                        right: 8,
-                        top: 5,
-                        child: Text(
-                          '${durationSeconds.toStringAsFixed(2)}s',
-                          style: Theme.of(context).textTheme.labelSmall,
-                        ),
-                      ),
-                    ],
+  final String fileName;
+  final double durationSeconds;
+  final List<double> waveformPeaks;
+  final bool isSelected;
+  final bool isDragging;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final borderColor = isDragging
+        ? colorScheme.tertiary
+        : isSelected
+        ? colorScheme.primary
+        : colorScheme.primary.withValues(alpha: 0.7);
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: isDragging
+            ? colorScheme.primaryContainer.withValues(alpha: 0.92)
+            : colorScheme.primaryContainer,
+        border: Border.all(
+          color: borderColor,
+          width: isDragging || isSelected ? 2 : 1,
+        ),
+        borderRadius: BorderRadius.circular(6),
+        boxShadow: isDragging
+            ? [
+                BoxShadow(
+                  color: colorScheme.shadow.withValues(alpha: 0.28),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(5),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: CustomPaint(
+                  painter: _WaveformPainter(
+                    peaks: waveformPeaks,
+                    color: colorScheme.onPrimaryContainer.withValues(
+                      alpha: 0.6,
+                    ),
                   ),
                 ),
               ),
             ),
-
             Positioned(
-              left: transform.timeToContentX(playheadSeconds) - 1,
-              top: 0,
-              bottom: 0,
-              child: IgnorePointer(
-                child: Container(width: 2, color: colorScheme.tertiary),
+              left: 8,
+              top: 5,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: colorScheme.primaryContainer.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: Text(
+                  fileName,
+                  style: Theme.of(context).textTheme.labelSmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            Positioned(
+              right: 8,
+              top: 5,
+              child: Text(
+                '${durationSeconds.toStringAsFixed(2)}s',
+                style: Theme.of(context).textTheme.labelSmall,
               ),
             ),
           ],

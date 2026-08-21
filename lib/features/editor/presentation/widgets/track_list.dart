@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/editor_controller.dart';
 import '../../domain/timeline_scale.dart';
+import '../controllers/timeline_clip_drag_controller.dart';
 import 'track_header.dart';
 import 'timeline_view.dart';
 
@@ -46,18 +47,21 @@ class TimelineTrackList extends ConsumerWidget {
     super.key,
     required this.scrollController,
     required this.gridMetrics,
+    required this.clipDragController,
     required this.scrollPhysics,
     required this.onSeek,
   });
 
   final ScrollController scrollController;
   final TimelineGridMetrics gridMetrics;
+  final TimelineClipDragController clipDragController;
   final ScrollPhysics scrollPhysics;
   final ValueChanged<double> onSeek;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final editorState = ref.watch(editorControllerProvider);
+    final controller = ref.read(editorControllerProvider.notifier);
 
     if (editorState.tracks.isEmpty) {
       return const _EmptyTracks();
@@ -73,13 +77,22 @@ class TimelineTrackList extends ConsumerWidget {
         final track = editorState.tracks[index];
 
         return TimelineTrackLane(
-          fileName: track.audio.name,
-          durationSeconds: track.audio.durationSeconds,
-          startTimeSeconds: track.startTimeSeconds,
-          waveformPeaks: track.audio.waveformPeaks,
+          key: ValueKey(track.clip.id),
+          clipId: track.clip.id,
+          fileName: track.clip.audio.name,
+          durationSeconds: track.clip.durationSeconds,
+          startTimeSeconds: track.clip.timelineStartSeconds,
+          waveformPeaks: track.clip.audio.waveformPeaks,
           playheadSeconds: editorState.playheadSeconds,
           gridMetrics: gridMetrics,
+          isSelected: editorState.selectedClipId == track.clip.id,
+          clipDragController: clipDragController,
           onSeek: onSeek,
+          onSelect: () =>
+              controller.selectClip(trackId: track.id, clipId: track.clip.id),
+          onMoveCommitted: (startSeconds) {
+            controller.moveClip(track.clip.id, startSeconds);
+          },
         );
       },
     );
