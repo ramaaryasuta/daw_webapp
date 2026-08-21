@@ -3,15 +3,23 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../domain/audio_clip.dart';
+
+enum TimelineClipDragMode { move, trimStart, trimEnd }
+
 class TimelineClipDragState {
   const TimelineClipDragState({
     required this.clipId,
+    required this.mode,
     required this.previewStartSeconds,
+    required this.previewSourceStartSeconds,
     required this.clipDurationSeconds,
   });
 
   final String clipId;
+  final TimelineClipDragMode mode;
   final double previewStartSeconds;
+  final double previewSourceStartSeconds;
   final double clipDurationSeconds;
 
   double get previewEndSeconds {
@@ -22,11 +30,19 @@ class TimelineClipDragState {
 class TimelineClipDragResult {
   const TimelineClipDragResult({
     required this.startSeconds,
+    required this.sourceStartSeconds,
+    required this.clipDurationSeconds,
+    required this.mode,
     required this.didMove,
   });
 
   final double startSeconds;
+  final double sourceStartSeconds;
+  final double clipDurationSeconds;
+  final TimelineClipDragMode mode;
   final bool didMove;
+
+  bool get didChange => didMove;
 }
 
 /// Owns a lightweight clip-drag preview and timeline edge auto-scroll.
@@ -55,6 +71,9 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
   double _dragStartPointerGlobalX = 0;
   double _dragStartScrollOffset = 0;
   double _dragStartClipSeconds = 0;
+  double _dragStartSourceSeconds = 0;
+  double _dragStartClipDurationSeconds = 0;
+  double _sourceAudioDurationSeconds = 0;
   double _pixelsPerSecond = 1;
 
   bool get isDragging => value != null;
@@ -65,6 +84,58 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     required double pointerGlobalX,
     required double clipStartSeconds,
     required double clipDurationSeconds,
+    required double pixelsPerSecond,
+    double sourceStartSeconds = 0,
+    double? sourceAudioDurationSeconds,
+  }) {
+    return _begin(
+      pointer: pointer,
+      clipId: clipId,
+      mode: TimelineClipDragMode.move,
+      pointerGlobalX: pointerGlobalX,
+      clipStartSeconds: clipStartSeconds,
+      sourceStartSeconds: sourceStartSeconds,
+      clipDurationSeconds: clipDurationSeconds,
+      sourceAudioDurationSeconds:
+          sourceAudioDurationSeconds ?? clipDurationSeconds,
+      pixelsPerSecond: pixelsPerSecond,
+    );
+  }
+
+  bool beginTrim({
+    required int pointer,
+    required String clipId,
+    required TimelineClipDragMode mode,
+    required double pointerGlobalX,
+    required double clipStartSeconds,
+    required double sourceStartSeconds,
+    required double clipDurationSeconds,
+    required double sourceAudioDurationSeconds,
+    required double pixelsPerSecond,
+  }) {
+    assert(mode != TimelineClipDragMode.move);
+    return _begin(
+      pointer: pointer,
+      clipId: clipId,
+      mode: mode,
+      pointerGlobalX: pointerGlobalX,
+      clipStartSeconds: clipStartSeconds,
+      sourceStartSeconds: sourceStartSeconds,
+      clipDurationSeconds: clipDurationSeconds,
+      sourceAudioDurationSeconds: sourceAudioDurationSeconds,
+      pixelsPerSecond: pixelsPerSecond,
+    );
+  }
+
+  bool _begin({
+    required int pointer,
+    required String clipId,
+    required TimelineClipDragMode mode,
+    required double pointerGlobalX,
+    required double clipStartSeconds,
+    required double sourceStartSeconds,
+    required double clipDurationSeconds,
+    required double sourceAudioDurationSeconds,
     required double pixelsPerSecond,
   }) {
     if (isDragging ||
@@ -79,10 +150,15 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     _dragStartPointerGlobalX = pointerGlobalX;
     _dragStartScrollOffset = _horizontalScrollController.offset;
     _dragStartClipSeconds = math.max(0.0, clipStartSeconds);
+    _dragStartSourceSeconds = math.max(0.0, sourceStartSeconds);
+    _dragStartClipDurationSeconds = clipDurationSeconds;
+    _sourceAudioDurationSeconds = sourceAudioDurationSeconds;
     _pixelsPerSecond = pixelsPerSecond;
     value = TimelineClipDragState(
       clipId: clipId,
+      mode: mode,
       previewStartSeconds: _dragStartClipSeconds,
+      previewSourceStartSeconds: _dragStartSourceSeconds,
       clipDurationSeconds: clipDurationSeconds,
     );
     _onTimelineInteraction();
@@ -108,7 +184,15 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     final finalStartSeconds = value!.previewStartSeconds;
     final result = TimelineClipDragResult(
       startSeconds: finalStartSeconds,
-      didMove: (finalStartSeconds - _dragStartClipSeconds).abs() > 0.000001,
+      sourceStartSeconds: value!.previewSourceStartSeconds,
+      clipDurationSeconds: value!.clipDurationSeconds,
+      mode: value!.mode,
+      didMove:
+          (finalStartSeconds - _dragStartClipSeconds).abs() > 0.000001 ||
+          (value!.previewSourceStartSeconds - _dragStartSourceSeconds).abs() >
+              0.000001 ||
+          (value!.clipDurationSeconds - _dragStartClipDurationSeconds).abs() >
+              0.000001,
     );
 
     _finish();
@@ -139,19 +223,58 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     final pointerDelta = _pointerGlobalX - _dragStartPointerGlobalX;
     final scrollDelta =
         _horizontalScrollController.offset - _dragStartScrollOffset;
-    final previewStart = math.max(
-      0.0,
-      _dragStartClipSeconds + (pointerDelta + scrollDelta) / _pixelsPerSecond,
-    );
+    final deltaSeconds = (pointerDelta + scrollDelta) / _pixelsPerSecond;
+    var previewStart = _dragStartClipSeconds;
+    var previewSourceStart = _dragStartSourceSeconds;
+    var previewDuration = _dragStartClipDurationSeconds;
 
-    if ((previewStart - currentState.previewStartSeconds).abs() < 0.000001) {
+    switch (currentState.mode) {
+      case TimelineClipDragMode.move:
+        previewStart = math.max(0.0, _dragStartClipSeconds + deltaSeconds);
+        break;
+      case TimelineClipDragMode.trimStart:
+        final minimumDuration = math.min(
+          minimumClipDurationSeconds,
+          _sourceAudioDurationSeconds,
+        );
+        final minimumDelta = math.max(
+          -_dragStartClipSeconds,
+          -_dragStartSourceSeconds,
+        );
+        final maximumDelta = _dragStartClipDurationSeconds - minimumDuration;
+        final trimDelta = deltaSeconds
+            .clamp(minimumDelta, maximumDelta)
+            .toDouble();
+        previewStart = _dragStartClipSeconds + trimDelta;
+        previewSourceStart = _dragStartSourceSeconds + trimDelta;
+        previewDuration = _dragStartClipDurationSeconds - trimDelta;
+        break;
+      case TimelineClipDragMode.trimEnd:
+        final minimumDuration = math.min(
+          minimumClipDurationSeconds,
+          _sourceAudioDurationSeconds,
+        );
+        final maximumDuration =
+            _sourceAudioDurationSeconds - _dragStartSourceSeconds;
+        previewDuration = (_dragStartClipDurationSeconds + deltaSeconds)
+            .clamp(minimumDuration, maximumDuration)
+            .toDouble();
+        break;
+    }
+
+    if ((previewStart - currentState.previewStartSeconds).abs() < 0.000001 &&
+        (previewSourceStart - currentState.previewSourceStartSeconds).abs() <
+            0.000001 &&
+        (previewDuration - currentState.clipDurationSeconds).abs() < 0.000001) {
       return;
     }
 
     value = TimelineClipDragState(
       clipId: currentState.clipId,
+      mode: currentState.mode,
       previewStartSeconds: previewStart,
-      clipDurationSeconds: currentState.clipDurationSeconds,
+      previewSourceStartSeconds: previewSourceStart,
+      clipDurationSeconds: previewDuration,
     );
   }
 

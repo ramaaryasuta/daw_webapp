@@ -80,7 +80,9 @@ class TimelineTrackList extends ConsumerWidget {
           key: ValueKey(track.clip.id),
           clipId: track.clip.id,
           fileName: track.clip.audio.name,
-          durationSeconds: track.clip.durationSeconds,
+          clipDurationSeconds: track.clip.clipDurationSeconds,
+          sourceStartSeconds: track.clip.sourceStartSeconds,
+          sourceAudioDurationSeconds: track.clip.sourceAudioDurationSeconds,
           startTimeSeconds: track.clip.timelineStartSeconds,
           waveformPeaks: track.clip.audio.waveformPeaks,
           playheadSeconds: editorState.playheadSeconds,
@@ -92,6 +94,14 @@ class TimelineTrackList extends ConsumerWidget {
               controller.selectClip(trackId: track.id, clipId: track.clip.id),
           onMoveCommitted: (startSeconds) {
             controller.moveClip(track.clip.id, startSeconds);
+          },
+          onTrimCommitted: (result) {
+            controller.updateClipTrim(
+              clipId: track.clip.id,
+              timelineStartSeconds: result.startSeconds,
+              sourceStartSeconds: result.sourceStartSeconds,
+              clipDurationSeconds: result.clipDurationSeconds,
+            );
           },
         );
       },

@@ -19,15 +19,21 @@ void main() {
     const clip = AudioClip(
       id: 'clip-1',
       audio: asset,
+      clipDurationSeconds: 4.5,
       timelineStartSeconds: 10,
     );
 
-    expect(clip.durationSeconds, 4.5);
+    expect(clip.sourceAudioDurationSeconds, 4.5);
+    expect(clip.clipDurationSeconds, 4.5);
     expect(clip.timelineEndSeconds, 14.5);
   });
 
   test('moving a clip preserves its stable identity and audio asset', () {
-    const clip = AudioClip(id: 'clip-1', audio: asset);
+    const clip = AudioClip(
+      id: 'clip-1',
+      audio: asset,
+      clipDurationSeconds: 4.5,
+    );
     final moved = clip.copyWith(timelineStartSeconds: 12.5);
 
     expect(moved.id, clip.id);
@@ -39,7 +45,12 @@ void main() {
     const track = DawTrack(
       id: 'track-1',
       name: 'Track 1',
-      clip: AudioClip(id: 'clip-1', audio: asset, timelineStartSeconds: 20),
+      clip: AudioClip(
+        id: 'clip-1',
+        audio: asset,
+        clipDurationSeconds: 4.5,
+        timelineStartSeconds: 20,
+      ),
     );
 
     expect(track.endTimeSeconds, 24.5);
@@ -49,6 +60,7 @@ void main() {
     const clip = AudioClip(
       id: 'clip-1',
       audio: asset,
+      clipDurationSeconds: 4.5,
       timelineStartSeconds: 10,
     );
 
@@ -62,6 +74,7 @@ void main() {
     const clip = AudioClip(
       id: 'clip-1',
       audio: asset,
+      clipDurationSeconds: 4.5,
       timelineStartSeconds: 10,
     );
 
@@ -69,7 +82,74 @@ void main() {
 
     expect(timing.delaySeconds, 0);
     expect(timing.bufferOffsetSeconds, 2.25);
+    expect(timing.playbackDurationSeconds, 2.25);
     expect(clip.playbackTimingFrom(14.5), isNull);
+  });
+
+  test('trimmed clip keeps source range separate from timeline placement', () {
+    const clip = AudioClip(
+      id: 'clip-1',
+      audio: asset,
+      timelineStartSeconds: 10,
+      sourceStartSeconds: 1,
+      clipDurationSeconds: 2.5,
+    );
+
+    expect(clip.sourceAudioDurationSeconds, 4.5);
+    expect(clip.sourceEndSeconds, 3.5);
+    expect(clip.timelineEndSeconds, 12.5);
+  });
+
+  test('playback and seek respect a trimmed source range', () {
+    const clip = AudioClip(
+      id: 'clip-1',
+      audio: asset,
+      timelineStartSeconds: 10,
+      sourceStartSeconds: 1,
+      clipDurationSeconds: 2.5,
+    );
+
+    final beforeClip = clip.playbackTimingFrom(8)!;
+    expect(beforeClip.delaySeconds, 2);
+    expect(beforeClip.bufferOffsetSeconds, 1);
+    expect(beforeClip.playbackDurationSeconds, 2.5);
+
+    final insideClip = clip.playbackTimingFrom(11.5)!;
+    expect(insideClip.delaySeconds, 0);
+    expect(insideClip.bufferOffsetSeconds, 2.5);
+    expect(insideClip.playbackDurationSeconds, 1);
+    expect(clip.playbackTimingFrom(12.5), isNull);
+  });
+
+  test('moving a trimmed clip preserves its source range', () {
+    const clip = AudioClip(
+      id: 'clip-1',
+      audio: asset,
+      sourceStartSeconds: 1,
+      clipDurationSeconds: 2,
+    );
+
+    final moved = clip.copyWith(timelineStartSeconds: 20);
+
+    expect(moved.timelineStartSeconds, 20);
+    expect(moved.sourceStartSeconds, 1);
+    expect(moved.clipDurationSeconds, 2);
+  });
+
+  test('project duration uses the visible trimmed clip end', () {
+    const track = DawTrack(
+      id: 'track-1',
+      name: 'Track 1',
+      clip: AudioClip(
+        id: 'clip-1',
+        audio: asset,
+        timelineStartSeconds: 20,
+        sourceStartSeconds: 1,
+        clipDurationSeconds: 2,
+      ),
+    );
+
+    expect(calculateProjectDurationSeconds([track]), 22);
   });
 
   test('project duration is the latest positioned clip end', () {
@@ -77,12 +157,17 @@ void main() {
       const DawTrack(
         id: 'track-1',
         name: 'Track 1',
-        clip: AudioClip(id: 'clip-1', audio: asset),
+        clip: AudioClip(id: 'clip-1', audio: asset, clipDurationSeconds: 4.5),
       ),
       const DawTrack(
         id: 'track-2',
         name: 'Track 2',
-        clip: AudioClip(id: 'clip-2', audio: asset, timelineStartSeconds: 60),
+        clip: AudioClip(
+          id: 'clip-2',
+          audio: asset,
+          clipDurationSeconds: 4.5,
+          timelineStartSeconds: 60,
+        ),
       ),
     ];
 
@@ -108,6 +193,7 @@ void main() {
         clip: AudioClip(
           id: 'clip-$id',
           audio: trackAsset,
+          clipDurationSeconds: duration,
           timelineStartSeconds: start,
         ),
       );
@@ -144,7 +230,7 @@ void main() {
     const track = DawTrack(
       id: 'track-1',
       name: 'Track 1',
-      clip: AudioClip(id: 'clip-1', audio: asset),
+      clip: AudioClip(id: 'clip-1', audio: asset, clipDurationSeconds: 4.5),
       volume: 0.4,
     );
 

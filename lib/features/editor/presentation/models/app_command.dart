@@ -49,10 +49,18 @@ abstract final class EditorCommands {
     category: AppCommandCategory.timeline,
   );
 
+  static const trimAudioClip = AppCommand(
+    title: 'Trim Audio Clip',
+    description: 'Trim the visible start or end of an audio clip.',
+    shortcutParts: ['Drag Clip Edge'],
+    category: AppCommandCategory.timeline,
+  );
+
   static const all = <AppCommand>[
     zoomTimeline,
     scrollTimeline,
     panTimeline,
     moveAudioClip,
+    trimAudioClip,
   ];
 }

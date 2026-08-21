@@ -162,6 +162,7 @@ class WebAudioEngine {
       source.start(
         startAt + playbackTiming.delaySeconds,
         playbackTiming.bufferOffsetSeconds,
+        playbackTiming.playbackDurationSeconds,
       );
     }
 

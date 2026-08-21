@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -65,7 +66,7 @@ class EditorController extends Notifier<EditorState> {
   int _trackCounter = 0;
   int _assetCounter = 0;
   int _clipCounter = 0;
-  int _clipMoveRequestId = 0;
+  int _clipEditRequestId = 0;
 
   Timer? _playheadTimer;
 
@@ -125,7 +126,11 @@ class EditorController extends Notifier<EditorState> {
           DawTrack(
             id: trackId,
             name: file.name,
-            clip: AudioClip(id: clipId, audio: audio),
+            clip: AudioClip(
+              id: clipId,
+              audio: audio,
+              clipDurationSeconds: audio.durationSeconds,
+            ),
           ),
         );
       } catch (_) {
@@ -281,7 +286,7 @@ class EditorController extends Notifier<EditorState> {
       return;
     }
 
-    final requestId = ++_clipMoveRequestId;
+    final requestId = ++_clipEditRequestId;
     final tracks = [
       for (final track in state.tracks)
         if (track.clip.id == clipId)
@@ -298,7 +303,92 @@ class EditorController extends Notifier<EditorState> {
 
     await _audioEngine.seek(tracks: tracks, positionSeconds: previousPosition);
 
-    if (requestId != _clipMoveRequestId) {
+    if (requestId != _clipEditRequestId) {
+      return;
+    }
+
+    state = state.copyWith(
+      isPlaying: _audioEngine.isPlaying,
+      playheadSeconds: _audioEngine.currentPositionSeconds,
+    );
+
+    if (_audioEngine.isPlaying) {
+      _startPlayheadTicker();
+    }
+  }
+
+  Future<void> updateClipTrim({
+    required String clipId,
+    required double timelineStartSeconds,
+    required double sourceStartSeconds,
+    required double clipDurationSeconds,
+  }) async {
+    if (!timelineStartSeconds.isFinite ||
+        !sourceStartSeconds.isFinite ||
+        !clipDurationSeconds.isFinite) {
+      return;
+    }
+
+    DawTrack? trimmedTrack;
+    for (final track in state.tracks) {
+      if (track.clip.id == clipId) {
+        trimmedTrack = track;
+        break;
+      }
+    }
+
+    if (trimmedTrack == null) {
+      return;
+    }
+
+    final sourceDuration = trimmedTrack.clip.sourceAudioDurationSeconds;
+    final minimumDuration = math.min(
+      minimumClipDurationSeconds,
+      sourceDuration,
+    );
+    final normalizedSourceStart = sourceStartSeconds
+        .clamp(0.0, math.max(0.0, sourceDuration - minimumDuration))
+        .toDouble();
+    final maximumDuration = sourceDuration - normalizedSourceStart;
+    final normalizedDuration = clipDurationSeconds
+        .clamp(minimumDuration, maximumDuration)
+        .toDouble();
+    final normalizedTimelineStart = timelineStartSeconds
+        .clamp(0.0, double.infinity)
+        .toDouble();
+    final currentClip = trimmedTrack.clip;
+
+    if ((currentClip.timelineStartSeconds - normalizedTimelineStart).abs() <
+            0.000001 &&
+        (currentClip.sourceStartSeconds - normalizedSourceStart).abs() <
+            0.000001 &&
+        (currentClip.clipDurationSeconds - normalizedDuration).abs() <
+            0.000001) {
+      return;
+    }
+
+    final requestId = ++_clipEditRequestId;
+    final tracks = [
+      for (final track in state.tracks)
+        if (track.clip.id == clipId)
+          track.copyWith(
+            clip: track.clip.copyWith(
+              timelineStartSeconds: normalizedTimelineStart,
+              sourceStartSeconds: normalizedSourceStart,
+              clipDurationSeconds: normalizedDuration,
+            ),
+          )
+        else
+          track,
+    ];
+    final previousPosition = _audioEngine.currentPositionSeconds;
+
+    state = state.copyWith(tracks: tracks, selectedClipId: clipId);
+    _playheadTimer?.cancel();
+
+    await _audioEngine.seek(tracks: tracks, positionSeconds: previousPosition);
+
+    if (requestId != _clipEditRequestId) {
       return;
     }
 
@@ -313,7 +403,7 @@ class EditorController extends Notifier<EditorState> {
   }
 
   void removeTrack(String trackId) {
-    _clipMoveRequestId++;
+    _clipEditRequestId++;
     _audioEngine.removeTrack(trackId);
 
     final tracks = state.tracks.where((track) => track.id != trackId).toList();

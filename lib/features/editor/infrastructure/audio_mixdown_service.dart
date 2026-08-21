@@ -91,7 +91,11 @@ class AudioMixdownService implements AudioExportGenerator {
       gain.gain.value = gainValue;
       source.connect(gain);
       gain.connect(offlineContext.destination);
-      source.start(track.clip.timelineStartSeconds, 0);
+      source.start(
+        track.clip.timelineStartSeconds,
+        track.clip.sourceStartSeconds,
+        track.clip.clipDurationSeconds,
+      );
     }
 
     final renderedBuffer = await offlineContext.startRendering().toDart;
