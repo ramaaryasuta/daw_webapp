@@ -8,12 +8,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
 import '../application/editor_controller.dart';
+import '../domain/daw_track.dart';
 import '../domain/timeline_scale.dart';
 import '../infrastructure/audio_import_service.dart';
+import '../infrastructure/audio_mixdown_service.dart';
 import 'controllers/timeline_clip_drag_controller.dart';
 import 'models/app_command.dart';
 import 'widgets/commands_dialog.dart';
 import 'widgets/editor_menu_bar.dart';
+import 'widgets/export_dialog.dart';
 import 'widgets/track_header.dart';
 import 'widgets/track_list.dart';
 import 'widgets/timeline_ruler.dart';
@@ -249,7 +252,29 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     showCommandsDialog(context, commands: EditorCommands.all);
   }
 
-  List<EditorMenuSection> _buildMenuSections({required bool isImporting}) {
+  void _openExportDialog() {
+    final tracks = List<DawTrack>.unmodifiable(
+      ref.read(editorControllerProvider).tracks,
+    );
+
+    showExportDialog(
+      context,
+      tracks: tracks,
+      mixdownService: ref.read(audioMixdownServiceProvider),
+      onPreviewWillPlay: () {
+        if (!mounted || !ref.read(editorControllerProvider).isPlaying) {
+          return;
+        }
+
+        ref.read(editorControllerProvider.notifier).pause();
+      },
+    );
+  }
+
+  List<EditorMenuSection> _buildMenuSections({
+    required bool isImporting,
+    required bool hasTracks,
+  }) {
     return [
       EditorMenuSection(
         label: 'File',
@@ -258,6 +283,12 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             label: 'Import Audio...',
             icon: Icons.library_music_outlined,
             onSelected: isImporting ? null : _pickAudioFiles,
+          ),
+          EditorMenuAction(
+            label: 'Export...',
+            icon: Icons.download_outlined,
+            separatorBefore: true,
+            onSelected: isImporting || !hasTracks ? null : _openExportDialog,
           ),
         ],
       ),
@@ -615,7 +646,10 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       body: Column(
         children: [
           EditorMenuBar(
-            sections: _buildMenuSections(isImporting: editorState.isImporting),
+            sections: _buildMenuSections(
+              isImporting: editorState.isImporting,
+              hasTracks: editorState.tracks.isNotEmpty,
+            ),
           ),
 
           TransportBar(

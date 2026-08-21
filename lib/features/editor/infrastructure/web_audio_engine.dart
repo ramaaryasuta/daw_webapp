@@ -47,6 +47,12 @@ class WebAudioEngine {
 
   bool get isPlaying => _isPlaying;
 
+  double get sampleRate => _audioContext.sampleRate;
+
+  web.AudioBuffer? decodedBufferForAsset(String assetId) {
+    return _buffers[assetId];
+  }
+
   double get currentPositionSeconds {
     if (!_isPlaying) {
       return _timelineStartSeconds;
@@ -145,7 +151,7 @@ class WebAudioEngine {
 
       final gain = _audioContext.createGain();
 
-      gain.gain.value = _effectiveVolume(track, hasSolo: hasSolo);
+      gain.gain.value = effectiveTrackGain(track, hasSolo: hasSolo);
 
       source.connect(gain);
       gain.connect(_audioContext.destination);
@@ -252,7 +258,7 @@ class WebAudioEngine {
         continue;
       }
 
-      gain.gain.value = _effectiveVolume(track, hasSolo: hasSolo);
+      gain.gain.value = effectiveTrackGain(track, hasSolo: hasSolo);
     }
   }
 
@@ -273,18 +279,6 @@ class WebAudioEngine {
         gain.disconnect();
       } catch (_) {}
     }
-  }
-
-  double _effectiveVolume(DawTrack track, {required bool hasSolo}) {
-    if (track.isMuted) {
-      return 0;
-    }
-
-    if (hasSolo && !track.isSolo) {
-      return 0;
-    }
-
-    return track.volume;
   }
 
   List<double> _extractWaveformPeaks(

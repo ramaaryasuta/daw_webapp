@@ -51,3 +51,11 @@ double calculateProjectDurationSeconds(Iterable<DawTrack> tracks) {
 
   return duration;
 }
+
+double effectiveTrackGain(DawTrack track, {required bool hasSolo}) {
+  if (track.isMuted || (hasSolo && !track.isSolo)) {
+    return 0;
+  }
+
+  return track.volume;
+}

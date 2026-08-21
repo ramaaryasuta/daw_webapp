@@ -88,4 +88,24 @@ void main() {
 
     expect(calculateProjectDurationSeconds(tracks), 64.5);
   });
+
+  test('effective gain respects volume, mute, and project solo state', () {
+    const track = DawTrack(
+      id: 'track-1',
+      name: 'Track 1',
+      clip: AudioClip(id: 'clip-1', audio: asset),
+      volume: 0.4,
+    );
+
+    expect(effectiveTrackGain(track, hasSolo: false), 0.4);
+    expect(
+      effectiveTrackGain(track.copyWith(isMuted: true), hasSolo: false),
+      0,
+    );
+    expect(effectiveTrackGain(track, hasSolo: true), 0);
+    expect(
+      effectiveTrackGain(track.copyWith(isSolo: true), hasSolo: true),
+      0.4,
+    );
+  });
 }

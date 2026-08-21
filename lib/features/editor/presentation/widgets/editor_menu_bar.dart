@@ -12,11 +12,13 @@ class EditorMenuAction {
     required this.label,
     required this.onSelected,
     this.icon,
+    this.separatorBefore = false,
   });
 
   final String label;
   final VoidCallback? onSelected;
   final IconData? icon;
+  final bool separatorBefore;
 }
 
 class EditorMenuBar extends StatelessWidget {
@@ -54,7 +56,8 @@ class EditorMenuBar extends StatelessWidget {
                   visualDensity: VisualDensity.compact,
                 ),
                 menuChildren: [
-                  for (final action in section.actions)
+                  for (final action in section.actions) ...[
+                    if (action.separatorBefore) const Divider(height: 1),
                     MenuItemButton(
                       leadingIcon: action.icon == null
                           ? null
@@ -62,6 +65,7 @@ class EditorMenuBar extends StatelessWidget {
                       onPressed: action.onSelected,
                       child: Text(action.label),
                     ),
+                  ],
                 ],
                 child: Text(section.label),
               ),
