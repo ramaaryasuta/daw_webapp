@@ -52,4 +52,40 @@ void main() {
       throwsArgumentError,
     );
   });
+
+  test('data length preserves a sub-second rendered duration', () {
+    const sampleRate = 48000;
+    const frameCount = 36000;
+    final bytes = WavEncoder.encodePcm16(
+      channels: [Float32List(frameCount), Float32List(frameCount)],
+      sampleRate: sampleRate,
+    );
+    final data = ByteData.sublistView(bytes);
+    final channelCount = data.getUint16(22, Endian.little);
+    final bitsPerSample = data.getUint16(34, Endian.little);
+    final dataLength = data.getUint32(40, Endian.little);
+    final durationSeconds =
+        dataLength / (sampleRate * channelCount * (bitsPerSample ~/ 8));
+
+    expect(durationSeconds, 0.75);
+  });
+
+  test('cooperative encoder produces the same WAV bytes', () async {
+    final channels = [
+      Float32List.fromList([0, 0.5, -0.5, 1, -1]),
+      Float32List.fromList([1, -1, 0.25, -0.25, 0]),
+    ];
+
+    final synchronous = WavEncoder.encodePcm16(
+      channels: channels,
+      sampleRate: 48000,
+    );
+    final cooperative = await WavEncoder.encodePcm16Async(
+      channels: channels,
+      sampleRate: 48000,
+      framesPerChunk: 2,
+    );
+
+    expect(cooperative, synchronous);
+  });
 }

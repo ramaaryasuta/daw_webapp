@@ -89,6 +89,57 @@ void main() {
     expect(calculateProjectDurationSeconds(tracks), 64.5);
   });
 
+  group('export arrangement duration', () {
+    DawTrack track(String id, double start, double duration) {
+      final trackAsset = AudioAsset(
+        id: 'asset-$id',
+        name: '$id.wav',
+        extension: 'wav',
+        size: 1024,
+        durationSeconds: duration,
+        sampleRate: 48000,
+        numberOfChannels: 2,
+        waveformPeaks: const [0.25, 0.75],
+      );
+
+      return DawTrack(
+        id: 'track-$id',
+        name: 'Track $id',
+        clip: AudioClip(
+          id: 'clip-$id',
+          audio: trackAsset,
+          timelineStartSeconds: start,
+        ),
+      );
+    }
+
+    test('one five-second clip at zero ends at five seconds', () {
+      expect(calculateProjectDurationSeconds([track('a', 0, 5)]), 5);
+    });
+
+    test('a moved clip includes leading silence', () {
+      expect(calculateProjectDurationSeconds([track('a', 10, 5)]), 15);
+    });
+
+    test('separated clips include silence between them', () {
+      expect(
+        calculateProjectDurationSeconds([track('a', 0, 5), track('b', 10, 3)]),
+        13,
+      );
+    });
+
+    test('overlapping clips use their latest end instead of their sum', () {
+      expect(
+        calculateProjectDurationSeconds([track('a', 0, 10), track('b', 5, 3)]),
+        10,
+      );
+    });
+
+    test('sub-second clips retain fractional precision', () {
+      expect(calculateProjectDurationSeconds([track('a', 0, 0.75)]), 0.75);
+    });
+  });
+
   test('effective gain respects volume, mute, and project solo state', () {
     const track = DawTrack(
       id: 'track-1',

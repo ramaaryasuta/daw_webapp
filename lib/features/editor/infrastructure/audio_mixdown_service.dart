@@ -1,27 +1,16 @@
 import 'dart:js_interop';
-import 'dart:math' as math;
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:web/web.dart' as web;
 
 import '../domain/daw_track.dart';
+import 'audio_render_duration.dart';
+import 'generated_export.dart';
 import 'wav_encoder.dart';
 import 'web_audio_engine.dart';
 
-class RenderedAudioMix {
-  const RenderedAudioMix({
-    required this.wavBytes,
-    required this.durationSeconds,
-    required this.sampleRate,
-    required this.channelCount,
-  });
-
-  final Uint8List wavBytes;
-  final double durationSeconds;
-  final int sampleRate;
-  final int channelCount;
-}
+export 'generated_export.dart';
 
 class AudioMixdownException implements Exception {
   const AudioMixdownException(this.message);
@@ -32,7 +21,7 @@ class AudioMixdownException implements Exception {
   String toString() => message;
 }
 
-class AudioMixdownService {
+class AudioMixdownService implements AudioExportGenerator {
   const AudioMixdownService(this._audioEngine);
 
   static const int _channelCount = 2;
@@ -40,7 +29,8 @@ class AudioMixdownService {
 
   final WebAudioEngine _audioEngine;
 
-  Future<RenderedAudioMix> renderStereoWav(List<DawTrack> tracks) async {
+  @override
+  Future<GeneratedExport> generateWavExport(List<DawTrack> tracks) async {
     if (tracks.isEmpty) {
       throw const AudioMixdownException('The project has no audio to export.');
     }
@@ -54,8 +44,18 @@ class AudioMixdownService {
       );
     }
 
-    final sampleRate = _audioEngine.sampleRate.round();
-    final frameCount = math.max(1, (durationSeconds * sampleRate).ceil());
+    final audioEngineSampleRate = _audioEngine.sampleRate;
+    if (!audioEngineSampleRate.isFinite || audioEngineSampleRate <= 0) {
+      throw const AudioMixdownException(
+        'The audio sample rate cannot be rendered safely.',
+      );
+    }
+
+    final sampleRate = audioEngineSampleRate.round();
+    final frameCount = calculateOfflineFrameCount(
+      durationSeconds: durationSeconds,
+      sampleRate: sampleRate.toDouble(),
+    );
     final wavDataLength =
         frameCount * _channelCount * (WavEncoder.bitsPerSample ~/ 8);
     if (wavDataLength > 0xffffffff - 36) {
@@ -95,21 +95,50 @@ class AudioMixdownService {
     }
 
     final renderedBuffer = await offlineContext.startRendering().toDart;
+    final renderedFrameCount = renderedBuffer.length;
+    final renderedSampleRate = renderedBuffer.sampleRate;
+    final renderedChannelCount = renderedBuffer.numberOfChannels;
+    late final double renderedDurationSeconds;
+    try {
+      renderedDurationSeconds = validateRenderedDurationSeconds(
+        durationSeconds: renderedBuffer.duration,
+        frameCount: renderedFrameCount,
+        sampleRate: renderedSampleRate,
+        channelCount: renderedChannelCount,
+      );
+    } on ArgumentError catch (error) {
+      debugPrint(
+        '[ExportDebug] rendered buffer is invalid: '
+        'duration=${renderedBuffer.duration} '
+        'frames=$renderedFrameCount '
+        'sampleRate=$renderedSampleRate '
+        'channels=$renderedChannelCount; $error',
+      );
+      throw const AudioMixdownException(
+        'The generated audio has invalid duration metadata.',
+      );
+    }
     final channels = <Float32List>[
-      for (var channel = 0; channel < _channelCount; channel++)
+      for (var channel = 0; channel < renderedChannelCount; channel++)
         renderedBuffer.getChannelData(channel).toDart,
     ];
-    final wavBytes = WavEncoder.encodePcm16(
+    final renderedSampleRateInt = renderedSampleRate.round();
+    final wavBytes = await WavEncoder.encodePcm16Async(
       channels: channels,
-      sampleRate: sampleRate,
+      sampleRate: renderedSampleRateInt,
     );
 
-    return RenderedAudioMix(
+    return GeneratedExport(
       wavBytes: wavBytes,
-      durationSeconds: renderedBuffer.duration,
-      sampleRate: sampleRate,
-      channelCount: _channelCount,
+      durationSeconds: renderedDurationSeconds,
+      sampleRate: renderedSampleRateInt,
+      channelCount: renderedChannelCount,
+      fileName: 'daw-export.wav',
     );
+  }
+
+  Future<GeneratedExport> renderStereoWav(List<DawTrack> tracks) {
+    return generateWavExport(tracks);
   }
 }
 

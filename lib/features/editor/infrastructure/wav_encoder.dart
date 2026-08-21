@@ -3,8 +3,61 @@ import 'dart:typed_data';
 abstract final class WavEncoder {
   static const int bitsPerSample = 16;
   static const int _headerLength = 44;
+  static const int _defaultFramesPerChunk = 131072;
 
   static Uint8List encodePcm16({
+    required List<Float32List> channels,
+    required int sampleRate,
+  }) {
+    final output = _preparePcm16(channels: channels, sampleRate: sampleRate);
+    _writePcmFrames(
+      channels: channels,
+      data: output.data,
+      startFrame: 0,
+      endFrame: output.frameCount,
+    );
+
+    return output.bytes;
+  }
+
+  static Future<Uint8List> encodePcm16Async({
+    required List<Float32List> channels,
+    required int sampleRate,
+    int framesPerChunk = _defaultFramesPerChunk,
+  }) async {
+    if (framesPerChunk <= 0) {
+      throw ArgumentError.value(
+        framesPerChunk,
+        'framesPerChunk',
+        'Must be positive.',
+      );
+    }
+
+    final output = _preparePcm16(channels: channels, sampleRate: sampleRate);
+    for (
+      var startFrame = 0;
+      startFrame < output.frameCount;
+      startFrame += framesPerChunk
+    ) {
+      final endFrame = (startFrame + framesPerChunk)
+          .clamp(0, output.frameCount)
+          .toInt();
+      _writePcmFrames(
+        channels: channels,
+        data: output.data,
+        startFrame: startFrame,
+        endFrame: endFrame,
+      );
+
+      if (endFrame < output.frameCount) {
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+
+    return output.bytes;
+  }
+
+  static ({Uint8List bytes, ByteData data, int frameCount}) _preparePcm16({
     required List<Float32List> channels,
     required int sampleRate,
   }) {
@@ -46,9 +99,21 @@ abstract final class WavEncoder {
     _writeAscii(data, 36, 'data');
     data.setUint32(40, dataLength, Endian.little);
 
-    var byteOffset = _headerLength;
-    for (var frame = 0; frame < frameCount; frame++) {
-      for (var channel = 0; channel < channelCount; channel++) {
+    return (bytes: bytes, data: data, frameCount: frameCount);
+  }
+
+  static void _writePcmFrames({
+    required List<Float32List> channels,
+    required ByteData data,
+    required int startFrame,
+    required int endFrame,
+  }) {
+    final bytesPerSample = bitsPerSample ~/ 8;
+    var byteOffset =
+        _headerLength + startFrame * channels.length * bytesPerSample;
+
+    for (var frame = startFrame; frame < endFrame; frame++) {
+      for (var channel = 0; channel < channels.length; channel++) {
         final sample = channels[channel][frame].clamp(-1.0, 1.0);
         final pcm = sample < 0
             ? (sample * 32768).round()
@@ -57,8 +122,6 @@ abstract final class WavEncoder {
         byteOffset += bytesPerSample;
       }
     }
-
-    return bytes;
   }
 
   static void _writeAscii(ByteData data, int offset, String value) {

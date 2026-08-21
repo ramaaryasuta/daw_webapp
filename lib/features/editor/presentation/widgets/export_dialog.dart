@@ -3,37 +3,38 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../domain/daw_track.dart';
-import '../../infrastructure/audio_mixdown_service.dart';
 import '../../infrastructure/browser_audio_file.dart';
+import '../../infrastructure/generated_export.dart';
+import '../formatters/export_duration_formatter.dart';
 
 Future<void> showExportDialog(
   BuildContext context, {
-  required List<DawTrack> tracks,
-  required AudioMixdownService mixdownService,
+  required List<DawTrack> Function() createTracksSnapshot,
+  required AudioExportGenerator exportGenerator,
   required VoidCallback onPreviewWillPlay,
 }) {
   return showDialog<void>(
     context: context,
     builder: (context) => ExportDialog(
-      tracks: tracks,
-      mixdownService: mixdownService,
+      createTracksSnapshot: createTracksSnapshot,
+      exportGenerator: exportGenerator,
       onPreviewWillPlay: onPreviewWillPlay,
     ),
   );
 }
 
-enum _ExportStatus { rendering, ready, error }
+enum _ExportStatus { idle, generating, ready, error }
 
 class ExportDialog extends StatefulWidget {
   const ExportDialog({
     super.key,
-    required this.tracks,
-    required this.mixdownService,
+    required this.createTracksSnapshot,
+    required this.exportGenerator,
     required this.onPreviewWillPlay,
   });
 
-  final List<DawTrack> tracks;
-  final AudioMixdownService mixdownService;
+  final List<DawTrack> Function() createTracksSnapshot;
+  final AudioExportGenerator exportGenerator;
   final VoidCallback onPreviewWillPlay;
 
   @override
@@ -43,72 +44,84 @@ class ExportDialog extends StatefulWidget {
 class _ExportDialogState extends State<ExportDialog> {
   static const _previewRefreshInterval = Duration(milliseconds: 100);
 
-  _ExportStatus _status = _ExportStatus.rendering;
-  RenderedAudioMix? _renderedMix;
+  _ExportStatus _status = _ExportStatus.idle;
+  GeneratedExport? _generatedExport;
   BrowserAudioFile? _audioFile;
   Timer? _previewTicker;
-  String? _renderError;
+  String? _generationError;
   String? _previewError;
   double _previewPositionSeconds = 0;
   bool _isPreviewPlaying = false;
-  int _renderRequestId = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _renderMix();
-  }
+  int _generationRequestId = 0;
 
   @override
   void dispose() {
-    _renderRequestId++;
+    _generationRequestId++;
     _stopPreviewTicker();
     _audioFile?.dispose();
     super.dispose();
   }
 
-  Future<void> _renderMix() async {
-    final requestId = ++_renderRequestId;
+  Future<void> _generateExport() async {
+    if (_status == _ExportStatus.generating) {
+      return;
+    }
+
+    final tracks = List<DawTrack>.unmodifiable(widget.createTracksSnapshot());
+    final requestId = ++_generationRequestId;
     _stopPreviewTicker();
     _audioFile?.dispose();
     _audioFile = null;
 
-    if (mounted) {
-      setState(() {
-        _status = _ExportStatus.rendering;
-        _renderedMix = null;
-        _renderError = null;
-        _previewError = null;
-        _previewPositionSeconds = 0;
-        _isPreviewPlaying = false;
-      });
+    setState(() {
+      _status = _ExportStatus.generating;
+      _generatedExport = null;
+      _generationError = null;
+      _previewError = null;
+      _previewPositionSeconds = 0;
+      _isPreviewPlaying = false;
+    });
+
+    // Let Flutter paint the generating state before offline rendering and WAV
+    // encoding begin. This is a frame yield, not an artificial loading delay.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || requestId != _generationRequestId) {
+      return;
     }
 
     try {
-      final renderedMix = await widget.mixdownService.renderStereoWav(
-        widget.tracks,
+      final generatedExport = await widget.exportGenerator.generateWavExport(
+        tracks,
       );
 
-      if (!mounted || requestId != _renderRequestId) {
+      if (!mounted || requestId != _generationRequestId) {
         return;
       }
 
-      final audioFile = BrowserAudioFile.wav(renderedMix.wavBytes);
+      if (!generatedExport.durationSeconds.isFinite ||
+          generatedExport.durationSeconds <= 0) {
+        throw StateError(
+          'Generated export has invalid duration: '
+          '${generatedExport.durationSeconds}',
+        );
+      }
+
+      final audioFile = BrowserAudioFile.wav(generatedExport.wavBytes);
 
       setState(() {
-        _renderedMix = renderedMix;
+        _generatedExport = generatedExport;
         _audioFile = audioFile;
         _status = _ExportStatus.ready;
       });
     } catch (error, stackTrace) {
-      debugPrint('Audio export failed: $error\n$stackTrace');
-      if (!mounted || requestId != _renderRequestId) {
+      debugPrint('[ExportDebug] export generation failed: $error\n$stackTrace');
+      if (!mounted || requestId != _generationRequestId) {
         return;
       }
 
       setState(() {
         _status = _ExportStatus.error;
-        _renderError = 'Unable to render the project.';
+        _generationError = 'Unable to generate export.';
       });
     }
   }
@@ -129,10 +142,10 @@ class _ExportDialogState extends State<ExportDialog> {
       return;
     }
 
-    final renderedMix = _renderedMix;
-    if (renderedMix != null &&
+    final generatedExport = _generatedExport;
+    if (generatedExport != null &&
         audioFile.currentPositionSeconds >=
-            renderedMix.durationSeconds - 0.001) {
+            generatedExport.durationSeconds - 0.001) {
       audioFile.seek(0);
       setState(() {
         _previewPositionSeconds = 0;
@@ -166,13 +179,13 @@ class _ExportDialogState extends State<ExportDialog> {
 
   void _seekPreview(double positionSeconds) {
     final audioFile = _audioFile;
-    final renderedMix = _renderedMix;
-    if (audioFile == null || renderedMix == null) {
+    final generatedExport = _generatedExport;
+    if (audioFile == null || generatedExport == null) {
       return;
     }
 
     final position = positionSeconds
-        .clamp(0.0, renderedMix.durationSeconds)
+        .clamp(0.0, generatedExport.durationSeconds)
         .toDouble();
     audioFile.seek(position);
     setState(() {
@@ -190,14 +203,14 @@ class _ExportDialogState extends State<ExportDialog> {
       }
 
       final audioFile = _audioFile;
-      final renderedMix = _renderedMix;
-      if (audioFile == null || renderedMix == null) {
+      final generatedExport = _generatedExport;
+      if (audioFile == null || generatedExport == null) {
         _stopPreviewTicker();
         return;
       }
 
       final position = audioFile.currentPositionSeconds
-          .clamp(0.0, renderedMix.durationSeconds)
+          .clamp(0.0, generatedExport.durationSeconds)
           .toDouble();
       final isPlaying = audioFile.isPlaying;
 
@@ -218,7 +231,13 @@ class _ExportDialogState extends State<ExportDialog> {
   }
 
   void _download() {
-    _audioFile?.download();
+    final audioFile = _audioFile;
+    final generatedExport = _generatedExport;
+    if (audioFile == null || generatedExport == null) {
+      return;
+    }
+
+    audioFile.download(fileName: generatedExport.fileName);
   }
 
   @override
@@ -251,7 +270,7 @@ class _ExportDialogState extends State<ExportDialog> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Final stereo mix',
+                          'Create a final stereo WAV mix of your arrangement.',
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(color: colorScheme.onSurfaceVariant),
                         ),
@@ -273,12 +292,15 @@ class _ExportDialogState extends State<ExportDialog> {
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 180),
                   child: switch (_status) {
-                    _ExportStatus.rendering => const _RenderingContent(
-                      key: ValueKey('rendering'),
+                    _ExportStatus.idle => const _IdleContent(
+                      key: ValueKey('idle'),
+                    ),
+                    _ExportStatus.generating => const _GeneratingContent(
+                      key: ValueKey('generating'),
                     ),
                     _ExportStatus.ready => _ReadyContent(
                       key: const ValueKey('ready'),
-                      renderedMix: _renderedMix!,
+                      generatedExport: _generatedExport!,
                       positionSeconds: _previewPositionSeconds,
                       isPlaying: _isPreviewPlaying,
                       previewError: _previewError,
@@ -287,8 +309,7 @@ class _ExportDialogState extends State<ExportDialog> {
                     ),
                     _ExportStatus.error => _ErrorContent(
                       key: const ValueKey('error'),
-                      message: _renderError ?? 'Unable to render the project.',
-                      onRetry: _renderMix,
+                      message: _generationError ?? 'Unable to generate export.',
                     ),
                   },
                 ),
@@ -304,14 +325,40 @@ class _ExportDialogState extends State<ExportDialog> {
                     onPressed: () => Navigator.of(context).pop(),
                     child: const Text('Close'),
                   ),
+                  if (_status == _ExportStatus.ready) ...[
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      onPressed: _generateExport,
+                      child: const Text('Regenerate'),
+                    ),
+                  ],
                   const SizedBox(width: 8),
-                  FilledButton.icon(
-                    onPressed: _status == _ExportStatus.ready
-                        ? _download
-                        : null,
-                    icon: const Icon(Icons.download_outlined, size: 18),
-                    label: const Text('Export WAV'),
-                  ),
+                  switch (_status) {
+                    _ExportStatus.idle => FilledButton.icon(
+                      onPressed: _generateExport,
+                      icon: const Icon(Icons.graphic_eq, size: 18),
+                      label: const Text('Generate Export'),
+                    ),
+                    _ExportStatus.generating => FilledButton.icon(
+                      onPressed: null,
+                      icon: const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      label: const Text('Generating...'),
+                    ),
+                    _ExportStatus.ready => FilledButton.icon(
+                      onPressed: _download,
+                      icon: const Icon(Icons.download_outlined, size: 18),
+                      label: const Text('Download WAV'),
+                    ),
+                    _ExportStatus.error => FilledButton.icon(
+                      onPressed: _generateExport,
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: const Text('Retry'),
+                    ),
+                  },
                 ],
               ),
             ),
@@ -322,8 +369,37 @@ class _ExportDialogState extends State<ExportDialog> {
   }
 }
 
-class _RenderingContent extends StatelessWidget {
-  const _RenderingContent({super.key});
+class _IdleContent extends StatelessWidget {
+  const _IdleContent({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      height: 210,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Generate a final WAV mix of the current arrangement.',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+          SizedBox(height: 20),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _ExportMetadata(label: 'Format', value: 'WAV / PCM 16-bit'),
+              _ExportMetadata(label: 'Channels', value: 'Stereo'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GeneratingContent extends StatelessWidget {
+  const _GeneratingContent({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -339,10 +415,10 @@ class _RenderingContent extends StatelessWidget {
               child: CircularProgressIndicator(strokeWidth: 3),
             ),
             const SizedBox(height: 18),
-            const Text('Rendering mix...'),
+            const Text('Generating export...'),
             const SizedBox(height: 6),
             Text(
-              'Preparing a stereo WAV preview',
+              'Rendering the mix and preparing the WAV',
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -357,7 +433,7 @@ class _RenderingContent extends StatelessWidget {
 class _ReadyContent extends StatelessWidget {
   const _ReadyContent({
     super.key,
-    required this.renderedMix,
+    required this.generatedExport,
     required this.positionSeconds,
     required this.isPlaying,
     required this.previewError,
@@ -365,7 +441,7 @@ class _ReadyContent extends StatelessWidget {
     required this.onSeek,
   });
 
-  final RenderedAudioMix renderedMix;
+  final GeneratedExport generatedExport;
   final double positionSeconds;
   final bool isPlaying;
   final String? previewError;
@@ -379,6 +455,11 @@ class _ReadyContent extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const Text(
+          'Ready to export',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 16),
         Wrap(
           spacing: 10,
           runSpacing: 10,
@@ -386,17 +467,17 @@ class _ReadyContent extends StatelessWidget {
             const _ExportMetadata(label: 'Format', value: 'WAV / PCM 16-bit'),
             _ExportMetadata(
               label: 'Channels',
-              value: renderedMix.channelCount == 2
+              value: generatedExport.channelCount == 2
                   ? 'Stereo'
-                  : '${renderedMix.channelCount}',
+                  : '${generatedExport.channelCount}',
             ),
             _ExportMetadata(
               label: 'Duration',
-              value: _formatDuration(renderedMix.durationSeconds),
+              value: formatExportDuration(generatedExport.durationSeconds),
             ),
             _ExportMetadata(
               label: 'Sample rate',
-              value: '${renderedMix.sampleRate} Hz',
+              value: '${generatedExport.sampleRate} Hz',
             ),
           ],
         ),
@@ -418,19 +499,19 @@ class _ReadyContent extends StatelessWidget {
                     icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
                   ),
                   const SizedBox(width: 8),
-                  Text(_formatDuration(positionSeconds)),
+                  Text(formatExportDuration(positionSeconds)),
                   Expanded(
                     child: Slider(
                       value: positionSeconds.clamp(
                         0.0,
-                        renderedMix.durationSeconds,
+                        generatedExport.durationSeconds,
                       ),
                       min: 0,
-                      max: renderedMix.durationSeconds,
+                      max: generatedExport.durationSeconds,
                       onChanged: onSeek,
                     ),
                   ),
-                  Text(_formatDuration(renderedMix.durationSeconds)),
+                  Text(formatExportDuration(generatedExport.durationSeconds)),
                 ],
               ),
               if (previewError != null)
@@ -484,14 +565,9 @@ class _ExportMetadata extends StatelessWidget {
 }
 
 class _ErrorContent extends StatelessWidget {
-  const _ErrorContent({
-    super.key,
-    required this.message,
-    required this.onRetry,
-  });
+  const _ErrorContent({super.key, required this.message});
 
   final String message;
-  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -506,29 +582,9 @@ class _ErrorContent extends StatelessWidget {
             Icon(Icons.error_outline, color: colorScheme.error, size: 38),
             const SizedBox(height: 14),
             Text(message),
-            const SizedBox(height: 14),
-            OutlinedButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('Retry'),
-            ),
           ],
         ),
       ),
     );
   }
-}
-
-String _formatDuration(double seconds) {
-  final totalMilliseconds = (seconds * 1000).round().clamp(0, 1 << 52);
-  final hours = totalMilliseconds ~/ Duration.millisecondsPerHour;
-  final minutes = (totalMilliseconds ~/ Duration.millisecondsPerMinute) % 60;
-  final wholeSeconds =
-      (totalMilliseconds ~/ Duration.millisecondsPerSecond) % 60;
-  final milliseconds = totalMilliseconds % 1000;
-  final prefix = hours > 0 ? '${hours.toString().padLeft(2, '0')}:' : '';
-
-  return '$prefix${minutes.toString().padLeft(2, '0')}:'
-      '${wholeSeconds.toString().padLeft(2, '0')}.'
-      '${milliseconds.toString().padLeft(3, '0')}';
 }

@@ -253,14 +253,12 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   }
 
   void _openExportDialog() {
-    final tracks = List<DawTrack>.unmodifiable(
-      ref.read(editorControllerProvider).tracks,
-    );
-
     showExportDialog(
       context,
-      tracks: tracks,
-      mixdownService: ref.read(audioMixdownServiceProvider),
+      createTracksSnapshot: () => List<DawTrack>.unmodifiable(
+        ref.read(editorControllerProvider).tracks,
+      ),
+      exportGenerator: ref.read(audioMixdownServiceProvider),
       onPreviewWillPlay: () {
         if (!mounted || !ref.read(editorControllerProvider).isPlaying) {
           return;
