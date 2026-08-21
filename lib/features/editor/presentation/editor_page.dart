@@ -8,8 +8,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
 import '../application/editor_controller.dart';
+import '../application/snap_controller.dart';
+import '../application/tempo_controller.dart';
 import '../domain/daw_track.dart';
 import '../domain/timeline_scale.dart';
+import '../domain/timeline_snapper.dart';
 import '../infrastructure/audio_import_service.dart';
 import '../infrastructure/audio_mixdown_service.dart';
 import 'controllers/timeline_clip_drag_controller.dart';
@@ -246,7 +249,12 @@ class _EditorPageState extends ConsumerState<EditorPage> {
 
   void _handleTimelineSeek(double positionSeconds) {
     _markTimelineUserInteraction();
-    ref.read(editorControllerProvider.notifier).seek(positionSeconds);
+    final snappedPosition = TimelineSnapper.snapTime(
+      candidateSeconds: positionSeconds,
+      bpm: ref.read(tempoControllerProvider).bpm,
+      settings: ref.read(snapControllerProvider),
+    );
+    ref.read(editorControllerProvider.notifier).seek(snappedPosition);
   }
 
   void _openCommandsDialog() {

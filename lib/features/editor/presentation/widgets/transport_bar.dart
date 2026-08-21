@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'tempo_controls.dart';
+import 'snap_control.dart';
 
 class TransportBar extends StatelessWidget {
   const TransportBar({
@@ -47,6 +48,10 @@ class TransportBar extends StatelessWidget {
           const SizedBox(width: 24),
 
           const TempoControls(),
+
+          const SizedBox(width: 12),
+
+          const SnapControl(),
 
           const Spacer(),
 

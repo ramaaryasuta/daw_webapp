@@ -1,4 +1,5 @@
 import 'package:daw_webapp/features/editor/presentation/controllers/timeline_clip_drag_controller.dart';
+import 'package:daw_webapp/features/editor/domain/snap_settings.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -214,5 +215,119 @@ void main() {
     expect(dragController.value!.previewSourceStartSeconds, 2);
     expect(dragController.value!.clipDurationSeconds, 8);
     dragController.end(5);
+  });
+
+  testWidgets('move snaps the timeline left edge and supports bypass', (
+    tester,
+  ) async {
+    final scrollController = ScrollController();
+    final viewportKey = GlobalKey();
+    final dragController = TimelineClipDragController(
+      scrollController,
+      viewportKey,
+      () {},
+    );
+    addTearDown(() {
+      dragController.dispose();
+      scrollController.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          key: viewportKey,
+          width: 300,
+          child: SingleChildScrollView(
+            controller: scrollController,
+            scrollDirection: Axis.horizontal,
+            child: const SizedBox(width: 1200, height: 100),
+          ),
+        ),
+      ),
+    );
+
+    dragController.begin(
+      pointer: 6,
+      clipId: 'clip-6',
+      pointerGlobalX: 100,
+      clipStartSeconds: 3,
+      clipDurationSeconds: 2,
+      pixelsPerSecond: 100,
+      bpm: 120,
+      snapSettings: const SnapSettings(subdivision: SnapSubdivision.beat),
+    );
+    dragController.update(pointer: 6, pointerGlobalX: 131);
+    expect(dragController.value!.previewStartSeconds, 3.5);
+
+    dragController.update(pointer: 6, pointerGlobalX: 131, bypassSnap: true);
+    expect(dragController.value!.previewStartSeconds, closeTo(3.31, 1e-12));
+  });
+
+  testWidgets('left and right trims snap their timeline edges', (tester) async {
+    final scrollController = ScrollController();
+    final viewportKey = GlobalKey();
+    final dragController = TimelineClipDragController(
+      scrollController,
+      viewportKey,
+      () {},
+    );
+    addTearDown(() {
+      dragController.dispose();
+      scrollController.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          key: viewportKey,
+          width: 300,
+          child: SingleChildScrollView(
+            controller: scrollController,
+            scrollDirection: Axis.horizontal,
+            child: const SizedBox(width: 1200, height: 100),
+          ),
+        ),
+      ),
+    );
+
+    const settings = SnapSettings(subdivision: SnapSubdivision.beat);
+    dragController.beginTrim(
+      pointer: 7,
+      clipId: 'clip-7',
+      mode: TimelineClipDragMode.trimStart,
+      pointerGlobalX: 100,
+      clipStartSeconds: 2,
+      sourceStartSeconds: 1,
+      clipDurationSeconds: 4,
+      sourceAudioDurationSeconds: 8,
+      pixelsPerSecond: 100,
+      bpm: 120,
+      snapSettings: settings,
+    );
+    dragController.update(pointer: 7, pointerGlobalX: 237);
+    expect(dragController.value!.previewStartSeconds, 3.5);
+    expect(dragController.value!.previewSourceStartSeconds, 2.5);
+    expect(dragController.value!.clipDurationSeconds, 2.5);
+    expect(dragController.value!.previewEndSeconds, 6);
+    dragController.end(7);
+
+    dragController.beginTrim(
+      pointer: 8,
+      clipId: 'clip-8',
+      mode: TimelineClipDragMode.trimEnd,
+      pointerGlobalX: 100,
+      clipStartSeconds: 2,
+      sourceStartSeconds: 1,
+      clipDurationSeconds: 4,
+      sourceAudioDurationSeconds: 8,
+      pixelsPerSecond: 100,
+      bpm: 120,
+      snapSettings: settings,
+    );
+    dragController.update(pointer: 8, pointerGlobalX: 137);
+    expect(dragController.value!.previewStartSeconds, 2);
+    expect(dragController.value!.previewSourceStartSeconds, 1);
+    expect(dragController.value!.clipDurationSeconds, 4.5);
+    expect(dragController.value!.previewEndSeconds, 6.5);
   });
 }

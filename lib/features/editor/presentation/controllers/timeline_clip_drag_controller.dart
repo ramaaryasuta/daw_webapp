@@ -2,8 +2,11 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../domain/audio_clip.dart';
+import '../../domain/snap_settings.dart';
+import '../../domain/timeline_snapper.dart';
 
 enum TimelineClipDragMode { move, trimStart, trimEnd }
 
@@ -75,6 +78,8 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
   double _dragStartClipDurationSeconds = 0;
   double _sourceAudioDurationSeconds = 0;
   double _pixelsPerSecond = 1;
+  double _bpm = 120;
+  SnapSettings _snapSettings = const SnapSettings(enabled: false);
 
   bool get isDragging => value != null;
 
@@ -87,6 +92,8 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     required double pixelsPerSecond,
     double sourceStartSeconds = 0,
     double? sourceAudioDurationSeconds,
+    double bpm = 120,
+    SnapSettings snapSettings = const SnapSettings(enabled: false),
   }) {
     return _begin(
       pointer: pointer,
@@ -99,6 +106,8 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
       sourceAudioDurationSeconds:
           sourceAudioDurationSeconds ?? clipDurationSeconds,
       pixelsPerSecond: pixelsPerSecond,
+      bpm: bpm,
+      snapSettings: snapSettings,
     );
   }
 
@@ -112,6 +121,8 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     required double clipDurationSeconds,
     required double sourceAudioDurationSeconds,
     required double pixelsPerSecond,
+    double bpm = 120,
+    SnapSettings snapSettings = const SnapSettings(enabled: false),
   }) {
     assert(mode != TimelineClipDragMode.move);
     return _begin(
@@ -124,6 +135,8 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
       clipDurationSeconds: clipDurationSeconds,
       sourceAudioDurationSeconds: sourceAudioDurationSeconds,
       pixelsPerSecond: pixelsPerSecond,
+      bpm: bpm,
+      snapSettings: snapSettings,
     );
   }
 
@@ -137,6 +150,8 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     required double clipDurationSeconds,
     required double sourceAudioDurationSeconds,
     required double pixelsPerSecond,
+    required double bpm,
+    required SnapSettings snapSettings,
   }) {
     if (isDragging ||
         !_horizontalScrollController.hasClients ||
@@ -154,6 +169,8 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     _dragStartClipDurationSeconds = clipDurationSeconds;
     _sourceAudioDurationSeconds = sourceAudioDurationSeconds;
     _pixelsPerSecond = pixelsPerSecond;
+    _bpm = bpm;
+    _snapSettings = snapSettings;
     value = TimelineClipDragState(
       clipId: clipId,
       mode: mode,
@@ -165,14 +182,18 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     return true;
   }
 
-  void update({required int pointer, required double pointerGlobalX}) {
+  void update({
+    required int pointer,
+    required double pointerGlobalX,
+    bool bypassSnap = false,
+  }) {
     if (pointer != _pointer || !isDragging) {
       return;
     }
 
     _pointerGlobalX = pointerGlobalX;
     _onTimelineInteraction();
-    _updatePreviewPosition();
+    _updatePreviewPosition(bypassSnap: bypassSnap);
     _updateAutoScroll();
   }
 
@@ -214,7 +235,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     _onTimelineInteraction();
   }
 
-  void _updatePreviewPosition() {
+  void _updatePreviewPosition({bool bypassSnap = false}) {
     final currentState = value;
     if (currentState == null || !_horizontalScrollController.hasClients) {
       return;
@@ -230,7 +251,10 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
 
     switch (currentState.mode) {
       case TimelineClipDragMode.move:
-        previewStart = math.max(0.0, _dragStartClipSeconds + deltaSeconds);
+        previewStart = _snapTimelineTime(
+          _dragStartClipSeconds + deltaSeconds,
+          bypassSnap: bypassSnap,
+        );
         break;
       case TimelineClipDragMode.trimStart:
         final minimumDuration = math.min(
@@ -242,9 +266,16 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
           -_dragStartSourceSeconds,
         );
         final maximumDelta = _dragStartClipDurationSeconds - minimumDuration;
-        final trimDelta = deltaSeconds
-            .clamp(minimumDelta, maximumDelta)
+        final minimumTimelineStart = _dragStartClipSeconds + minimumDelta;
+        final maximumTimelineStart = _dragStartClipSeconds + maximumDelta;
+        final snappedTimelineStart = _snapTimelineTime(
+          _dragStartClipSeconds + deltaSeconds,
+          bypassSnap: bypassSnap,
+        );
+        final previewTimelineStart = snappedTimelineStart
+            .clamp(minimumTimelineStart, maximumTimelineStart)
             .toDouble();
+        final trimDelta = previewTimelineStart - _dragStartClipSeconds;
         previewStart = _dragStartClipSeconds + trimDelta;
         previewSourceStart = _dragStartSourceSeconds + trimDelta;
         previewDuration = _dragStartClipDurationSeconds - trimDelta;
@@ -256,9 +287,20 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
         );
         final maximumDuration =
             _sourceAudioDurationSeconds - _dragStartSourceSeconds;
-        previewDuration = (_dragStartClipDurationSeconds + deltaSeconds)
-            .clamp(minimumDuration, maximumDuration)
+        final candidateTimelineEnd =
+            _dragStartClipSeconds +
+            _dragStartClipDurationSeconds +
+            deltaSeconds;
+        final snappedTimelineEnd = _snapTimelineTime(
+          candidateTimelineEnd,
+          bypassSnap: bypassSnap,
+        );
+        final minimumTimelineEnd = _dragStartClipSeconds + minimumDuration;
+        final maximumTimelineEnd = _dragStartClipSeconds + maximumDuration;
+        final previewTimelineEnd = snappedTimelineEnd
+            .clamp(minimumTimelineEnd, maximumTimelineEnd)
             .toDouble();
+        previewDuration = previewTimelineEnd - _dragStartClipSeconds;
         break;
     }
 
@@ -275,6 +317,19 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
       previewStartSeconds: previewStart,
       previewSourceStartSeconds: previewSourceStart,
       clipDurationSeconds: previewDuration,
+    );
+  }
+
+  double _snapTimelineTime(
+    double candidateSeconds, {
+    required bool bypassSnap,
+  }) {
+    return TimelineSnapper.snapTime(
+      candidateSeconds: candidateSeconds,
+      bpm: _bpm,
+      settings: bypassSnap
+          ? _snapSettings.copyWith(enabled: false)
+          : _snapSettings,
     );
   }
 
@@ -325,7 +380,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
 
     _horizontalScrollController.jumpTo(target);
     _onTimelineInteraction();
-    _updatePreviewPosition();
+    _updatePreviewPosition(bypassSnap: HardwareKeyboard.instance.isAltPressed);
   }
 
   double _autoScrollVelocity() {

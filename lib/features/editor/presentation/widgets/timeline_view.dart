@@ -2,10 +2,13 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../domain/audio_clip.dart';
+import '../../domain/snap_settings.dart';
 import '../../domain/timeline_scale.dart';
 import '../controllers/timeline_clip_drag_controller.dart';
+import 'musical_grid_painter.dart';
 import 'track_header.dart';
 
 class TimelineTrackLane extends StatelessWidget {
@@ -16,6 +19,8 @@ class TimelineTrackLane extends StatelessWidget {
     required this.gridMetrics,
     required this.selectedClipId,
     required this.clipDragController,
+    this.bpm = 120,
+    this.snapSettings = const SnapSettings(enabled: false),
     required this.onSeek,
     required this.onSelect,
     required this.onMoveCommitted,
@@ -27,6 +32,8 @@ class TimelineTrackLane extends StatelessWidget {
   final TimelineGridMetrics gridMetrics;
   final String? selectedClipId;
   final TimelineClipDragController clipDragController;
+  final double bpm;
+  final SnapSettings snapSettings;
   final ValueChanged<double> onSeek;
   final ValueChanged<String> onSelect;
   final void Function(String clipId, double startSeconds) onMoveCommitted;
@@ -53,12 +60,26 @@ class TimelineTrackLane extends StatelessWidget {
               onTapDown: (details) {
                 onSeek(transform.contentXToTime(details.localPosition.dx));
               },
-              child: CustomPaint(
-                painter: _GridPainter(
-                  color: colorScheme.outlineVariant,
-                  gridMetrics: gridMetrics,
-                  devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-                ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  CustomPaint(
+                    painter: _GridPainter(
+                      color: colorScheme.outlineVariant,
+                      gridMetrics: gridMetrics,
+                      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+                    ),
+                  ),
+                  CustomPaint(
+                    painter: MusicalGridPainter(
+                      color: colorScheme.primary,
+                      gridMetrics: gridMetrics,
+                      bpm: bpm,
+                      settings: snapSettings,
+                      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -69,6 +90,8 @@ class TimelineTrackLane extends StatelessWidget {
               transform: transform,
               isSelected: selectedClipId == clip.id,
               clipDragController: clipDragController,
+              bpm: bpm,
+              snapSettings: snapSettings,
               onSelect: () => onSelect(clip.id),
               onMoveCommitted: (start) => onMoveCommitted(clip.id, start),
               onTrimCommitted: (result) => onTrimCommitted(clip.id, result),
@@ -94,6 +117,8 @@ class _TimelineAudioClip extends StatelessWidget {
     required this.transform,
     required this.isSelected,
     required this.clipDragController,
+    required this.bpm,
+    required this.snapSettings,
     required this.onSelect,
     required this.onMoveCommitted,
     required this.onTrimCommitted,
@@ -103,6 +128,8 @@ class _TimelineAudioClip extends StatelessWidget {
   final TimelineTransform transform;
   final bool isSelected;
   final TimelineClipDragController clipDragController;
+  final double bpm;
+  final SnapSettings snapSettings;
   final VoidCallback onSelect;
   final ValueChanged<double> onMoveCommitted;
   final ValueChanged<TimelineClipDragResult> onTrimCommitted;
@@ -134,6 +161,7 @@ class _TimelineAudioClip extends StatelessWidget {
       clipDragController.update(
         pointer: event.pointer,
         pointerGlobalX: event.position.dx,
+        bypassSnap: HardwareKeyboard.instance.isAltPressed,
       );
     }
 
@@ -186,6 +214,8 @@ class _TimelineAudioClip extends StatelessWidget {
                         sourceAudioDurationSeconds:
                             clip.sourceAudioDurationSeconds,
                         pixelsPerSecond: transform.scale.pixelsPerSecond,
+                        bpm: bpm,
+                        snapSettings: snapSettings,
                       );
                     },
                     onPointerMove: updateDrag,
@@ -275,6 +305,8 @@ class _TimelineAudioClip extends StatelessWidget {
       clipDurationSeconds: clip.clipDurationSeconds,
       sourceAudioDurationSeconds: clip.sourceAudioDurationSeconds,
       pixelsPerSecond: transform.scale.pixelsPerSecond,
+      bpm: bpm,
+      snapSettings: snapSettings,
     );
   }
 }

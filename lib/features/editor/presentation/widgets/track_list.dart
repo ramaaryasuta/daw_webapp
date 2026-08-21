@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/editor_controller.dart';
+import '../../application/snap_controller.dart';
+import '../../application/tempo_controller.dart';
 import '../../domain/timeline_scale.dart';
 import '../controllers/timeline_clip_drag_controller.dart';
 import 'track_header.dart';
@@ -61,6 +63,8 @@ class TimelineTrackList extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final editorState = ref.watch(editorControllerProvider);
+    final bpm = ref.watch(tempoControllerProvider.select((state) => state.bpm));
+    final snapSettings = ref.watch(snapControllerProvider);
     final controller = ref.read(editorControllerProvider.notifier);
 
     if (editorState.tracks.isEmpty) {
@@ -83,6 +87,8 @@ class TimelineTrackList extends ConsumerWidget {
           gridMetrics: gridMetrics,
           selectedClipId: editorState.selectedClipId,
           clipDragController: clipDragController,
+          bpm: bpm,
+          snapSettings: snapSettings,
           onSeek: onSeek,
           onSelect: (clipId) =>
               controller.selectClip(trackId: track.id, clipId: clipId),

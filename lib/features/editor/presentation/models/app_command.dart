@@ -64,8 +64,25 @@ abstract final class EditorCommands {
     category: AppCommandCategory.editing,
   );
 
+  static const snapToGrid = AppCommand(
+    title: 'Snap to Grid',
+    description:
+        'Align clip movement, trimming, and timeline seeking to the selected musical grid.',
+    shortcutParts: ['Toolbar', 'Snap'],
+    category: AppCommandCategory.timeline,
+  );
+
+  static const temporarilyDisableSnap = AppCommand(
+    title: 'Temporarily Disable Snap',
+    description: 'Temporarily move or trim freely without snapping.',
+    shortcutParts: ['Alt', 'Drag'],
+    category: AppCommandCategory.timeline,
+  );
+
   static const all = <AppCommand>[
     splitAudioClip,
+    snapToGrid,
+    temporarilyDisableSnap,
     zoomTimeline,
     scrollTimeline,
     panTimeline,
