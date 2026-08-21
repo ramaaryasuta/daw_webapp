@@ -17,7 +17,6 @@ class WebMetronomeScheduler {
   static const double _minimumScheduleLeadSeconds = 0.005;
   static const double _clickDurationSeconds = 0.045;
   static const double _silenceGain = 0.0001;
-  static const double _beatEpsilon = 1e-9;
 
   final web.AudioContext _audioContext;
   final List<_ScheduledClick> _scheduledClicks = [];
@@ -113,7 +112,7 @@ class WebMetronomeScheduler {
     _scheduledClicks.clear();
   }
 
-  double get _secondsPerBeat => secondsPerBeat(_tempoBpm);
+  MusicalTiming get _timing => MusicalTiming(bpm: _tempoBpm);
 
   double _currentTimelinePosition() {
     final elapsed = _audioContext.currentTime - _contextStartTime;
@@ -126,8 +125,7 @@ class WebMetronomeScheduler {
   }
 
   int _firstBeatAtOrAfter(double timelineSeconds) {
-    final beatPosition = timelineSeconds / _secondsPerBeat;
-    return (beatPosition - _beatEpsilon).ceil();
+    return _timing.firstBeatIndexAtOrAfter(timelineSeconds);
   }
 
   void _scheduleLookAhead() {
@@ -138,9 +136,10 @@ class WebMetronomeScheduler {
     final now = _audioContext.currentTime;
     _cleanUpFinishedClicks(now);
     final windowEnd = now + _lookAheadSeconds;
+    final timing = _timing;
 
     while (true) {
-      final beatTimelineSeconds = _nextBeatIndex * _secondsPerBeat;
+      final beatTimelineSeconds = timing.beatTimeSeconds(_nextBeatIndex);
       final beatContextTime =
           _contextStartTime + (beatTimelineSeconds - _timelineStartSeconds);
 
@@ -151,7 +150,7 @@ class WebMetronomeScheduler {
       if (beatContextTime >= now + _minimumScheduleLeadSeconds) {
         _scheduleClick(
           contextTime: beatContextTime,
-          isDownbeat: _nextBeatIndex % defaultBeatsPerBar == 0,
+          isDownbeat: timing.isDownbeat(_nextBeatIndex),
         );
       }
 

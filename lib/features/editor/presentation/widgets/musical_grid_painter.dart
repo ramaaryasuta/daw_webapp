@@ -32,8 +32,9 @@ class MusicalGridPainter extends CustomPainter {
       return;
     }
 
-    final beatSeconds = secondsPerBeat(bpm);
-    final barSeconds = beatSeconds * beatsPerBar;
+    final timing = MusicalTiming(bpm: bpm, beatsPerBar: beatsPerBar);
+    final beatSeconds = timing.beatDurationSeconds;
+    final barSeconds = timing.barDurationSeconds;
     final subdivisionSeconds = TimelineSnapper.intervalSeconds(
       bpm: bpm,
       subdivision: settings.subdivision,

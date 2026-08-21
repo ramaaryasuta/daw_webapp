@@ -22,6 +22,13 @@ class AppCommand {
 }
 
 abstract final class EditorCommands {
+  static const playPause = AppCommand(
+    title: 'Play / Pause',
+    description: 'Start or pause playback at the current playhead position.',
+    shortcutParts: ['Space'],
+    category: AppCommandCategory.timeline,
+  );
+
   static const zoomTimeline = AppCommand(
     title: 'Zoom Timeline',
     description: 'Zoom the timeline horizontally around the pointer position.',
@@ -81,6 +88,7 @@ abstract final class EditorCommands {
 
   static const all = <AppCommand>[
     splitAudioClip,
+    playPause,
     snapToGrid,
     temporarilyDisableSnap,
     zoomTimeline,

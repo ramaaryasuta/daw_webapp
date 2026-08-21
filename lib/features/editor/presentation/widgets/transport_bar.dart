@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../models/timeline_ruler_mode.dart';
 import 'tempo_controls.dart';
 import 'snap_control.dart';
+import 'timeline_ruler_mode_control.dart';
 
 class TransportBar extends StatelessWidget {
   const TransportBar({
@@ -9,16 +11,20 @@ class TransportBar extends StatelessWidget {
     required this.isPlaying,
     required this.isImporting,
     required this.positionSeconds,
+    required this.rulerMode,
     required this.onPlayPressed,
     required this.onStopPressed,
+    required this.onRulerModeChanged,
   });
 
   final bool isPlaying;
   final bool isImporting;
   final double positionSeconds;
+  final TimelineRulerMode rulerMode;
 
   final VoidCallback onPlayPressed;
   final VoidCallback onStopPressed;
+  final ValueChanged<TimelineRulerMode> onRulerModeChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +58,13 @@ class TransportBar extends StatelessWidget {
           const SizedBox(width: 12),
 
           const SnapControl(),
+
+          const SizedBox(width: 12),
+
+          TimelineRulerModeControl(
+            mode: rulerMode,
+            onChanged: onRulerModeChanged,
+          ),
 
           const Spacer(),
 

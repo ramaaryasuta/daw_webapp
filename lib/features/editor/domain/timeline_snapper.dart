@@ -30,7 +30,10 @@ abstract final class TimelineSnapper {
     required SnapSubdivision subdivision,
     int beatsPerBar = defaultBeatsPerBar,
   }) {
-    return secondsPerBeat(bpm) *
+    return MusicalTiming(
+          bpm: bpm,
+          beatsPerBar: beatsPerBar,
+        ).beatDurationSeconds *
         subdivisionBeats(subdivision, beatsPerBar: beatsPerBar);
   }
 

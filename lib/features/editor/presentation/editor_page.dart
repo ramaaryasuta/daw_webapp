@@ -16,8 +16,11 @@ import '../domain/timeline_snapper.dart';
 import '../infrastructure/audio_import_service.dart';
 import '../infrastructure/audio_mixdown_service.dart';
 import 'controllers/timeline_clip_drag_controller.dart';
+import 'editor_shortcut_policy.dart';
+import 'intents/play_pause_intent.dart';
 import 'intents/split_clip_intent.dart';
 import 'models/app_command.dart';
+import 'models/timeline_ruler_mode.dart';
 import 'widgets/commands_dialog.dart';
 import 'widgets/editor_menu_bar.dart';
 import 'widgets/export_dialog.dart';
@@ -53,6 +56,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   double? _pendingHorizontalOffset;
   double? _lastPanZoomScale;
   DateTime? _lastTimelineInteraction;
+  TimelineRulerMode _rulerMode = TimelineRulerMode.barsBeats;
 
   final GlobalKey _timelineViewportKey = GlobalKey();
 
@@ -288,20 +292,6 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     await ref
         .read(editorControllerProvider.notifier)
         .splitClip(clipId, editorState.playheadSeconds);
-  }
-
-  bool _canHandleEditorShortcut() {
-    if (ModalRoute.of(context)?.isCurrent != true) {
-      return false;
-    }
-
-    final focusContext = FocusManager.instance.primaryFocus?.context;
-    if (focusContext == null) {
-      return true;
-    }
-
-    return focusContext.widget is! EditableText &&
-        focusContext.findAncestorWidgetOfExactType<EditableText>() == null;
   }
 
   List<EditorMenuSection> _buildMenuSections({
@@ -684,19 +674,29 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   @override
   Widget build(BuildContext context) {
     final editorState = ref.watch(editorControllerProvider);
+    final bpm = ref.watch(tempoControllerProvider.select((state) => state.bpm));
 
     final controller = ref.read(editorControllerProvider.notifier);
 
     return Shortcuts(
       shortcuts: const {
         SingleActivator(LogicalKeyboardKey.keyS): SplitClipIntent(),
+        PlayPauseShortcutActivator(): PlayPauseIntent(),
       },
       child: Actions(
         actions: {
           SplitClipIntent: CallbackAction<SplitClipIntent>(
             onInvoke: (_) {
-              if (_canHandleEditorShortcut()) {
+              if (EditorShortcutPolicy.canHandleEditorCommand(context)) {
                 _splitSelectedClip();
+              }
+              return null;
+            },
+          ),
+          PlayPauseIntent: CallbackAction<PlayPauseIntent>(
+            onInvoke: (_) {
+              if (EditorShortcutPolicy.canHandleTransportShortcut(context)) {
+                controller.togglePlayback();
               }
               return null;
             },
@@ -719,8 +719,14 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                   isPlaying: editorState.isPlaying,
                   isImporting: editorState.isImporting,
                   positionSeconds: editorState.playheadSeconds,
+                  rulerMode: _rulerMode,
                   onPlayPressed: controller.togglePlayback,
                   onStopPressed: controller.stop,
+                  onRulerModeChanged: (mode) {
+                    if (mode != _rulerMode) {
+                      setState(() => _rulerMode = mode);
+                    }
+                  },
                 ),
 
                 Expanded(
@@ -845,6 +851,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                                                                   .playheadSeconds,
                                                           gridMetrics:
                                                               gridMetrics,
+                                                          mode: _rulerMode,
+                                                          bpm: bpm,
                                                           onSeek:
                                                               _handleTimelineSeek,
                                                         ),
