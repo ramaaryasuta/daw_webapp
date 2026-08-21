@@ -12,12 +12,14 @@ class EditorMenuAction {
     required this.label,
     required this.onSelected,
     this.icon,
+    this.shortcut,
     this.separatorBefore = false,
   });
 
   final String label;
   final VoidCallback? onSelected;
   final IconData? icon;
+  final MenuSerializableShortcut? shortcut;
   final bool separatorBefore;
 }
 
@@ -63,6 +65,7 @@ class EditorMenuBar extends StatelessWidget {
                           ? null
                           : Icon(action.icon, size: 18),
                       onPressed: action.onSelected,
+                      shortcut: action.shortcut,
                       child: Text(action.label),
                     ),
                   ],

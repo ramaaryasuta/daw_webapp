@@ -1,3 +1,5 @@
+import 'package:daw_webapp/features/editor/domain/audio_asset.dart';
+import 'package:daw_webapp/features/editor/domain/audio_clip.dart';
 import 'package:daw_webapp/features/editor/domain/timeline_scale.dart';
 import 'package:daw_webapp/features/editor/presentation/controllers/timeline_clip_drag_controller.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/timeline_view.dart';
@@ -38,25 +40,33 @@ void main() {
               child: SizedBox(
                 width: 1000,
                 child: TimelineTrackLane(
-                  clipId: 'clip-1',
-                  fileName: 'clip.wav',
-                  clipDurationSeconds: 4,
-                  sourceStartSeconds: 0,
-                  sourceAudioDurationSeconds: 10,
-                  startTimeSeconds: 1,
-                  waveformPeaks: const [0.2, 0.8, 0.4, 1],
+                  clips: const [
+                    AudioClip(
+                      id: 'clip-1',
+                      audio: AudioAsset(
+                        id: 'asset-1',
+                        name: 'clip.wav',
+                        extension: 'wav',
+                        size: 1024,
+                        durationSeconds: 10,
+                        sampleRate: 48000,
+                        numberOfChannels: 2,
+                        waveformPeaks: [0.2, 0.8, 0.4, 1],
+                      ),
+                      timelineStartSeconds: 1,
+                      clipDurationSeconds: 4,
+                    ),
+                  ],
                   playheadSeconds: 0,
                   gridMetrics: const TimelineGridMetrics(
-                    transform: TimelineTransform(
-                      scale: TimelineScale(100),
-                    ),
+                    transform: TimelineTransform(scale: TimelineScale(100)),
                   ),
-                  isSelected: false,
+                  selectedClipId: null,
                   clipDragController: dragController,
                   onSeek: (_) => seekCount++,
-                  onSelect: () {},
-                  onMoveCommitted: (_) => moveCommitCount++,
-                  onTrimCommitted: (result) => trimResult = result,
+                  onSelect: (_) {},
+                  onMoveCommitted: (_, _) => moveCommitCount++,
+                  onTrimCommitted: (_, result) => trimResult = result,
                 ),
               ),
             ),

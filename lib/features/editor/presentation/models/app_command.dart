@@ -1,4 +1,5 @@
 enum AppCommandCategory {
+  editing('Editing'),
   timeline('Timeline');
 
   const AppCommandCategory(this.label);
@@ -56,7 +57,15 @@ abstract final class EditorCommands {
     category: AppCommandCategory.timeline,
   );
 
+  static const splitAudioClip = AppCommand(
+    title: 'Split Clip',
+    description: 'Split the selected audio clip at the playhead.',
+    shortcutParts: ['S'],
+    category: AppCommandCategory.editing,
+  );
+
   static const all = <AppCommand>[
+    splitAudioClip,
     zoomTimeline,
     scrollTimeline,
     panTimeline,

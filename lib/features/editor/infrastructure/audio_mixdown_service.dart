@@ -78,24 +78,27 @@ class AudioMixdownService implements AudioExportGenerator {
         continue;
       }
 
-      final buffer = _audioEngine.decodedBufferForAsset(track.clip.audio.id);
-      if (buffer == null) {
-        throw AudioMixdownException(
-          'Audio data for ${track.clip.audio.name} is unavailable.',
+      final gain = offlineContext.createGain();
+      gain.gain.value = gainValue;
+      gain.connect(offlineContext.destination);
+
+      for (final clip in track.clips) {
+        final buffer = _audioEngine.decodedBufferForAsset(clip.audio.id);
+        if (buffer == null) {
+          throw AudioMixdownException(
+            'Audio data for ${clip.audio.name} is unavailable.',
+          );
+        }
+
+        final source = offlineContext.createBufferSource();
+        source.buffer = buffer;
+        source.connect(gain);
+        source.start(
+          clip.timelineStartSeconds,
+          clip.sourceStartSeconds,
+          clip.clipDurationSeconds,
         );
       }
-
-      final source = offlineContext.createBufferSource();
-      final gain = offlineContext.createGain();
-      source.buffer = buffer;
-      gain.gain.value = gainValue;
-      source.connect(gain);
-      gain.connect(offlineContext.destination);
-      source.start(
-        track.clip.timelineStartSeconds,
-        track.clip.sourceStartSeconds,
-        track.clip.clipDurationSeconds,
-      );
     }
 
     final renderedBuffer = await offlineContext.startRendering().toDart;

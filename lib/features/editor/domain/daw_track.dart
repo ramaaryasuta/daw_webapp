@@ -4,7 +4,7 @@ class DawTrack {
   const DawTrack({
     required this.id,
     required this.name,
-    required this.clip,
+    required this.clips,
     this.volume = 1,
     this.isMuted = false,
     this.isSolo = false,
@@ -13,18 +13,26 @@ class DawTrack {
   final String id;
   final String name;
 
-  final AudioClip clip;
+  final List<AudioClip> clips;
 
   final double volume;
   final bool isMuted;
   final bool isSolo;
 
-  double get endTimeSeconds => clip.timelineEndSeconds;
+  double get endTimeSeconds {
+    var end = 0.0;
+    for (final clip in clips) {
+      if (clip.timelineEndSeconds > end) {
+        end = clip.timelineEndSeconds;
+      }
+    }
+    return end;
+  }
 
   DawTrack copyWith({
     String? id,
     String? name,
-    AudioClip? clip,
+    List<AudioClip>? clips,
     double? volume,
     bool? isMuted,
     bool? isSolo,
@@ -32,7 +40,7 @@ class DawTrack {
     return DawTrack(
       id: id ?? this.id,
       name: name ?? this.name,
-      clip: clip ?? this.clip,
+      clips: clips ?? this.clips,
       volume: volume ?? this.volume,
       isMuted: isMuted ?? this.isMuted,
       isSolo: isSolo ?? this.isSolo,

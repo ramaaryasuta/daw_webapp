@@ -72,6 +72,56 @@ class AudioClip {
   }
 }
 
+class AudioClipSplit {
+  const AudioClipSplit({required this.left, required this.right});
+
+  final AudioClip left;
+  final AudioClip right;
+}
+
+/// Splits [clip] at an exact timeline time without copying its audio asset.
+///
+/// Returns `null` when either resulting clip would be shorter than the shared
+/// minimum clip duration used by trim interactions.
+AudioClipSplit? splitAudioClip({
+  required AudioClip clip,
+  required String rightClipId,
+  required double timelineSeconds,
+}) {
+  if (!timelineSeconds.isFinite || rightClipId == clip.id) {
+    return null;
+  }
+
+  final leftDuration = timelineSeconds - clip.timelineStartSeconds;
+  final rightDuration = clip.clipDurationSeconds - leftDuration;
+
+  if (leftDuration < minimumClipDurationSeconds ||
+      rightDuration < minimumClipDurationSeconds) {
+    return null;
+  }
+
+  return AudioClipSplit(
+    left: clip.copyWith(clipDurationSeconds: leftDuration),
+    right: clip.copyWith(
+      id: rightClipId,
+      timelineStartSeconds: timelineSeconds,
+      sourceStartSeconds: clip.sourceStartSeconds + leftDuration,
+      clipDurationSeconds: rightDuration,
+    ),
+  );
+}
+
+bool canSplitAudioClip(AudioClip clip, double timelineSeconds) {
+  if (!timelineSeconds.isFinite) {
+    return false;
+  }
+
+  final leftDuration = timelineSeconds - clip.timelineStartSeconds;
+  final rightDuration = clip.clipDurationSeconds - leftDuration;
+  return leftDuration >= minimumClipDurationSeconds &&
+      rightDuration >= minimumClipDurationSeconds;
+}
+
 class ClipPlaybackTiming {
   const ClipPlaybackTiming({
     required this.delaySeconds,

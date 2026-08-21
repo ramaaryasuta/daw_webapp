@@ -33,7 +33,7 @@ class WebAudioEngine {
 
   final Map<String, web.AudioBuffer> _buffers = {};
 
-  final Map<String, web.AudioBufferSourceNode> _activeSources = {};
+  final Map<String, List<web.AudioBufferSourceNode>> _activeSources = {};
 
   final Map<String, web.GainNode> _trackGains = {};
 
@@ -131,39 +131,40 @@ class WebAudioEngine {
     final hasSolo = tracks.any((track) => track.isSolo);
 
     for (final track in tracks) {
-      final buffer = _buffers[track.clip.audio.id];
-
-      if (buffer == null) {
-        continue;
-      }
-
-      final playbackTiming = track.clip.playbackTimingFrom(fromSeconds);
-
-      // Clip sudah habis sebelum posisi playhead.
-      if (playbackTiming == null ||
-          playbackTiming.bufferOffsetSeconds >= buffer.duration) {
-        continue;
-      }
-
-      final source = _audioContext.createBufferSource();
-
-      source.buffer = buffer;
-
       final gain = _audioContext.createGain();
-
       gain.gain.value = effectiveTrackGain(track, hasSolo: hasSolo);
-
-      source.connect(gain);
       gain.connect(_audioContext.destination);
-
-      _activeSources[track.id] = source;
       _trackGains[track.id] = gain;
+      final trackSources = <web.AudioBufferSourceNode>[];
 
-      source.start(
-        startAt + playbackTiming.delaySeconds,
-        playbackTiming.bufferOffsetSeconds,
-        playbackTiming.playbackDurationSeconds,
-      );
+      for (final clip in track.clips) {
+        final buffer = _buffers[clip.audio.id];
+        if (buffer == null) {
+          continue;
+        }
+
+        final playbackTiming = clip.playbackTimingFrom(fromSeconds);
+
+        // Clip sudah habis sebelum posisi playhead.
+        if (playbackTiming == null ||
+            playbackTiming.bufferOffsetSeconds >= buffer.duration) {
+          continue;
+        }
+
+        final source = _audioContext.createBufferSource();
+        source.buffer = buffer;
+        source.connect(gain);
+        trackSources.add(source);
+        source.start(
+          startAt + playbackTiming.delaySeconds,
+          playbackTiming.bufferOffsetSeconds,
+          playbackTiming.playbackDurationSeconds,
+        );
+      }
+
+      if (trackSources.isNotEmpty) {
+        _activeSources[track.id] = trackSources;
+      }
     }
 
     _metronomeScheduler.startTransport(
@@ -219,16 +220,18 @@ class WebAudioEngine {
   void stopSources() {
     _metronomeScheduler.stopTransport();
 
-    for (final source in _activeSources.values) {
-      try {
-        source.stop();
-      } catch (_) {
-        // Source mungkin sudah selesai.
-      }
+    for (final sources in _activeSources.values) {
+      for (final source in sources) {
+        try {
+          source.stop();
+        } catch (_) {
+          // Source mungkin sudah selesai.
+        }
 
-      try {
-        source.disconnect();
-      } catch (_) {}
+        try {
+          source.disconnect();
+        } catch (_) {}
+      }
     }
 
     for (final gain in _trackGains.values) {
@@ -264,13 +267,15 @@ class WebAudioEngine {
   }
 
   void removeTrack(String trackId) {
-    final source = _activeSources.remove(trackId);
+    final sources = _activeSources.remove(trackId);
 
-    if (source != null) {
-      try {
-        source.stop();
-        source.disconnect();
-      } catch (_) {}
+    if (sources != null) {
+      for (final source in sources) {
+        try {
+          source.stop();
+          source.disconnect();
+        } catch (_) {}
+      }
     }
 
     final gain = _trackGains.remove(trackId);

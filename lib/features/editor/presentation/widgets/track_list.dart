@@ -77,27 +77,21 @@ class TimelineTrackList extends ConsumerWidget {
         final track = editorState.tracks[index];
 
         return TimelineTrackLane(
-          key: ValueKey(track.clip.id),
-          clipId: track.clip.id,
-          fileName: track.clip.audio.name,
-          clipDurationSeconds: track.clip.clipDurationSeconds,
-          sourceStartSeconds: track.clip.sourceStartSeconds,
-          sourceAudioDurationSeconds: track.clip.sourceAudioDurationSeconds,
-          startTimeSeconds: track.clip.timelineStartSeconds,
-          waveformPeaks: track.clip.audio.waveformPeaks,
+          key: ValueKey(track.id),
+          clips: track.clips,
           playheadSeconds: editorState.playheadSeconds,
           gridMetrics: gridMetrics,
-          isSelected: editorState.selectedClipId == track.clip.id,
+          selectedClipId: editorState.selectedClipId,
           clipDragController: clipDragController,
           onSeek: onSeek,
-          onSelect: () =>
-              controller.selectClip(trackId: track.id, clipId: track.clip.id),
-          onMoveCommitted: (startSeconds) {
-            controller.moveClip(track.clip.id, startSeconds);
+          onSelect: (clipId) =>
+              controller.selectClip(trackId: track.id, clipId: clipId),
+          onMoveCommitted: (clipId, startSeconds) {
+            controller.moveClip(clipId, startSeconds);
           },
-          onTrimCommitted: (result) {
+          onTrimCommitted: (clipId, result) {
             controller.updateClipTrim(
-              clipId: track.clip.id,
+              clipId: clipId,
               timelineStartSeconds: result.startSeconds,
               sourceStartSeconds: result.sourceStartSeconds,
               clipDurationSeconds: result.clipDurationSeconds,

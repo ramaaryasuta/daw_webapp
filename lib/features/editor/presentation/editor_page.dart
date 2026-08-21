@@ -13,6 +13,7 @@ import '../domain/timeline_scale.dart';
 import '../infrastructure/audio_import_service.dart';
 import '../infrastructure/audio_mixdown_service.dart';
 import 'controllers/timeline_clip_drag_controller.dart';
+import 'intents/split_clip_intent.dart';
 import 'models/app_command.dart';
 import 'widgets/commands_dialog.dart';
 import 'widgets/editor_menu_bar.dart';
@@ -269,9 +270,36 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     );
   }
 
+  Future<void> _splitSelectedClip() async {
+    final editorState = ref.read(editorControllerProvider);
+    final clipId = editorState.selectedClipId;
+    if (clipId == null) {
+      return;
+    }
+
+    await ref
+        .read(editorControllerProvider.notifier)
+        .splitClip(clipId, editorState.playheadSeconds);
+  }
+
+  bool _canHandleEditorShortcut() {
+    if (ModalRoute.of(context)?.isCurrent != true) {
+      return false;
+    }
+
+    final focusContext = FocusManager.instance.primaryFocus?.context;
+    if (focusContext == null) {
+      return true;
+    }
+
+    return focusContext.widget is! EditableText &&
+        focusContext.findAncestorWidgetOfExactType<EditableText>() == null;
+  }
+
   List<EditorMenuSection> _buildMenuSections({
     required bool isImporting,
     required bool hasTracks,
+    required bool canSplitClip,
   }) {
     return [
       EditorMenuSection(
@@ -287,6 +315,17 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             icon: Icons.download_outlined,
             separatorBefore: true,
             onSelected: isImporting || !hasTracks ? null : _openExportDialog,
+          ),
+        ],
+      ),
+      EditorMenuSection(
+        label: 'Edit',
+        actions: [
+          EditorMenuAction(
+            label: 'Split Clip',
+            icon: Icons.call_split_outlined,
+            shortcut: const SingleActivator(LogicalKeyboardKey.keyS),
+            onSelected: canSplitClip ? _splitSelectedClip : null,
           ),
         ],
       ),
@@ -640,179 +679,213 @@ class _EditorPageState extends ConsumerState<EditorPage> {
 
     final controller = ref.read(editorControllerProvider.notifier);
 
-    return Scaffold(
-      body: Column(
-        children: [
-          EditorMenuBar(
-            sections: _buildMenuSections(
-              isImporting: editorState.isImporting,
-              hasTracks: editorState.tracks.isNotEmpty,
-            ),
+    return Shortcuts(
+      shortcuts: const {
+        SingleActivator(LogicalKeyboardKey.keyS): SplitClipIntent(),
+      },
+      child: Actions(
+        actions: {
+          SplitClipIntent: CallbackAction<SplitClipIntent>(
+            onInvoke: (_) {
+              if (_canHandleEditorShortcut()) {
+                _splitSelectedClip();
+              }
+              return null;
+            },
           ),
+        },
+        child: Focus(
+          autofocus: true,
+          child: Scaffold(
+            body: Column(
+              children: [
+                EditorMenuBar(
+                  sections: _buildMenuSections(
+                    isImporting: editorState.isImporting,
+                    hasTracks: editorState.tracks.isNotEmpty,
+                    canSplitClip: editorState.canSplitSelectedClip,
+                  ),
+                ),
 
-          TransportBar(
-            isPlaying: editorState.isPlaying,
-            isImporting: editorState.isImporting,
-            positionSeconds: editorState.playheadSeconds,
-            onPlayPressed: controller.togglePlayback,
-            onStopPressed: controller.stop,
-          ),
+                TransportBar(
+                  isPlaying: editorState.isPlaying,
+                  isImporting: editorState.isImporting,
+                  positionSeconds: editorState.playheadSeconds,
+                  onPlayPressed: controller.togglePlayback,
+                  onStopPressed: controller.stop,
+                ),
 
-          Expanded(
-            child: DropTarget(
-              enable: !editorState.isImporting,
-              onDragEntered: (_) {
-                if (!_isDraggingOverWorkspace) {
-                  setState(() {
-                    _isDraggingOverWorkspace = true;
-                  });
-                }
-              },
-              onDragExited: (_) {
-                if (_isDraggingOverWorkspace) {
-                  setState(() {
-                    _isDraggingOverWorkspace = false;
-                  });
-                }
-              },
-              onDragDone: _handleDrop,
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final viewportWidth = math.max(
-                          0.0,
-                          constraints.maxWidth - trackHeaderWidth,
-                        );
-                        final scale = TimelineScale(
-                          editorState.pixelsPerSecond,
-                        );
-                        final gridMetrics = TimelineGridMetrics(
-                          transform: TimelineTransform(scale: scale),
-                        );
-                        return Row(
-                          children: [
-                            SizedBox(
-                              width: trackHeaderWidth,
-                              child: Column(
+                Expanded(
+                  child: DropTarget(
+                    enable: !editorState.isImporting,
+                    onDragEntered: (_) {
+                      if (!_isDraggingOverWorkspace) {
+                        setState(() {
+                          _isDraggingOverWorkspace = true;
+                        });
+                      }
+                    },
+                    onDragExited: (_) {
+                      if (_isDraggingOverWorkspace) {
+                        setState(() {
+                          _isDraggingOverWorkspace = false;
+                        });
+                      }
+                    },
+                    onDragDone: _handleDrop,
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final viewportWidth = math.max(
+                                0.0,
+                                constraints.maxWidth - trackHeaderWidth,
+                              );
+                              final scale = TimelineScale(
+                                editorState.pixelsPerSecond,
+                              );
+                              final gridMetrics = TimelineGridMetrics(
+                                transform: TimelineTransform(scale: scale),
+                              );
+                              return Row(
                                 children: [
-                                  const _TrackHeaderCorner(),
-                                  Expanded(
-                                    child: TrackHeaderList(
-                                      scrollController:
-                                          _trackHeaderScrollController,
+                                  SizedBox(
+                                    width: trackHeaderWidth,
+                                    child: Column(
+                                      children: [
+                                        const _TrackHeaderCorner(),
+                                        Expanded(
+                                          child: TrackHeaderList(
+                                            scrollController:
+                                                _trackHeaderScrollController,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                ],
-                              ),
-                            ),
-                            Expanded(
-                              child: NotificationListener<ScrollNotification>(
-                                onNotification:
-                                    _handleTimelineScrollNotification,
-                                child: Scrollbar(
-                                  controller: _horizontalTimelineController,
-                                  thumbVisibility: true,
-                                  notificationPredicate: (notification) {
-                                    return notification.metrics.axis ==
-                                        Axis.horizontal;
-                                  },
-                                  child: MouseRegion(
-                                    cursor: _isTimelinePanning
-                                        ? SystemMouseCursors.grabbing
-                                        : MouseCursor.defer,
-                                    child: Listener(
-                                      key: _timelineViewportKey,
-                                      behavior: HitTestBehavior.translucent,
-                                      onPointerDown: _handleTimelinePointerDown,
-                                      onPointerMove: _handleTimelinePointerMove,
-                                      onPointerUp: _handleTimelinePointerUp,
-                                      onPointerCancel:
-                                          _handleTimelinePointerCancel,
-                                      onPointerSignal:
-                                          _handleTimelinePointerSignal,
-                                      onPointerPanZoomStart:
-                                          _handleTimelinePanZoomStart,
-                                      onPointerPanZoomUpdate:
-                                          _handleTimelinePanZoomUpdate,
-                                      onPointerPanZoomEnd:
-                                          _handleTimelinePanZoomEnd,
-                                      child: SingleChildScrollView(
+                                  Expanded(
+                                    child: NotificationListener<ScrollNotification>(
+                                      onNotification:
+                                          _handleTimelineScrollNotification,
+                                      child: Scrollbar(
                                         controller:
                                             _horizontalTimelineController,
-                                        scrollDirection: Axis.horizontal,
-                                        physics:
-                                            const _ControlReservedScrollPhysics(),
-                                        child: ValueListenableBuilder<TimelineClipDragState?>(
-                                          valueListenable: _clipDragController,
-                                          builder: (context, dragState, _) {
-                                            final previewDuration = math.max(
-                                              editorState
-                                                  .projectDurationSeconds,
-                                              dragState?.previewEndSeconds ??
-                                                  0.0,
-                                            );
-                                            final contentWidth = scale
-                                                .timelineContentWidth(
-                                                  durationSeconds:
-                                                      previewDuration,
-                                                  viewportWidth: viewportWidth,
-                                                );
+                                        thumbVisibility: true,
+                                        notificationPredicate: (notification) {
+                                          return notification.metrics.axis ==
+                                              Axis.horizontal;
+                                        },
+                                        child: MouseRegion(
+                                          cursor: _isTimelinePanning
+                                              ? SystemMouseCursors.grabbing
+                                              : MouseCursor.defer,
+                                          child: Listener(
+                                            key: _timelineViewportKey,
+                                            behavior:
+                                                HitTestBehavior.translucent,
+                                            onPointerDown:
+                                                _handleTimelinePointerDown,
+                                            onPointerMove:
+                                                _handleTimelinePointerMove,
+                                            onPointerUp:
+                                                _handleTimelinePointerUp,
+                                            onPointerCancel:
+                                                _handleTimelinePointerCancel,
+                                            onPointerSignal:
+                                                _handleTimelinePointerSignal,
+                                            onPointerPanZoomStart:
+                                                _handleTimelinePanZoomStart,
+                                            onPointerPanZoomUpdate:
+                                                _handleTimelinePanZoomUpdate,
+                                            onPointerPanZoomEnd:
+                                                _handleTimelinePanZoomEnd,
+                                            child: SingleChildScrollView(
+                                              controller:
+                                                  _horizontalTimelineController,
+                                              scrollDirection: Axis.horizontal,
+                                              physics:
+                                                  const _ControlReservedScrollPhysics(),
+                                              child: ValueListenableBuilder<TimelineClipDragState?>(
+                                                valueListenable:
+                                                    _clipDragController,
+                                                builder: (context, dragState, _) {
+                                                  final previewDuration = math.max(
+                                                    editorState
+                                                        .projectDurationSeconds,
+                                                    dragState
+                                                            ?.previewEndSeconds ??
+                                                        0.0,
+                                                  );
+                                                  final contentWidth = scale
+                                                      .timelineContentWidth(
+                                                        durationSeconds:
+                                                            previewDuration,
+                                                        viewportWidth:
+                                                            viewportWidth,
+                                                      );
 
-                                            return SizedBox(
-                                              width: contentWidth,
-                                              height: constraints.maxHeight,
-                                              child: Column(
-                                                children: [
-                                                  TimelineRuler(
-                                                    playheadSeconds: editorState
-                                                        .playheadSeconds,
-                                                    gridMetrics: gridMetrics,
-                                                    onSeek: _handleTimelineSeek,
-                                                  ),
-                                                  Expanded(
-                                                    child: TimelineTrackList(
-                                                      scrollController:
-                                                          _trackLaneScrollController,
-                                                      gridMetrics: gridMetrics,
-                                                      clipDragController:
-                                                          _clipDragController,
-                                                      scrollPhysics:
-                                                          const _ControlReservedScrollPhysics(),
-                                                      onSeek:
-                                                          _handleTimelineSeek,
+                                                  return SizedBox(
+                                                    width: contentWidth,
+                                                    height:
+                                                        constraints.maxHeight,
+                                                    child: Column(
+                                                      children: [
+                                                        TimelineRuler(
+                                                          playheadSeconds:
+                                                              editorState
+                                                                  .playheadSeconds,
+                                                          gridMetrics:
+                                                              gridMetrics,
+                                                          onSeek:
+                                                              _handleTimelineSeek,
+                                                        ),
+                                                        Expanded(
+                                                          child: TimelineTrackList(
+                                                            scrollController:
+                                                                _trackLaneScrollController,
+                                                            gridMetrics:
+                                                                gridMetrics,
+                                                            clipDragController:
+                                                                _clipDragController,
+                                                            scrollPhysics:
+                                                                const _ControlReservedScrollPhysics(),
+                                                            onSeek:
+                                                                _handleTimelineSeek,
+                                                          ),
+                                                        ),
+                                                      ],
                                                     ),
-                                                  ),
-                                                ],
+                                                  );
+                                                },
                                               ),
-                                            );
-                                          },
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
 
-                  Positioned.fill(
-                    child: AnimatedOpacity(
-                      opacity: _isDraggingOverWorkspace ? 1 : 0,
-                      duration: const Duration(milliseconds: 120),
-                      child: const _DropOverlay(),
+                        Positioned.fill(
+                          child: AnimatedOpacity(
+                            opacity: _isDraggingOverWorkspace ? 1 : 0,
+                            duration: const Duration(milliseconds: 120),
+                            child: const _DropOverlay(),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }

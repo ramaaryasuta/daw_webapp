@@ -45,12 +45,14 @@ void main() {
     const track = DawTrack(
       id: 'track-1',
       name: 'Track 1',
-      clip: AudioClip(
-        id: 'clip-1',
-        audio: asset,
-        clipDurationSeconds: 4.5,
-        timelineStartSeconds: 20,
-      ),
+      clips: [
+        AudioClip(
+          id: 'clip-1',
+          audio: asset,
+          clipDurationSeconds: 4.5,
+          timelineStartSeconds: 20,
+        ),
+      ],
     );
 
     expect(track.endTimeSeconds, 24.5);
@@ -136,20 +138,98 @@ void main() {
     expect(moved.clipDurationSeconds, 2);
   });
 
+  test('splits a trimmed clip into two shared-source timeline ranges', () {
+    const clip = AudioClip(
+      id: 'clip-1',
+      audio: asset,
+      timelineStartSeconds: 10,
+      sourceStartSeconds: 1,
+      clipDurationSeconds: 3,
+    );
+
+    final split = splitAudioClip(
+      clip: clip,
+      rightClipId: 'clip-2',
+      timelineSeconds: 11.25,
+    )!;
+
+    expect(split.left.id, 'clip-1');
+    expect(split.right.id, 'clip-2');
+    expect(split.left.audio, same(asset));
+    expect(split.right.audio, same(asset));
+    expect(split.left.timelineStartSeconds, 10);
+    expect(split.left.sourceStartSeconds, 1);
+    expect(split.left.clipDurationSeconds, 1.25);
+    expect(split.right.timelineStartSeconds, 11.25);
+    expect(split.right.sourceStartSeconds, 2.25);
+    expect(split.right.clipDurationSeconds, 1.75);
+    expect(split.left.timelineEndSeconds, split.right.timelineStartSeconds);
+    expect(split.left.sourceEndSeconds, split.right.sourceStartSeconds);
+    expect(split.right.timelineEndSeconds, clip.timelineEndSeconds);
+    expect(split.right.sourceEndSeconds, clip.sourceEndSeconds);
+  });
+
+  test('rejects splits at or within the minimum duration from an edge', () {
+    const clip = AudioClip(
+      id: 'clip-1',
+      audio: asset,
+      timelineStartSeconds: 10,
+      clipDurationSeconds: 3,
+    );
+
+    expect(canSplitAudioClip(clip, 10), isFalse);
+    expect(canSplitAudioClip(clip, 13), isFalse);
+    expect(
+      canSplitAudioClip(clip, 10 + minimumClipDurationSeconds / 2),
+      isFalse,
+    );
+    expect(
+      canSplitAudioClip(clip, 13 - minimumClipDurationSeconds / 2),
+      isFalse,
+    );
+    expect(canSplitAudioClip(clip, 11), isTrue);
+  });
+
   test('project duration uses the visible trimmed clip end', () {
     const track = DawTrack(
       id: 'track-1',
       name: 'Track 1',
-      clip: AudioClip(
-        id: 'clip-1',
-        audio: asset,
-        timelineStartSeconds: 20,
-        sourceStartSeconds: 1,
-        clipDurationSeconds: 2,
-      ),
+      clips: [
+        AudioClip(
+          id: 'clip-1',
+          audio: asset,
+          timelineStartSeconds: 20,
+          sourceStartSeconds: 1,
+          clipDurationSeconds: 2,
+        ),
+      ],
     );
 
     expect(calculateProjectDurationSeconds([track]), 22);
+  });
+
+  test('project duration uses the latest clip on a multi-clip track', () {
+    const track = DawTrack(
+      id: 'track-1',
+      name: 'Track 1',
+      clips: [
+        AudioClip(
+          id: 'clip-1',
+          audio: asset,
+          timelineStartSeconds: 2,
+          clipDurationSeconds: 1,
+        ),
+        AudioClip(
+          id: 'clip-2',
+          audio: asset,
+          timelineStartSeconds: 8,
+          sourceStartSeconds: 1,
+          clipDurationSeconds: 2,
+        ),
+      ],
+    );
+
+    expect(calculateProjectDurationSeconds([track]), 10);
   });
 
   test('project duration is the latest positioned clip end', () {
@@ -157,17 +237,21 @@ void main() {
       const DawTrack(
         id: 'track-1',
         name: 'Track 1',
-        clip: AudioClip(id: 'clip-1', audio: asset, clipDurationSeconds: 4.5),
+        clips: [
+          AudioClip(id: 'clip-1', audio: asset, clipDurationSeconds: 4.5),
+        ],
       ),
       const DawTrack(
         id: 'track-2',
         name: 'Track 2',
-        clip: AudioClip(
-          id: 'clip-2',
-          audio: asset,
-          clipDurationSeconds: 4.5,
-          timelineStartSeconds: 60,
-        ),
+        clips: [
+          AudioClip(
+            id: 'clip-2',
+            audio: asset,
+            clipDurationSeconds: 4.5,
+            timelineStartSeconds: 60,
+          ),
+        ],
       ),
     ];
 
@@ -190,12 +274,14 @@ void main() {
       return DawTrack(
         id: 'track-$id',
         name: 'Track $id',
-        clip: AudioClip(
-          id: 'clip-$id',
-          audio: trackAsset,
-          clipDurationSeconds: duration,
-          timelineStartSeconds: start,
-        ),
+        clips: [
+          AudioClip(
+            id: 'clip-$id',
+            audio: trackAsset,
+            clipDurationSeconds: duration,
+            timelineStartSeconds: start,
+          ),
+        ],
       );
     }
 
@@ -230,7 +316,7 @@ void main() {
     const track = DawTrack(
       id: 'track-1',
       name: 'Track 1',
-      clip: AudioClip(id: 'clip-1', audio: asset, clipDurationSeconds: 4.5),
+      clips: [AudioClip(id: 'clip-1', audio: asset, clipDurationSeconds: 4.5)],
       volume: 0.4,
     );
 

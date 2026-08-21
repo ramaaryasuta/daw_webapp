@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import '../../domain/audio_clip.dart';
 import '../../domain/timeline_scale.dart';
 import '../controllers/timeline_clip_drag_controller.dart';
 import 'track_header.dart';
@@ -10,16 +11,10 @@ import 'track_header.dart';
 class TimelineTrackLane extends StatelessWidget {
   const TimelineTrackLane({
     super.key,
-    required this.clipId,
-    required this.fileName,
-    required this.clipDurationSeconds,
-    required this.sourceStartSeconds,
-    required this.sourceAudioDurationSeconds,
-    required this.startTimeSeconds,
-    required this.waveformPeaks,
+    required this.clips,
     required this.playheadSeconds,
     required this.gridMetrics,
-    required this.isSelected,
+    required this.selectedClipId,
     required this.clipDragController,
     required this.onSeek,
     required this.onSelect,
@@ -27,27 +22,93 @@ class TimelineTrackLane extends StatelessWidget {
     required this.onTrimCommitted,
   });
 
-  final String clipId;
-  final String fileName;
-  final double clipDurationSeconds;
-  final double sourceStartSeconds;
-  final double sourceAudioDurationSeconds;
-  final double startTimeSeconds;
-  final List<double> waveformPeaks;
+  final List<AudioClip> clips;
   final double playheadSeconds;
   final TimelineGridMetrics gridMetrics;
-  final bool isSelected;
+  final String? selectedClipId;
   final TimelineClipDragController clipDragController;
   final ValueChanged<double> onSeek;
-  final VoidCallback onSelect;
-  final ValueChanged<double> onMoveCommitted;
-  final ValueChanged<TimelineClipDragResult> onTrimCommitted;
+  final ValueChanged<String> onSelect;
+  final void Function(String clipId, double startSeconds) onMoveCommitted;
+  final void Function(String clipId, TimelineClipDragResult result)
+  onTrimCommitted;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final transform = gridMetrics.transform;
 
+    return Container(
+      height: trackHeight,
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLowest,
+        border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
+      ),
+      child: Stack(
+        clipBehavior: Clip.hardEdge,
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (details) {
+                onSeek(transform.contentXToTime(details.localPosition.dx));
+              },
+              child: CustomPaint(
+                painter: _GridPainter(
+                  color: colorScheme.outlineVariant,
+                  gridMetrics: gridMetrics,
+                  devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+                ),
+              ),
+            ),
+          ),
+          for (final clip in clips)
+            _TimelineAudioClip(
+              key: ValueKey(clip.id),
+              clip: clip,
+              transform: transform,
+              isSelected: selectedClipId == clip.id,
+              clipDragController: clipDragController,
+              onSelect: () => onSelect(clip.id),
+              onMoveCommitted: (start) => onMoveCommitted(clip.id, start),
+              onTrimCommitted: (result) => onTrimCommitted(clip.id, result),
+            ),
+          Positioned(
+            left: transform.timeToContentX(playheadSeconds) - 1,
+            top: 0,
+            bottom: 0,
+            child: IgnorePointer(
+              child: Container(width: 2, color: colorScheme.tertiary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TimelineAudioClip extends StatelessWidget {
+  const _TimelineAudioClip({
+    super.key,
+    required this.clip,
+    required this.transform,
+    required this.isSelected,
+    required this.clipDragController,
+    required this.onSelect,
+    required this.onMoveCommitted,
+    required this.onTrimCommitted,
+  });
+
+  final AudioClip clip;
+  final TimelineTransform transform;
+  final bool isSelected;
+  final TimelineClipDragController clipDragController;
+  final VoidCallback onSelect;
+  final ValueChanged<double> onMoveCommitted;
+  final ValueChanged<TimelineClipDragResult> onTrimCommitted;
+
+  @override
+  Widget build(BuildContext context) {
     void commitDrag(int pointer) {
       final result = clipDragController.end(pointer);
       if (!(result?.didChange ?? false)) {
@@ -76,171 +137,129 @@ class TimelineTrackLane extends StatelessWidget {
       );
     }
 
-    return Container(
-      height: trackHeight,
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLowest,
-        border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
-      ),
-      child: Stack(
-        clipBehavior: Clip.hardEdge,
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapDown: (details) {
-                onSeek(transform.contentXToTime(details.localPosition.dx));
-              },
-              child: CustomPaint(
-                painter: _GridPainter(
-                  color: colorScheme.outlineVariant,
-                  gridMetrics: gridMetrics,
-                  devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+    return ValueListenableBuilder<TimelineClipDragState?>(
+      valueListenable: clipDragController,
+      builder: (context, dragState, child) {
+        final isDragging = dragState?.clipId == clip.id;
+        final visualStartSeconds = isDragging
+            ? dragState!.previewStartSeconds
+            : clip.timelineStartSeconds;
+        final visualSourceStartSeconds = isDragging
+            ? dragState!.previewSourceStartSeconds
+            : clip.sourceStartSeconds;
+        final visualDurationSeconds = isDragging
+            ? dragState!.clipDurationSeconds
+            : clip.clipDurationSeconds;
+        final renderedClipWidth = math.max(
+          transform.timeToContentX(visualDurationSeconds),
+          1.0,
+        );
+        final trimHitWidth = math.min(12.0, renderedClipWidth / 2);
+
+        return Positioned(
+          left: transform.timeToContentX(visualStartSeconds),
+          top: 8,
+          bottom: 8,
+          width: renderedClipWidth,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: MouseRegion(
+                  cursor:
+                      isDragging && dragState!.mode == TimelineClipDragMode.move
+                      ? SystemMouseCursors.grabbing
+                      : SystemMouseCursors.grab,
+                  child: Listener(
+                    behavior: HitTestBehavior.opaque,
+                    onPointerDown: (event) {
+                      if ((event.buttons & kPrimaryMouseButton) == 0) {
+                        return;
+                      }
+                      onSelect();
+                      clipDragController.begin(
+                        pointer: event.pointer,
+                        clipId: clip.id,
+                        pointerGlobalX: event.position.dx,
+                        clipStartSeconds: clip.timelineStartSeconds,
+                        sourceStartSeconds: clip.sourceStartSeconds,
+                        clipDurationSeconds: clip.clipDurationSeconds,
+                        sourceAudioDurationSeconds:
+                            clip.sourceAudioDurationSeconds,
+                        pixelsPerSecond: transform.scale.pixelsPerSecond,
+                      );
+                    },
+                    onPointerMove: updateDrag,
+                    onPointerUp: (event) => commitDrag(event.pointer),
+                    onPointerCancel: (event) {
+                      clipDragController.cancel(event.pointer);
+                    },
+                    child: _AudioClipSurface(
+                      fileName: clip.audio.name,
+                      clipDurationSeconds: visualDurationSeconds,
+                      sourceStartSeconds: visualSourceStartSeconds,
+                      sourceAudioDurationSeconds:
+                          clip.sourceAudioDurationSeconds,
+                      waveformPeaks: clip.audio.waveformPeaks,
+                      isSelected: isSelected,
+                      isDragging: isDragging,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
-          ValueListenableBuilder<TimelineClipDragState?>(
-            valueListenable: clipDragController,
-            builder: (context, dragState, child) {
-              final isDragging = dragState?.clipId == clipId;
-              final visualStartSeconds = isDragging
-                  ? dragState!.previewStartSeconds
-                  : startTimeSeconds;
-              final visualSourceStartSeconds = isDragging
-                  ? dragState!.previewSourceStartSeconds
-                  : sourceStartSeconds;
-              final visualDurationSeconds = isDragging
-                  ? dragState!.clipDurationSeconds
-                  : clipDurationSeconds;
-              final renderedClipWidth = math.max(
-                transform.timeToContentX(visualDurationSeconds),
-                1.0,
-              );
-              final trimHitWidth = math.min(
-                12.0,
-                renderedClipWidth / 2,
-              );
-
-              return Positioned(
-                left: transform.timeToContentX(visualStartSeconds),
-                top: 8,
-                bottom: 8,
-                width: renderedClipWidth,
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: MouseRegion(
-                        cursor:
-                            isDragging &&
-                                dragState!.mode == TimelineClipDragMode.move
-                            ? SystemMouseCursors.grabbing
-                            : SystemMouseCursors.grab,
-                        child: Listener(
-                          behavior: HitTestBehavior.opaque,
-                          onPointerDown: (event) {
-                            if ((event.buttons & kPrimaryMouseButton) == 0) {
-                              return;
-                            }
-                            onSelect();
-                            clipDragController.begin(
-                              pointer: event.pointer,
-                              clipId: clipId,
-                              pointerGlobalX: event.position.dx,
-                              clipStartSeconds: startTimeSeconds,
-                              sourceStartSeconds: sourceStartSeconds,
-                              clipDurationSeconds: clipDurationSeconds,
-                              sourceAudioDurationSeconds:
-                                  sourceAudioDurationSeconds,
-                              pixelsPerSecond: transform.scale.pixelsPerSecond,
-                            );
-                          },
-                          onPointerMove: updateDrag,
-                          onPointerUp: (event) => commitDrag(event.pointer),
-                          onPointerCancel: (event) {
-                            clipDragController.cancel(event.pointer);
-                          },
-                          child: _AudioClipSurface(
-                            fileName: fileName,
-                            clipDurationSeconds: visualDurationSeconds,
-                            sourceStartSeconds: visualSourceStartSeconds,
-                            sourceAudioDurationSeconds:
-                                sourceAudioDurationSeconds,
-                            waveformPeaks: waveformPeaks,
-                            isSelected: isSelected,
-                            isDragging: isDragging,
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      left: 0,
-                      top: 0,
-                      bottom: 0,
-                      width: trimHitWidth,
-                      child: _TrimHandle(
-                        side: TimelineClipDragMode.trimStart,
-                        isSelected: isSelected,
-                        isActive:
-                            isDragging &&
-                            dragState!.mode == TimelineClipDragMode.trimStart,
-                        onPointerDown: (event) => _beginTrim(
-                          event: event,
-                          side: TimelineClipDragMode.trimStart,
-                          transform: transform,
-                        ),
-                        onPointerMove: updateDrag,
-                        onPointerUp: (event) => commitDrag(event.pointer),
-                        onPointerCancel: (event) {
-                          clipDragController.cancel(event.pointer);
-                        },
-                      ),
-                    ),
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      bottom: 0,
-                      width: trimHitWidth,
-                      child: _TrimHandle(
-                        side: TimelineClipDragMode.trimEnd,
-                        isSelected: isSelected,
-                        isActive:
-                            isDragging &&
-                            dragState!.mode == TimelineClipDragMode.trimEnd,
-                        onPointerDown: (event) => _beginTrim(
-                          event: event,
-                          side: TimelineClipDragMode.trimEnd,
-                          transform: transform,
-                        ),
-                        onPointerMove: updateDrag,
-                        onPointerUp: (event) => commitDrag(event.pointer),
-                        onPointerCancel: (event) {
-                          clipDragController.cancel(event.pointer);
-                        },
-                      ),
-                    ),
-                  ],
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: trimHitWidth,
+                child: _TrimHandle(
+                  side: TimelineClipDragMode.trimStart,
+                  isSelected: isSelected,
+                  isActive:
+                      isDragging &&
+                      dragState!.mode == TimelineClipDragMode.trimStart,
+                  onPointerDown: (event) => _beginTrim(
+                    event: event,
+                    side: TimelineClipDragMode.trimStart,
+                  ),
+                  onPointerMove: updateDrag,
+                  onPointerUp: (event) => commitDrag(event.pointer),
+                  onPointerCancel: (event) {
+                    clipDragController.cancel(event.pointer);
+                  },
                 ),
-              );
-            },
+              ),
+              Positioned(
+                right: 0,
+                top: 0,
+                bottom: 0,
+                width: trimHitWidth,
+                child: _TrimHandle(
+                  side: TimelineClipDragMode.trimEnd,
+                  isSelected: isSelected,
+                  isActive:
+                      isDragging &&
+                      dragState!.mode == TimelineClipDragMode.trimEnd,
+                  onPointerDown: (event) => _beginTrim(
+                    event: event,
+                    side: TimelineClipDragMode.trimEnd,
+                  ),
+                  onPointerMove: updateDrag,
+                  onPointerUp: (event) => commitDrag(event.pointer),
+                  onPointerCancel: (event) {
+                    clipDragController.cancel(event.pointer);
+                  },
+                ),
+              ),
+            ],
           ),
-          Positioned(
-            left: transform.timeToContentX(playheadSeconds) - 1,
-            top: 0,
-            bottom: 0,
-            child: IgnorePointer(
-              child: Container(width: 2, color: colorScheme.tertiary),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   void _beginTrim({
     required PointerDownEvent event,
     required TimelineClipDragMode side,
-    required TimelineTransform transform,
   }) {
     if ((event.buttons & kPrimaryMouseButton) == 0) {
       return;
@@ -248,13 +267,13 @@ class TimelineTrackLane extends StatelessWidget {
     onSelect();
     clipDragController.beginTrim(
       pointer: event.pointer,
-      clipId: clipId,
+      clipId: clip.id,
       mode: side,
       pointerGlobalX: event.position.dx,
-      clipStartSeconds: startTimeSeconds,
-      sourceStartSeconds: sourceStartSeconds,
-      clipDurationSeconds: clipDurationSeconds,
-      sourceAudioDurationSeconds: sourceAudioDurationSeconds,
+      clipStartSeconds: clip.timelineStartSeconds,
+      sourceStartSeconds: clip.sourceStartSeconds,
+      clipDurationSeconds: clip.clipDurationSeconds,
+      sourceAudioDurationSeconds: clip.sourceAudioDurationSeconds,
       pixelsPerSecond: transform.scale.pixelsPerSecond,
     );
   }

@@ -35,6 +35,27 @@ class EditorState {
     return calculateProjectDurationSeconds(tracks);
   }
 
+  AudioClip? get selectedClip {
+    final clipId = selectedClipId;
+    if (clipId == null) {
+      return null;
+    }
+
+    for (final track in tracks) {
+      for (final clip in track.clips) {
+        if (clip.id == clipId) {
+          return clip;
+        }
+      }
+    }
+    return null;
+  }
+
+  bool get canSplitSelectedClip {
+    final clip = selectedClip;
+    return clip != null && canSplitAudioClip(clip, playheadSeconds);
+  }
+
   EditorState copyWith({
     bool? isPlaying,
     bool? isImporting,
@@ -126,11 +147,13 @@ class EditorController extends Notifier<EditorState> {
           DawTrack(
             id: trackId,
             name: file.name,
-            clip: AudioClip(
-              id: clipId,
-              audio: audio,
-              clipDurationSeconds: audio.durationSeconds,
-            ),
+            clips: [
+              AudioClip(
+                id: clipId,
+                audio: audio,
+                clipDurationSeconds: audio.durationSeconds,
+              ),
+            ],
           ),
         );
       } catch (_) {
@@ -146,7 +169,7 @@ class EditorController extends Notifier<EditorState> {
           : newTracks.last.id,
       selectedClipId: newTracks.isEmpty
           ? state.selectedClipId
-          : newTracks.last.clip.id,
+          : newTracks.last.clips.single.id,
     );
 
     return failedFiles;
@@ -271,30 +294,37 @@ class EditorController extends Notifier<EditorState> {
     final normalizedStart = timelineStartSeconds
         .clamp(0.0, double.infinity)
         .toDouble();
-    DawTrack? movedTrack;
+    AudioClip? movedClip;
 
     for (final track in state.tracks) {
-      if (track.clip.id == clipId) {
-        movedTrack = track;
+      for (final clip in track.clips) {
+        if (clip.id == clipId) {
+          movedClip = clip;
+          break;
+        }
+      }
+      if (movedClip != null) {
         break;
       }
     }
 
-    if (movedTrack == null ||
-        (movedTrack.clip.timelineStartSeconds - normalizedStart).abs() <
-            0.000001) {
+    if (movedClip == null ||
+        (movedClip.timelineStartSeconds - normalizedStart).abs() < 0.000001) {
       return;
     }
 
     final requestId = ++_clipEditRequestId;
     final tracks = [
       for (final track in state.tracks)
-        if (track.clip.id == clipId)
-          track.copyWith(
-            clip: track.clip.copyWith(timelineStartSeconds: normalizedStart),
-          )
-        else
-          track,
+        track.copyWith(
+          clips: _orderedClips([
+            for (final clip in track.clips)
+              if (clip.id == clipId)
+                clip.copyWith(timelineStartSeconds: normalizedStart)
+              else
+                clip,
+          ]),
+        ),
     ];
     final previousPosition = _audioEngine.currentPositionSeconds;
 
@@ -329,19 +359,24 @@ class EditorController extends Notifier<EditorState> {
       return;
     }
 
-    DawTrack? trimmedTrack;
+    AudioClip? currentClip;
     for (final track in state.tracks) {
-      if (track.clip.id == clipId) {
-        trimmedTrack = track;
+      for (final clip in track.clips) {
+        if (clip.id == clipId) {
+          currentClip = clip;
+          break;
+        }
+      }
+      if (currentClip != null) {
         break;
       }
     }
 
-    if (trimmedTrack == null) {
+    if (currentClip == null) {
       return;
     }
 
-    final sourceDuration = trimmedTrack.clip.sourceAudioDurationSeconds;
+    final sourceDuration = currentClip.sourceAudioDurationSeconds;
     final minimumDuration = math.min(
       minimumClipDurationSeconds,
       sourceDuration,
@@ -356,8 +391,6 @@ class EditorController extends Notifier<EditorState> {
     final normalizedTimelineStart = timelineStartSeconds
         .clamp(0.0, double.infinity)
         .toDouble();
-    final currentClip = trimmedTrack.clip;
-
     if ((currentClip.timelineStartSeconds - normalizedTimelineStart).abs() <
             0.000001 &&
         (currentClip.sourceStartSeconds - normalizedSourceStart).abs() <
@@ -370,16 +403,19 @@ class EditorController extends Notifier<EditorState> {
     final requestId = ++_clipEditRequestId;
     final tracks = [
       for (final track in state.tracks)
-        if (track.clip.id == clipId)
-          track.copyWith(
-            clip: track.clip.copyWith(
-              timelineStartSeconds: normalizedTimelineStart,
-              sourceStartSeconds: normalizedSourceStart,
-              clipDurationSeconds: normalizedDuration,
-            ),
-          )
-        else
-          track,
+        track.copyWith(
+          clips: _orderedClips([
+            for (final clip in track.clips)
+              if (clip.id == clipId)
+                clip.copyWith(
+                  timelineStartSeconds: normalizedTimelineStart,
+                  sourceStartSeconds: normalizedSourceStart,
+                  clipDurationSeconds: normalizedDuration,
+                )
+              else
+                clip,
+          ]),
+        ),
     ];
     final previousPosition = _audioEngine.currentPositionSeconds;
 
@@ -402,6 +438,104 @@ class EditorController extends Notifier<EditorState> {
     }
   }
 
+  Future<void> splitClip(String clipId, double timelineSeconds) async {
+    if (!timelineSeconds.isFinite) {
+      return;
+    }
+
+    DawTrack? containingTrack;
+    AudioClip? originalClip;
+    for (final track in state.tracks) {
+      for (final clip in track.clips) {
+        if (clip.id == clipId) {
+          containingTrack = track;
+          originalClip = clip;
+          break;
+        }
+      }
+      if (originalClip != null) {
+        break;
+      }
+    }
+
+    if (containingTrack == null ||
+        originalClip == null ||
+        !canSplitAudioClip(originalClip, timelineSeconds)) {
+      return;
+    }
+
+    final rightClipId = _nextClipId();
+    final split = splitAudioClip(
+      clip: originalClip,
+      rightClipId: rightClipId,
+      timelineSeconds: timelineSeconds,
+    );
+    if (split == null) {
+      return;
+    }
+
+    final requestId = ++_clipEditRequestId;
+    final tracks = [
+      for (final track in state.tracks)
+        if (track.id == containingTrack.id)
+          track.copyWith(
+            clips: _orderedClips([
+              for (final clip in track.clips)
+                if (clip.id == clipId) ...[split.left, split.right] else clip,
+            ]),
+          )
+        else
+          track,
+    ];
+    final previousPosition = _audioEngine.currentPositionSeconds;
+
+    state = state.copyWith(
+      tracks: tracks,
+      selectedTrackId: containingTrack.id,
+      selectedClipId: rightClipId,
+    );
+    _playheadTimer?.cancel();
+
+    await _audioEngine.seek(tracks: tracks, positionSeconds: previousPosition);
+
+    if (requestId != _clipEditRequestId) {
+      return;
+    }
+
+    state = state.copyWith(
+      isPlaying: _audioEngine.isPlaying,
+      playheadSeconds: _audioEngine.currentPositionSeconds,
+    );
+
+    if (_audioEngine.isPlaying) {
+      _startPlayheadTicker();
+    }
+  }
+
+  String _nextClipId() {
+    final existingIds = {
+      for (final track in state.tracks)
+        for (final clip in track.clips) clip.id,
+    };
+
+    do {
+      _clipCounter++;
+    } while (existingIds.contains('clip-$_clipCounter'));
+
+    return 'clip-$_clipCounter';
+  }
+
+  static List<AudioClip> _orderedClips(Iterable<AudioClip> clips) {
+    final ordered = clips.toList();
+    ordered.sort((left, right) {
+      final timeOrder = left.timelineStartSeconds.compareTo(
+        right.timelineStartSeconds,
+      );
+      return timeOrder != 0 ? timeOrder : left.id.compareTo(right.id);
+    });
+    return ordered;
+  }
+
   void removeTrack(String trackId) {
     _clipEditRequestId++;
     _audioEngine.removeTrack(trackId);
@@ -412,7 +546,9 @@ class EditorController extends Notifier<EditorState> {
       tracks: tracks,
       clearSelectedTrack: state.selectedTrackId == trackId,
       clearSelectedClip: state.tracks.any(
-        (track) => track.id == trackId && track.clip.id == state.selectedClipId,
+        (track) =>
+            track.id == trackId &&
+            track.clips.any((clip) => clip.id == state.selectedClipId),
       ),
     );
 
