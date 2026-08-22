@@ -15,6 +15,7 @@ class TimelineTrackLane extends StatelessWidget {
   const TimelineTrackLane({
     super.key,
     required this.clips,
+    this.trackColorValue = 0xFF8468C8,
     required this.playheadSeconds,
     required this.gridMetrics,
     required this.selectedClipId,
@@ -28,6 +29,7 @@ class TimelineTrackLane extends StatelessWidget {
   });
 
   final List<AudioClip> clips;
+  final int trackColorValue;
   final double playheadSeconds;
   final TimelineGridMetrics gridMetrics;
   final String? selectedClipId;
@@ -87,6 +89,7 @@ class TimelineTrackLane extends StatelessWidget {
             _TimelineAudioClip(
               key: ValueKey(clip.id),
               clip: clip,
+              trackColor: Color(trackColorValue),
               transform: transform,
               isSelected: selectedClipId == clip.id,
               clipDragController: clipDragController,
@@ -114,6 +117,7 @@ class _TimelineAudioClip extends StatelessWidget {
   const _TimelineAudioClip({
     super.key,
     required this.clip,
+    required this.trackColor,
     required this.transform,
     required this.isSelected,
     required this.clipDragController,
@@ -125,6 +129,7 @@ class _TimelineAudioClip extends StatelessWidget {
   });
 
   final AudioClip clip;
+  final Color trackColor;
   final TimelineTransform transform;
   final bool isSelected;
   final TimelineClipDragController clipDragController;
@@ -230,6 +235,7 @@ class _TimelineAudioClip extends StatelessWidget {
                       sourceAudioDurationSeconds:
                           clip.sourceAudioDurationSeconds,
                       waveformPeaks: clip.audio.waveformPeaks,
+                      trackColor: trackColor,
                       isSelected: isSelected,
                       isDragging: isDragging,
                     ),
@@ -363,8 +369,10 @@ class _TrimHandleState extends State<_TrimHandle> {
             margin: const EdgeInsets.symmetric(vertical: 5),
             decoration: BoxDecoration(
               color: showAffordance
-                  ? colorScheme.tertiary
-                  : colorScheme.primary.withValues(alpha: 0.18),
+                  ? widget.isActive
+                        ? colorScheme.tertiary
+                        : colorScheme.onSurface
+                  : colorScheme.onSurface.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -381,6 +389,7 @@ class _AudioClipSurface extends StatelessWidget {
     required this.sourceStartSeconds,
     required this.sourceAudioDurationSeconds,
     required this.waveformPeaks,
+    required this.trackColor,
     required this.isSelected,
     required this.isDragging,
   });
@@ -390,23 +399,33 @@ class _AudioClipSurface extends StatelessWidget {
   final double sourceStartSeconds;
   final double sourceAudioDurationSeconds;
   final List<double> waveformPeaks;
+  final Color trackColor;
   final bool isSelected;
   final bool isDragging;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final backgroundColor = Color.alphaBlend(
+      trackColor.withValues(alpha: isDragging ? 0.34 : 0.24),
+      colorScheme.surfaceContainerHigh,
+    );
+    final waveformColor =
+        ThemeData.estimateBrightnessForColor(backgroundColor) == Brightness.dark
+        ? Colors.white.withValues(alpha: 0.72)
+        : Colors.black.withValues(alpha: 0.68);
+    final identityBorderColor = trackColor.computeLuminance() < 0.035
+        ? Color.alphaBlend(Colors.white.withValues(alpha: 0.38), trackColor)
+        : trackColor.withValues(alpha: 0.9);
     final borderColor = isDragging
         ? colorScheme.tertiary
         : isSelected
-        ? colorScheme.primary
-        : colorScheme.primary.withValues(alpha: 0.7);
+        ? colorScheme.onSurface
+        : identityBorderColor;
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: isDragging
-            ? colorScheme.primaryContainer.withValues(alpha: 0.92)
-            : colorScheme.primaryContainer,
+        color: backgroundColor,
         border: Border.all(
           color: borderColor,
           width: isDragging || isSelected ? 2 : 1,
@@ -418,6 +437,13 @@ class _AudioClipSurface extends StatelessWidget {
                   color: colorScheme.shadow.withValues(alpha: 0.28),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
+                ),
+              ]
+            : isSelected
+            ? [
+                BoxShadow(
+                  color: colorScheme.onSurface.withValues(alpha: 0.14),
+                  blurRadius: 5,
                 ),
               ]
             : null,
@@ -435,9 +461,7 @@ class _AudioClipSurface extends StatelessWidget {
                     sourceStartSeconds: sourceStartSeconds,
                     clipDurationSeconds: clipDurationSeconds,
                     sourceAudioDurationSeconds: sourceAudioDurationSeconds,
-                    color: colorScheme.onPrimaryContainer.withValues(
-                      alpha: 0.6,
-                    ),
+                    color: waveformColor,
                   ),
                 ),
               ),
@@ -448,12 +472,17 @@ class _AudioClipSurface extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                 decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer.withValues(alpha: 0.85),
+                  color: Color.alphaBlend(
+                    colorScheme.surface.withValues(alpha: 0.72),
+                    backgroundColor,
+                  ),
                   borderRadius: BorderRadius.circular(3),
                 ),
                 child: Text(
                   fileName,
-                  style: Theme.of(context).textTheme.labelSmall,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: colorScheme.onSurface,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -464,7 +493,9 @@ class _AudioClipSurface extends StatelessWidget {
               top: 5,
               child: Text(
                 '${clipDurationSeconds.toStringAsFixed(2)}s',
-                style: Theme.of(context).textTheme.labelSmall,
+                style: Theme.of(
+                  context,
+                ).textTheme.labelSmall?.copyWith(color: colorScheme.onSurface),
               ),
             ),
           ],

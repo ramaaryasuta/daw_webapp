@@ -33,6 +33,7 @@ class ProjectSnapshot {
       final rightTrack = other.tracks[trackIndex];
       if (leftTrack.id != rightTrack.id ||
           leftTrack.name != rightTrack.name ||
+          leftTrack.colorValue != rightTrack.colorValue ||
           leftTrack.volume != rightTrack.volume ||
           leftTrack.isMuted != rightTrack.isMuted ||
           leftTrack.isSolo != rightTrack.isSolo ||
@@ -40,18 +41,14 @@ class ProjectSnapshot {
         return false;
       }
 
-      for (var clipIndex = 0;
-          clipIndex < leftTrack.clips.length;
-          clipIndex++) {
+      for (var clipIndex = 0; clipIndex < leftTrack.clips.length; clipIndex++) {
         final leftClip = leftTrack.clips[clipIndex];
         final rightClip = rightTrack.clips[clipIndex];
         if (leftClip.id != rightClip.id ||
             leftClip.audio.id != rightClip.audio.id ||
-            leftClip.timelineStartSeconds !=
-                rightClip.timelineStartSeconds ||
+            leftClip.timelineStartSeconds != rightClip.timelineStartSeconds ||
             leftClip.sourceStartSeconds != rightClip.sourceStartSeconds ||
-            leftClip.clipDurationSeconds !=
-                rightClip.clipDurationSeconds) {
+            leftClip.clipDurationSeconds != rightClip.clipDurationSeconds) {
           return false;
         }
       }

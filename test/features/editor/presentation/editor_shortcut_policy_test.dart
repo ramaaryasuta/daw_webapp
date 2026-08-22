@@ -199,4 +199,34 @@ void main() {
       isFalse,
     );
   });
+
+  testWidgets('focused editor popover scope owns DAW commands', (tester) async {
+    late BuildContext editorContext;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            editorContext = context;
+            return const Scaffold(
+              body: EditorShortcutScope(
+                child: Focus(
+                  autofocus: true,
+                  child: SizedBox(width: 100, height: 40),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(EditorShortcutPolicy.primaryFocusOwnsSpace, isTrue);
+    expect(EditorShortcutPolicy.canHandleEditorCommand(editorContext), isFalse);
+    expect(
+      EditorShortcutPolicy.canHandleTransportShortcut(editorContext),
+      isFalse,
+    );
+  });
 }

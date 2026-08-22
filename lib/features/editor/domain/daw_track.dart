@@ -1,17 +1,22 @@
 import 'audio_clip.dart';
+import 'track_color.dart';
+
+const int maximumTrackNameLength = 80;
 
 class DawTrack {
   const DawTrack({
     required this.id,
     required this.name,
     required this.clips,
+    int colorValue = TrackColors.purple,
     this.volume = 1,
     this.isMuted = false,
     this.isSolo = false,
-  });
+  }) : colorValue = 0xFF000000 | (colorValue & 0x00FFFFFF);
 
   final String id;
   final String name;
+  final int colorValue;
 
   final List<AudioClip> clips;
 
@@ -33,6 +38,7 @@ class DawTrack {
     String? id,
     String? name,
     List<AudioClip>? clips,
+    int? colorValue,
     double? volume,
     bool? isMuted,
     bool? isSolo,
@@ -41,6 +47,7 @@ class DawTrack {
       id: id ?? this.id,
       name: name ?? this.name,
       clips: clips ?? this.clips,
+      colorValue: colorValue ?? this.colorValue,
       volume: volume ?? this.volume,
       isMuted: isMuted ?? this.isMuted,
       isSolo: isSolo ?? this.isSolo,

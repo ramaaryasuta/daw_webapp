@@ -86,6 +86,20 @@ abstract final class EditorCommands {
     category: AppCommandCategory.editing,
   );
 
+  static const renameTrack = AppCommand(
+    title: 'Rename Track',
+    description: 'Rename a track directly in its header.',
+    shortcutParts: ['Double-click Track Name'],
+    category: AppCommandCategory.editing,
+  );
+
+  static const changeTrackColor = AppCommand(
+    title: 'Change Track Color',
+    description: 'Choose the color used by a track and all of its clips.',
+    shortcutParts: ['Click Track Color'],
+    category: AppCommandCategory.editing,
+  );
+
   static const snapToGrid = AppCommand(
     title: 'Snap to Grid',
     description:
@@ -105,6 +119,8 @@ abstract final class EditorCommands {
     undo,
     redo,
     splitAudioClip,
+    renameTrack,
+    changeTrackColor,
     playPause,
     snapToGrid,
     temporarilyDisableSnap,

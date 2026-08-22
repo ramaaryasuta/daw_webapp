@@ -66,6 +66,7 @@ abstract final class EditorShortcutPolicy {
       focusContext,
       (widget) =>
           widget is EditableText ||
+          widget is EditorShortcutScope ||
           widget is ButtonStyleButton ||
           widget is IconButton ||
           widget is PopupMenuButton ||
@@ -87,7 +88,7 @@ abstract final class EditorShortcutPolicy {
       return true;
     }
 
-    return !primaryFocusIsEditable;
+    return !_primaryFocusOwnsEditorCommands;
   }
 
   static bool canHandleTransportShortcut(BuildContext editorContext) {
@@ -109,4 +110,23 @@ abstract final class EditorShortcutPolicy {
     });
     return found;
   }
+
+  static bool get _primaryFocusOwnsEditorCommands {
+    final focusContext = FocusManager.instance.primaryFocus?.context;
+    return focusContext != null &&
+        _hasAncestorMatching(
+          focusContext,
+          (widget) => widget is EditableText || widget is EditorShortcutScope,
+        );
+  }
+}
+
+/// Marks an interactive editor popover as owning keyboard input while focused.
+class EditorShortcutScope extends StatelessWidget {
+  const EditorShortcutScope({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => child;
 }

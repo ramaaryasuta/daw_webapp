@@ -28,12 +28,22 @@ class TrackHeaderList extends ConsumerWidget {
         final track = editorState.tracks[index];
 
         return TrackHeader(
+          key: ValueKey(track.id),
           name: track.name,
+          colorValue: track.colorValue,
           volume: track.volume,
           isMuted: track.isMuted,
           isSolo: track.isSolo,
           isSelected: editorState.selectedTrackId == track.id,
           onTap: () => controller.selectTrack(track.id),
+          onRename: (name) => controller.renameTrack(track.id, name),
+          onColorEditStarted: () => controller.beginTrackColorChange(track.id),
+          onColorPreviewed: (colorValue) =>
+              controller.previewTrackColor(track.id, colorValue),
+          onColorEditCommitted: () =>
+              controller.commitTrackColorChange(track.id),
+          onColorEditCancelled: () =>
+              controller.cancelTrackColorChange(track.id),
           onMutePressed: () => controller.toggleMute(track.id),
           onSoloPressed: () => controller.toggleSolo(track.id),
           onDeletePressed: () => controller.removeTrack(track.id),
@@ -85,6 +95,7 @@ class TimelineTrackList extends ConsumerWidget {
         return TimelineTrackLane(
           key: ValueKey(track.id),
           clips: track.clips,
+          trackColorValue: track.colorValue,
           playheadSeconds: editorState.playheadSeconds,
           gridMetrics: gridMetrics,
           selectedClipId: editorState.selectedClipId,

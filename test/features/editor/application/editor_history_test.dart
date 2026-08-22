@@ -2,6 +2,7 @@ import 'package:daw_webapp/features/editor/application/editor_history.dart';
 import 'package:daw_webapp/features/editor/domain/audio_asset.dart';
 import 'package:daw_webapp/features/editor/domain/audio_clip.dart';
 import 'package:daw_webapp/features/editor/domain/daw_track.dart';
+import 'package:daw_webapp/features/editor/domain/track_color.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -23,6 +24,8 @@ void main() {
     double duration = 10,
     double bpm = 120,
     bool split = false,
+    String trackName = 'Track',
+    int trackColorValue = TrackColors.purple,
   }) {
     final original = AudioClip(
       id: 'clip-1',
@@ -35,7 +38,8 @@ void main() {
       tracks: [
         DawTrack(
           id: 'track-1',
-          name: 'Track',
+          name: trackName,
+          colorValue: trackColorValue,
           clips: split
               ? [
                   original.copyWith(clipDurationSeconds: duration / 2),
@@ -59,12 +63,7 @@ void main() {
     final initial = snapshot(start: 0);
     final moved = snapshot(start: 5);
     final trimmed = snapshot(start: 5, sourceStart: 0, duration: 6);
-    final split = snapshot(
-      start: 5,
-      sourceStart: 0,
-      duration: 6,
-      split: true,
-    );
+    final split = snapshot(start: 5, sourceStart: 0, duration: 6, split: true);
     final tempo = snapshot(
       start: 5,
       sourceStart: 0,
@@ -76,8 +75,16 @@ void main() {
     var history = EditorHistory();
     history = history.record(label: 'Move Clip', before: initial, after: moved);
     history = history.record(label: 'Trim Clip', before: moved, after: trimmed);
-    history = history.record(label: 'Split Clip', before: trimmed, after: split);
-    history = history.record(label: 'Change Tempo', before: split, after: tempo);
+    history = history.record(
+      label: 'Split Clip',
+      before: trimmed,
+      after: split,
+    );
+    history = history.record(
+      label: 'Change Tempo',
+      before: split,
+      after: tempo,
+    );
 
     var current = tempo;
     for (final expected in [split, trimmed, moved, initial]) {
@@ -157,5 +164,36 @@ void main() {
       ),
       isTrue,
     );
+  });
+
+  test('track name and color are independent undoable project metadata', () {
+    final initial = snapshot(start: 0);
+    final renamed = snapshot(start: 0, trackName: 'Vocals');
+    final recolored = snapshot(
+      start: 0,
+      trackName: 'Vocals',
+      trackColorValue: 0xFF123456,
+    );
+
+    var history = EditorHistory()
+        .record(label: 'Rename Track', before: initial, after: renamed)
+        .record(label: 'Change Track Color', before: renamed, after: recolored);
+
+    expect(history.past.map((entry) => entry.label), [
+      'Rename Track',
+      'Change Track Color',
+    ]);
+
+    final undoColor = history.undo(recolored)!;
+    expect(undoColor.snapshot.tracks.single.name, 'Vocals');
+    expect(undoColor.snapshot.tracks.single.colorValue, TrackColors.purple);
+
+    final undoRename = undoColor.history.undo(undoColor.snapshot)!;
+    expect(undoRename.snapshot.tracks.single.name, 'Track');
+
+    final redoRename = undoRename.history.redo(undoRename.snapshot)!;
+    final redoColor = redoRename.history.redo(redoRename.snapshot)!;
+    expect(redoColor.snapshot.tracks.single.name, 'Vocals');
+    expect(redoColor.snapshot.tracks.single.colorValue, 0xFF123456);
   });
 }

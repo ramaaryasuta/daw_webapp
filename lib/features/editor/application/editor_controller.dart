@@ -8,6 +8,7 @@ import '../domain/audio_clip.dart';
 import '../domain/daw_track.dart';
 import '../domain/imported_audio_file.dart';
 import '../domain/timeline_scale.dart';
+import '../domain/track_color.dart';
 import '../infrastructure/web_audio_engine.dart';
 import 'editor_history.dart';
 import 'tempo_controller.dart';
@@ -101,6 +102,9 @@ class EditorController extends Notifier<EditorState> {
   ProjectSnapshot? _tempoEditStartSnapshot;
   ProjectSnapshot? _volumeEditStartSnapshot;
   String? _volumeEditTrackId;
+  ProjectSnapshot? _trackColorEditStartSnapshot;
+  String? _trackColorEditTrackId;
+  int? _trackColorEditOriginalValue;
 
   Timer? _playheadTimer;
 
@@ -139,6 +143,9 @@ class EditorController extends Notifier<EditorState> {
     _tempoEditStartSnapshot = null;
     _volumeEditStartSnapshot = null;
     _volumeEditTrackId = null;
+    _trackColorEditStartSnapshot = null;
+    _trackColorEditTrackId = null;
+    _trackColorEditOriginalValue = null;
   }
 
   Future<void> undo() async {
@@ -173,16 +180,23 @@ class EditorController extends Notifier<EditorState> {
     ProjectSnapshot snapshot,
     EditorHistory history,
   ) async {
-    final requestId = ++_clipEditRequestId;
+    final previousTracks = state.tracks;
+    final arrangementChanged = !_hasSameAudioArrangement(
+      previousTracks,
+      snapshot.tracks,
+    );
+    final mixerChanged = !_hasSameMixerState(previousTracks, snapshot.tracks);
+    final requestId = arrangementChanged ? ++_clipEditRequestId : null;
     final previousPosition = _audioEngine.currentPositionSeconds;
-    final selectedTrackId = snapshot.tracks.any(
-      (track) => track.id == snapshot.selectedTrackId,
-    )
+    final selectedTrackId =
+        snapshot.tracks.any((track) => track.id == snapshot.selectedTrackId)
         ? snapshot.selectedTrackId
         : null;
-    final selectedClipId = snapshot.tracks.any(
-      (track) => track.clips.any((clip) => clip.id == snapshot.selectedClipId),
-    )
+    final selectedClipId =
+        snapshot.tracks.any(
+          (track) =>
+              track.clips.any((clip) => clip.id == snapshot.selectedClipId),
+        )
         ? snapshot.selectedClipId
         : null;
 
@@ -198,10 +212,62 @@ class EditorController extends Notifier<EditorState> {
     );
     ref.read(tempoControllerProvider.notifier).setBpm(snapshot.bpm);
 
-    await _resynchronizeArrangement(
-      requestId: requestId,
-      positionSeconds: previousPosition,
-    );
+    if (arrangementChanged) {
+      await _resynchronizeArrangement(
+        requestId: requestId!,
+        positionSeconds: previousPosition,
+      );
+    } else if (mixerChanged) {
+      _audioEngine.syncMixer(state.tracks);
+    }
+  }
+
+  bool _hasSameAudioArrangement(List<DawTrack> left, List<DawTrack> right) {
+    if (left.length != right.length) {
+      return false;
+    }
+
+    for (var trackIndex = 0; trackIndex < left.length; trackIndex++) {
+      final leftTrack = left[trackIndex];
+      final rightTrack = right[trackIndex];
+      if (leftTrack.id != rightTrack.id ||
+          leftTrack.clips.length != rightTrack.clips.length) {
+        return false;
+      }
+
+      for (var clipIndex = 0; clipIndex < leftTrack.clips.length; clipIndex++) {
+        final leftClip = leftTrack.clips[clipIndex];
+        final rightClip = rightTrack.clips[clipIndex];
+        if (leftClip.id != rightClip.id ||
+            leftClip.audio.id != rightClip.audio.id ||
+            leftClip.timelineStartSeconds != rightClip.timelineStartSeconds ||
+            leftClip.sourceStartSeconds != rightClip.sourceStartSeconds ||
+            leftClip.clipDurationSeconds != rightClip.clipDurationSeconds) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  }
+
+  bool _hasSameMixerState(List<DawTrack> left, List<DawTrack> right) {
+    if (left.length != right.length) {
+      return false;
+    }
+
+    for (var index = 0; index < left.length; index++) {
+      final leftTrack = left[index];
+      final rightTrack = right[index];
+      if (leftTrack.id != rightTrack.id ||
+          leftTrack.volume != rightTrack.volume ||
+          leftTrack.isMuted != rightTrack.isMuted ||
+          leftTrack.isSolo != rightTrack.isSolo) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   Future<void> _resynchronizeArrangement({
@@ -273,6 +339,7 @@ class EditorController extends Notifier<EditorState> {
           DawTrack(
             id: trackId,
             name: file.name,
+            colorValue: defaultTrackColorForIndex(_trackCounter - 1),
             clips: [
               AudioClip(
                 id: clipId,
@@ -415,6 +482,118 @@ class EditorController extends Notifier<EditorState> {
 
   void selectClip({required String trackId, required String clipId}) {
     state = state.copyWith(selectedTrackId: trackId, selectedClipId: clipId);
+  }
+
+  void renameTrack(String trackId, String name) {
+    var normalizedName = name.trim();
+    if (normalizedName.isEmpty) {
+      return;
+    }
+    if (normalizedName.length > maximumTrackNameLength) {
+      normalizedName = normalizedName
+          .substring(0, maximumTrackNameLength)
+          .trimRight();
+    }
+
+    final track = state.tracks
+        .where((track) => track.id == trackId)
+        .firstOrNull;
+    if (track == null || track.name == normalizedName) {
+      return;
+    }
+
+    final before = _captureProjectSnapshot();
+    state = state.copyWith(
+      tracks: [
+        for (final currentTrack in state.tracks)
+          if (currentTrack.id == trackId)
+            currentTrack.copyWith(name: normalizedName)
+          else
+            currentTrack,
+      ],
+    );
+    _recordEdit('Rename Track', before);
+  }
+
+  void setTrackColor(String trackId, int colorValue) {
+    final track = state.tracks
+        .where((track) => track.id == trackId)
+        .firstOrNull;
+    final normalizedColor = opaqueTrackColor(colorValue);
+    if (track == null || track.colorValue == normalizedColor) {
+      return;
+    }
+
+    final before = _captureProjectSnapshot();
+    _setTrackColorValue(trackId, normalizedColor);
+    _recordEdit('Change Track Color', before);
+  }
+
+  void beginTrackColorChange(String trackId) {
+    if (_trackColorEditStartSnapshot != null) {
+      return;
+    }
+
+    final track = state.tracks
+        .where((track) => track.id == trackId)
+        .firstOrNull;
+    if (track == null) {
+      return;
+    }
+
+    _trackColorEditStartSnapshot = _captureProjectSnapshot();
+    _trackColorEditTrackId = trackId;
+    _trackColorEditOriginalValue = track.colorValue;
+  }
+
+  void previewTrackColor(String trackId, int colorValue) {
+    if (_trackColorEditTrackId != trackId) {
+      return;
+    }
+    _setTrackColorValue(trackId, colorValue);
+  }
+
+  void commitTrackColorChange(String trackId) {
+    if (_trackColorEditTrackId != trackId) {
+      return;
+    }
+
+    final before = _trackColorEditStartSnapshot;
+    _clearTrackColorEditTransaction();
+    if (before != null) {
+      _recordEdit('Change Track Color', before);
+    }
+  }
+
+  void cancelTrackColorChange(String trackId) {
+    if (_trackColorEditTrackId != trackId) {
+      return;
+    }
+
+    final originalColor = _trackColorEditOriginalValue;
+    _clearTrackColorEditTransaction();
+    if (originalColor != null) {
+      _setTrackColorValue(trackId, originalColor);
+    }
+  }
+
+  void _clearTrackColorEditTransaction() {
+    _trackColorEditStartSnapshot = null;
+    _trackColorEditTrackId = null;
+    _trackColorEditOriginalValue = null;
+  }
+
+  void _setTrackColorValue(String trackId, int colorValue) {
+    final normalizedColor = opaqueTrackColor(colorValue);
+    state = state.copyWith(
+      tracks: [
+        for (final currentTrack in state.tracks)
+          if (currentTrack.id == trackId)
+            currentTrack.copyWith(colorValue: normalizedColor)
+          else
+            currentTrack,
+      ],
+    );
   }
 
   Future<void> moveClip(String clipId, double timelineStartSeconds) async {
