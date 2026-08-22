@@ -13,4 +13,18 @@ void main() {
       'Start or pause playback at the current playhead position.',
     );
   });
+
+  test('Help commands define Undo and primary Redo shortcuts', () {
+    final undo = EditorCommands.all.singleWhere(
+      (command) => command.title == 'Undo',
+    );
+    final redo = EditorCommands.all.singleWhere(
+      (command) => command.title == 'Redo',
+    );
+
+    expect(undo.shortcutParts, ['Ctrl', 'Z']);
+    expect(undo.description, 'Undo the most recent editing action.');
+    expect(redo.shortcutParts, ['Ctrl', 'Shift', 'Z']);
+    expect(redo.description, contains('Ctrl + Y'));
+  });
 }

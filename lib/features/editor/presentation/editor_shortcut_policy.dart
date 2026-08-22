@@ -24,8 +24,38 @@ class PlayPauseShortcutActivator extends ShortcutActivator {
   }
 }
 
+/// Ctrl-based editing shortcut which yields to focused text editors.
+class EditorHistoryShortcutActivator extends ShortcutActivator {
+  const EditorHistoryShortcutActivator(this.key, {this.shift = false});
+
+  final LogicalKeyboardKey key;
+  final bool shift;
+
+  @override
+  String debugDescribeKeys() {
+    return 'Ctrl + ${shift ? 'Shift + ' : ''}${key.keyLabel}';
+  }
+
+  @override
+  bool accepts(KeyEvent event, HardwareKeyboard state) {
+    return event is KeyDownEvent &&
+        event.logicalKey == key &&
+        state.isControlPressed &&
+        !state.isMetaPressed &&
+        !state.isAltPressed &&
+        state.isShiftPressed == shift &&
+        !EditorShortcutPolicy.primaryFocusIsEditable;
+  }
+}
+
 /// Focus and route rules shared by editor-level keyboard commands.
 abstract final class EditorShortcutPolicy {
+  static bool get primaryFocusIsEditable {
+    final focusContext = FocusManager.instance.primaryFocus?.context;
+    return focusContext != null &&
+        _hasAncestorMatching(focusContext, (widget) => widget is EditableText);
+  }
+
   static bool get primaryFocusOwnsSpace {
     final focusContext = FocusManager.instance.primaryFocus?.context;
     if (focusContext == null) {
@@ -57,10 +87,7 @@ abstract final class EditorShortcutPolicy {
       return true;
     }
 
-    return !_hasAncestorMatching(
-      focusContext,
-      (widget) => widget is EditableText,
-    );
+    return !primaryFocusIsEditable;
   }
 
   static bool canHandleTransportShortcut(BuildContext editorContext) {

@@ -22,6 +22,21 @@ class AppCommand {
 }
 
 abstract final class EditorCommands {
+  static const undo = AppCommand(
+    title: 'Undo',
+    description: 'Undo the most recent editing action.',
+    shortcutParts: ['Ctrl', 'Z'],
+    category: AppCommandCategory.editing,
+  );
+
+  static const redo = AppCommand(
+    title: 'Redo',
+    description:
+        'Redo the most recently undone editing action. Ctrl + Y is also supported.',
+    shortcutParts: ['Ctrl', 'Shift', 'Z'],
+    category: AppCommandCategory.editing,
+  );
+
   static const playPause = AppCommand(
     title: 'Play / Pause',
     description: 'Start or pause playback at the current playhead position.',
@@ -87,6 +102,8 @@ abstract final class EditorCommands {
   );
 
   static const all = <AppCommand>[
+    undo,
+    redo,
     splitAudioClip,
     playPause,
     snapToGrid,

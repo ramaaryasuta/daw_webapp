@@ -15,7 +15,9 @@ class TrackHeader extends StatelessWidget {
     required this.onMutePressed,
     required this.onSoloPressed,
     required this.onDeletePressed,
+    required this.onVolumeChangeStart,
     required this.onVolumeChanged,
+    required this.onVolumeChangeEnd,
   });
 
   final String name;
@@ -31,6 +33,8 @@ class TrackHeader extends StatelessWidget {
   final VoidCallback onDeletePressed;
 
   final ValueChanged<double> onVolumeChanged;
+  final ValueChanged<double> onVolumeChangeStart;
+  final ValueChanged<double> onVolumeChangeEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -101,7 +105,9 @@ class TrackHeader extends StatelessWidget {
                       value: volume,
                       min: 0,
                       max: 1,
+                      onChangeStart: onVolumeChangeStart,
                       onChanged: onVolumeChanged,
+                      onChangeEnd: onVolumeChangeEnd,
                     ),
                   ),
                 ],

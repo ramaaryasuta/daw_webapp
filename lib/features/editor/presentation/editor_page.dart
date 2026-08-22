@@ -18,6 +18,7 @@ import '../infrastructure/audio_mixdown_service.dart';
 import 'controllers/timeline_clip_drag_controller.dart';
 import 'editor_shortcut_policy.dart';
 import 'intents/play_pause_intent.dart';
+import 'intents/edit_history_intents.dart';
 import 'intents/split_clip_intent.dart';
 import 'models/app_command.dart';
 import 'models/timeline_ruler_mode.dart';
@@ -294,10 +295,20 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         .splitClip(clipId, editorState.playheadSeconds);
   }
 
+  void _undo() {
+    ref.read(editorControllerProvider.notifier).undo();
+  }
+
+  void _redo() {
+    ref.read(editorControllerProvider.notifier).redo();
+  }
+
   List<EditorMenuSection> _buildMenuSections({
     required bool isImporting,
     required bool hasTracks,
     required bool canSplitClip,
+    required bool canUndo,
+    required bool canRedo,
   }) {
     return [
       EditorMenuSection(
@@ -320,9 +331,29 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         label: 'Edit',
         actions: [
           EditorMenuAction(
+            label: 'Undo',
+            icon: Icons.undo,
+            shortcut: const SingleActivator(
+              LogicalKeyboardKey.keyZ,
+              control: true,
+            ),
+            onSelected: canUndo ? _undo : null,
+          ),
+          EditorMenuAction(
+            label: 'Redo',
+            icon: Icons.redo,
+            shortcut: const SingleActivator(
+              LogicalKeyboardKey.keyZ,
+              control: true,
+              shift: true,
+            ),
+            onSelected: canRedo ? _redo : null,
+          ),
+          EditorMenuAction(
             label: 'Split Clip',
             icon: Icons.call_split_outlined,
             shortcut: const SingleActivator(LogicalKeyboardKey.keyS),
+            separatorBefore: true,
             onSelected: canSplitClip ? _splitSelectedClip : null,
           ),
         ],
@@ -680,11 +711,33 @@ class _EditorPageState extends ConsumerState<EditorPage> {
 
     return Shortcuts(
       shortcuts: const {
+        EditorHistoryShortcutActivator(LogicalKeyboardKey.keyZ): UndoIntent(),
+        EditorHistoryShortcutActivator(
+          LogicalKeyboardKey.keyZ,
+          shift: true,
+        ): RedoIntent(),
+        EditorHistoryShortcutActivator(LogicalKeyboardKey.keyY): RedoIntent(),
         SingleActivator(LogicalKeyboardKey.keyS): SplitClipIntent(),
         PlayPauseShortcutActivator(): PlayPauseIntent(),
       },
       child: Actions(
         actions: {
+          UndoIntent: CallbackAction<UndoIntent>(
+            onInvoke: (_) {
+              if (EditorShortcutPolicy.canHandleEditorCommand(context)) {
+                _undo();
+              }
+              return null;
+            },
+          ),
+          RedoIntent: CallbackAction<RedoIntent>(
+            onInvoke: (_) {
+              if (EditorShortcutPolicy.canHandleEditorCommand(context)) {
+                _redo();
+              }
+              return null;
+            },
+          ),
           SplitClipIntent: CallbackAction<SplitClipIntent>(
             onInvoke: (_) {
               if (EditorShortcutPolicy.canHandleEditorCommand(context)) {
@@ -712,6 +765,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                     isImporting: editorState.isImporting,
                     hasTracks: editorState.tracks.isNotEmpty,
                     canSplitClip: editorState.canSplitSelectedClip,
+                    canUndo: editorState.canUndo,
+                    canRedo: editorState.canRedo,
                   ),
                 ),
 

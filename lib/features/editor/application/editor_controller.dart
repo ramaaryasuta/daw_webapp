@@ -9,9 +9,11 @@ import '../domain/daw_track.dart';
 import '../domain/imported_audio_file.dart';
 import '../domain/timeline_scale.dart';
 import '../infrastructure/web_audio_engine.dart';
+import 'editor_history.dart';
+import 'tempo_controller.dart';
 
 class EditorState {
-  const EditorState({
+  EditorState({
     this.isPlaying = false,
     this.isImporting = false,
     this.playheadSeconds = 0,
@@ -19,7 +21,8 @@ class EditorState {
     this.tracks = const [],
     this.selectedTrackId,
     this.selectedClipId,
-  });
+    EditorHistory? history,
+  }) : history = history ?? EditorHistory();
 
   final bool isPlaying;
   final bool isImporting;
@@ -30,6 +33,10 @@ class EditorState {
   final List<DawTrack> tracks;
   final String? selectedTrackId;
   final String? selectedClipId;
+  final EditorHistory history;
+
+  bool get canUndo => history.canUndo;
+  bool get canRedo => history.canRedo;
 
   double get projectDurationSeconds {
     return calculateProjectDurationSeconds(tracks);
@@ -66,6 +73,7 @@ class EditorState {
     String? selectedClipId,
     bool clearSelectedTrack = false,
     bool clearSelectedClip = false,
+    EditorHistory? history,
   }) {
     return EditorState(
       isPlaying: isPlaying ?? this.isPlaying,
@@ -79,6 +87,7 @@ class EditorState {
       selectedClipId: clearSelectedClip
           ? null
           : selectedClipId ?? this.selectedClipId,
+      history: history ?? this.history,
     );
   }
 }
@@ -88,6 +97,10 @@ class EditorController extends Notifier<EditorState> {
   int _assetCounter = 0;
   int _clipCounter = 0;
   int _clipEditRequestId = 0;
+
+  ProjectSnapshot? _tempoEditStartSnapshot;
+  ProjectSnapshot? _volumeEditStartSnapshot;
+  String? _volumeEditTrackId;
 
   Timer? _playheadTimer;
 
@@ -99,7 +112,120 @@ class EditorController extends Notifier<EditorState> {
       _playheadTimer?.cancel();
     });
 
-    return const EditorState();
+    return EditorState();
+  }
+
+  ProjectSnapshot _captureProjectSnapshot() {
+    return ProjectSnapshot(
+      tracks: state.tracks,
+      bpm: ref.read(tempoControllerProvider).bpm,
+      selectedTrackId: state.selectedTrackId,
+      selectedClipId: state.selectedClipId,
+    );
+  }
+
+  void _recordEdit(String label, ProjectSnapshot before) {
+    final history = state.history.record(
+      label: label,
+      before: before,
+      after: _captureProjectSnapshot(),
+    );
+    if (!identical(history, state.history)) {
+      state = state.copyWith(history: history);
+    }
+  }
+
+  void _clearPendingEditTransactions() {
+    _tempoEditStartSnapshot = null;
+    _volumeEditStartSnapshot = null;
+    _volumeEditTrackId = null;
+  }
+
+  Future<void> undo() async {
+    if (state.isImporting) {
+      return;
+    }
+
+    final transition = state.history.undo(_captureProjectSnapshot());
+    if (transition == null) {
+      return;
+    }
+
+    _clearPendingEditTransactions();
+    await _restoreProjectSnapshot(transition.snapshot, transition.history);
+  }
+
+  Future<void> redo() async {
+    if (state.isImporting) {
+      return;
+    }
+
+    final transition = state.history.redo(_captureProjectSnapshot());
+    if (transition == null) {
+      return;
+    }
+
+    _clearPendingEditTransactions();
+    await _restoreProjectSnapshot(transition.snapshot, transition.history);
+  }
+
+  Future<void> _restoreProjectSnapshot(
+    ProjectSnapshot snapshot,
+    EditorHistory history,
+  ) async {
+    final requestId = ++_clipEditRequestId;
+    final previousPosition = _audioEngine.currentPositionSeconds;
+    final selectedTrackId = snapshot.tracks.any(
+      (track) => track.id == snapshot.selectedTrackId,
+    )
+        ? snapshot.selectedTrackId
+        : null;
+    final selectedClipId = snapshot.tracks.any(
+      (track) => track.clips.any((clip) => clip.id == snapshot.selectedClipId),
+    )
+        ? snapshot.selectedClipId
+        : null;
+
+    state = EditorState(
+      isPlaying: state.isPlaying,
+      isImporting: state.isImporting,
+      playheadSeconds: state.playheadSeconds,
+      pixelsPerSecond: state.pixelsPerSecond,
+      tracks: snapshot.tracks,
+      selectedTrackId: selectedTrackId,
+      selectedClipId: selectedClipId,
+      history: history,
+    );
+    ref.read(tempoControllerProvider.notifier).setBpm(snapshot.bpm);
+
+    await _resynchronizeArrangement(
+      requestId: requestId,
+      positionSeconds: previousPosition,
+    );
+  }
+
+  Future<void> _resynchronizeArrangement({
+    required int requestId,
+    required double positionSeconds,
+  }) async {
+    _playheadTimer?.cancel();
+    await _audioEngine.seek(
+      tracks: state.tracks,
+      positionSeconds: positionSeconds,
+    );
+
+    if (requestId != _clipEditRequestId) {
+      return;
+    }
+
+    state = state.copyWith(
+      isPlaying: _audioEngine.isPlaying,
+      playheadSeconds: _audioEngine.currentPositionSeconds,
+    );
+
+    if (_audioEngine.isPlaying) {
+      _startPlayheadTicker();
+    }
   }
 
   Future<List<String>> importAudioFiles(List<ImportedAudioFile> files) async {
@@ -161,6 +287,7 @@ class EditorController extends Notifier<EditorState> {
       }
     }
 
+    final before = _captureProjectSnapshot();
     state = state.copyWith(
       isImporting: false,
       tracks: [...state.tracks, ...newTracks],
@@ -171,6 +298,10 @@ class EditorController extends Notifier<EditorState> {
           ? state.selectedClipId
           : newTracks.last.clips.single.id,
     );
+
+    if (newTracks.isNotEmpty) {
+      _recordEdit('Import Audio', before);
+    }
 
     return failedFiles;
   }
@@ -313,6 +444,7 @@ class EditorController extends Notifier<EditorState> {
       return;
     }
 
+    final before = _captureProjectSnapshot();
     final requestId = ++_clipEditRequestId;
     final tracks = [
       for (final track in state.tracks)
@@ -329,22 +461,11 @@ class EditorController extends Notifier<EditorState> {
     final previousPosition = _audioEngine.currentPositionSeconds;
 
     state = state.copyWith(tracks: tracks, selectedClipId: clipId);
-    _playheadTimer?.cancel();
-
-    await _audioEngine.seek(tracks: tracks, positionSeconds: previousPosition);
-
-    if (requestId != _clipEditRequestId) {
-      return;
-    }
-
-    state = state.copyWith(
-      isPlaying: _audioEngine.isPlaying,
-      playheadSeconds: _audioEngine.currentPositionSeconds,
+    _recordEdit('Move Clip', before);
+    await _resynchronizeArrangement(
+      requestId: requestId,
+      positionSeconds: previousPosition,
     );
-
-    if (_audioEngine.isPlaying) {
-      _startPlayheadTicker();
-    }
   }
 
   Future<void> updateClipTrim({
@@ -400,6 +521,7 @@ class EditorController extends Notifier<EditorState> {
       return;
     }
 
+    final before = _captureProjectSnapshot();
     final requestId = ++_clipEditRequestId;
     final tracks = [
       for (final track in state.tracks)
@@ -420,22 +542,11 @@ class EditorController extends Notifier<EditorState> {
     final previousPosition = _audioEngine.currentPositionSeconds;
 
     state = state.copyWith(tracks: tracks, selectedClipId: clipId);
-    _playheadTimer?.cancel();
-
-    await _audioEngine.seek(tracks: tracks, positionSeconds: previousPosition);
-
-    if (requestId != _clipEditRequestId) {
-      return;
-    }
-
-    state = state.copyWith(
-      isPlaying: _audioEngine.isPlaying,
-      playheadSeconds: _audioEngine.currentPositionSeconds,
+    _recordEdit('Trim Clip', before);
+    await _resynchronizeArrangement(
+      requestId: requestId,
+      positionSeconds: previousPosition,
     );
-
-    if (_audioEngine.isPlaying) {
-      _startPlayheadTicker();
-    }
   }
 
   Future<void> splitClip(String clipId, double timelineSeconds) async {
@@ -474,6 +585,7 @@ class EditorController extends Notifier<EditorState> {
       return;
     }
 
+    final before = _captureProjectSnapshot();
     final requestId = ++_clipEditRequestId;
     final tracks = [
       for (final track in state.tracks)
@@ -494,22 +606,11 @@ class EditorController extends Notifier<EditorState> {
       selectedTrackId: containingTrack.id,
       selectedClipId: rightClipId,
     );
-    _playheadTimer?.cancel();
-
-    await _audioEngine.seek(tracks: tracks, positionSeconds: previousPosition);
-
-    if (requestId != _clipEditRequestId) {
-      return;
-    }
-
-    state = state.copyWith(
-      isPlaying: _audioEngine.isPlaying,
-      playheadSeconds: _audioEngine.currentPositionSeconds,
+    _recordEdit('Split Clip', before);
+    await _resynchronizeArrangement(
+      requestId: requestId,
+      positionSeconds: previousPosition,
     );
-
-    if (_audioEngine.isPlaying) {
-      _startPlayheadTicker();
-    }
   }
 
   String _nextClipId() {
@@ -536,10 +637,14 @@ class EditorController extends Notifier<EditorState> {
     return ordered;
   }
 
-  void removeTrack(String trackId) {
-    _clipEditRequestId++;
-    _audioEngine.removeTrack(trackId);
+  Future<void> removeTrack(String trackId) async {
+    if (!state.tracks.any((track) => track.id == trackId)) {
+      return;
+    }
 
+    final before = _captureProjectSnapshot();
+    final requestId = ++_clipEditRequestId;
+    final previousPosition = _audioEngine.currentPositionSeconds;
     final tracks = state.tracks.where((track) => track.id != trackId).toList();
 
     state = state.copyWith(
@@ -551,11 +656,15 @@ class EditorController extends Notifier<EditorState> {
             track.clips.any((clip) => clip.id == state.selectedClipId),
       ),
     );
-
-    _audioEngine.syncMixer(tracks);
+    _recordEdit('Delete Track', before);
+    await _resynchronizeArrangement(
+      requestId: requestId,
+      positionSeconds: previousPosition,
+    );
   }
 
   void toggleMute(String trackId) {
+    final before = _captureProjectSnapshot();
     state = state.copyWith(
       tracks: [
         for (final track in state.tracks)
@@ -567,9 +676,11 @@ class EditorController extends Notifier<EditorState> {
     );
 
     _audioEngine.syncMixer(state.tracks);
+    _recordEdit('Mute Track', before);
   }
 
   void toggleSolo(String trackId) {
+    final before = _captureProjectSnapshot();
     state = state.copyWith(
       tracks: [
         for (final track in state.tracks)
@@ -581,9 +692,41 @@ class EditorController extends Notifier<EditorState> {
     );
 
     _audioEngine.syncMixer(state.tracks);
+    _recordEdit('Solo Track', before);
   }
 
-  void setVolume(String trackId, double volume) {
+  void beginVolumeChange(String trackId) {
+    if (_volumeEditStartSnapshot != null ||
+        !state.tracks.any((track) => track.id == trackId)) {
+      return;
+    }
+
+    _volumeEditStartSnapshot = _captureProjectSnapshot();
+    _volumeEditTrackId = trackId;
+  }
+
+  void previewVolume(String trackId, double volume) {
+    if (_volumeEditTrackId != trackId) {
+      return;
+    }
+
+    _setVolume(trackId, volume);
+  }
+
+  void commitVolumeChange(String trackId) {
+    if (_volumeEditTrackId != trackId) {
+      return;
+    }
+
+    final before = _volumeEditStartSnapshot;
+    _volumeEditStartSnapshot = null;
+    _volumeEditTrackId = null;
+    if (before != null) {
+      _recordEdit('Change Track Volume', before);
+    }
+  }
+
+  void _setVolume(String trackId, double volume) {
     state = state.copyWith(
       tracks: [
         for (final track in state.tracks)
@@ -595,6 +738,32 @@ class EditorController extends Notifier<EditorState> {
     );
 
     _audioEngine.syncMixer(state.tracks);
+  }
+
+  void setTempoBpm(double bpm) {
+    final before = _captureProjectSnapshot();
+    ref.read(tempoControllerProvider.notifier).setBpm(bpm);
+    _recordEdit('Change Tempo', before);
+  }
+
+  void beginTempoChange() {
+    _tempoEditStartSnapshot ??= _captureProjectSnapshot();
+  }
+
+  void previewTempoBpm(double bpm) {
+    if (_tempoEditStartSnapshot == null) {
+      return;
+    }
+
+    ref.read(tempoControllerProvider.notifier).setBpm(bpm);
+  }
+
+  void commitTempoChange() {
+    final before = _tempoEditStartSnapshot;
+    _tempoEditStartSnapshot = null;
+    if (before != null) {
+      _recordEdit('Change Tempo', before);
+    }
   }
 }
 

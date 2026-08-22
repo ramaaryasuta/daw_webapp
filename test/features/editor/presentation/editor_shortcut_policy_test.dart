@@ -1,10 +1,91 @@
 import 'package:daw_webapp/features/editor/presentation/editor_shortcut_policy.dart';
 import 'package:daw_webapp/features/editor/presentation/intents/play_pause_intent.dart';
+import 'package:daw_webapp/features/editor/presentation/intents/edit_history_intents.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('Ctrl + Z runs editor Undo with ordinary focus', (tester) async {
+    var invocationCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (editorContext) => Shortcuts(
+            shortcuts: const {
+              EditorHistoryShortcutActivator(LogicalKeyboardKey.keyZ):
+                  UndoIntent(),
+            },
+            child: Actions(
+              actions: {
+                UndoIntent: CallbackAction<UndoIntent>(
+                  onInvoke: (_) {
+                    if (EditorShortcutPolicy.canHandleEditorCommand(
+                      editorContext,
+                    )) {
+                      invocationCount++;
+                    }
+                    return null;
+                  },
+                ),
+              },
+              child: const Focus(
+                autofocus: true,
+                child: Scaffold(body: SizedBox.expand()),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    expect(invocationCount, 1);
+  });
+
+  testWidgets('Ctrl + Z is left to a focused text editor', (tester) async {
+    var invocationCount = 0;
+    final textController = TextEditingController(text: '140');
+    addTearDown(textController.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (editorContext) => Shortcuts(
+            shortcuts: const {
+              EditorHistoryShortcutActivator(LogicalKeyboardKey.keyZ):
+                  UndoIntent(),
+            },
+            child: Actions(
+              actions: {
+                UndoIntent: CallbackAction<UndoIntent>(
+                  onInvoke: (_) {
+                    invocationCount++;
+                    return null;
+                  },
+                ),
+              },
+              child: Scaffold(
+                body: TextField(controller: textController, autofocus: true),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+
+    expect(invocationCount, 0);
+    expect(EditorShortcutPolicy.primaryFocusIsEditable, isTrue);
+  });
+
   testWidgets('Space runs the editor action with ordinary editor focus', (
     tester,
   ) async {

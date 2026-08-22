@@ -37,7 +37,9 @@ class TrackHeaderList extends ConsumerWidget {
           onMutePressed: () => controller.toggleMute(track.id),
           onSoloPressed: () => controller.toggleSolo(track.id),
           onDeletePressed: () => controller.removeTrack(track.id),
-          onVolumeChanged: (value) => controller.setVolume(track.id, value),
+          onVolumeChangeStart: (_) => controller.beginVolumeChange(track.id),
+          onVolumeChanged: (value) => controller.previewVolume(track.id, value),
+          onVolumeChangeEnd: (_) => controller.commitVolumeChange(track.id),
         );
       },
     );

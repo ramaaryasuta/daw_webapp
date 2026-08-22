@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/tempo_controller.dart';
+import '../../application/editor_controller.dart';
 
 class TempoControls extends ConsumerStatefulWidget {
   const TempoControls({super.key});
@@ -72,7 +73,7 @@ class _TempoControlsState extends ConsumerState<TempoControls> {
     });
 
     if (parsed != null && parsed.isFinite) {
-      ref.read(tempoControllerProvider.notifier).setBpm(parsed);
+      ref.read(editorControllerProvider.notifier).setTempoBpm(parsed);
     }
 
     _textController.text = _formatBpm(ref.read(tempoControllerProvider).bpm);
@@ -95,8 +96,8 @@ class _TempoControlsState extends ConsumerState<TempoControls> {
   void _adjustBpm(double verticalDelta) {
     final currentBpm = ref.read(tempoControllerProvider).bpm;
     ref
-        .read(tempoControllerProvider.notifier)
-        .setBpm(currentBpm - verticalDelta * 0.1);
+        .read(editorControllerProvider.notifier)
+        .previewTempoBpm(currentBpm - verticalDelta * 0.1);
   }
 
   @override
@@ -201,8 +202,23 @@ class _TempoControlsState extends ConsumerState<TempoControls> {
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: () => _beginEditing(tempo.bpm),
+                      onVerticalDragStart: (_) {
+                        ref
+                            .read(editorControllerProvider.notifier)
+                            .beginTempoChange();
+                      },
                       onVerticalDragUpdate: (details) {
                         _adjustBpm(details.primaryDelta ?? 0);
+                      },
+                      onVerticalDragEnd: (_) {
+                        ref
+                            .read(editorControllerProvider.notifier)
+                            .commitTempoChange();
+                      },
+                      onVerticalDragCancel: () {
+                        ref
+                            .read(editorControllerProvider.notifier)
+                            .commitTempoChange();
                       },
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 7),
