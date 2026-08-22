@@ -103,8 +103,10 @@ class TimelineTrackList extends ConsumerWidget {
           bpm: bpm,
           snapSettings: snapSettings,
           onSeek: onSeek,
-          onSelect: (clipId) =>
-              controller.selectClip(trackId: track.id, clipId: clipId),
+          onSelect: (clipId) {
+            Focus.of(context).requestFocus();
+            controller.selectClip(trackId: track.id, clipId: clipId);
+          },
           onMoveCommitted: (clipId, startSeconds) {
             controller.moveClip(clipId, startSeconds);
           },

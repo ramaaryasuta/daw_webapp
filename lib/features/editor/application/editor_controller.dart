@@ -64,6 +64,8 @@ class EditorState {
     return clip != null && canSplitAudioClip(clip, playheadSeconds);
   }
 
+  bool get canDeleteSelectedClip => selectedClip != null;
+
   EditorState copyWith({
     bool? isPlaying,
     bool? isImporting,
@@ -786,6 +788,69 @@ class EditorController extends Notifier<EditorState> {
       selectedClipId: rightClipId,
     );
     _recordEdit('Split Clip', before);
+    await _resynchronizeArrangement(
+      requestId: requestId,
+      positionSeconds: previousPosition,
+    );
+  }
+
+  Future<void> deleteSelectedClip() async {
+    final clipId = state.selectedClipId;
+    if (clipId == null) {
+      return;
+    }
+
+    await deleteClip(clipId);
+  }
+
+  Future<void> deleteClip(String clipId) async {
+    DawTrack? containingTrack;
+    for (final track in state.tracks) {
+      if (track.clips.any((clip) => clip.id == clipId)) {
+        containingTrack = track;
+        break;
+      }
+    }
+    if (containingTrack == null) {
+      return;
+    }
+
+    final before = _captureProjectSnapshot();
+    final requestId = ++_clipEditRequestId;
+    final previousPosition = _audioEngine.currentPositionSeconds;
+    final tracks = [
+      for (final track in state.tracks)
+        if (track.id == containingTrack.id)
+          track.copyWith(
+            clips: [
+              for (final clip in track.clips)
+                if (clip.id != clipId) clip,
+            ],
+          )
+        else
+          track,
+    ];
+    final selectedClipId = state.selectedClipId == clipId
+        ? null
+        : state.selectedClipId;
+    final after = ProjectSnapshot(
+      tracks: tracks,
+      bpm: ref.read(tempoControllerProvider).bpm,
+      selectedTrackId: state.selectedTrackId,
+      selectedClipId: selectedClipId,
+    );
+    final history = state.history.record(
+      label: 'Delete Clip',
+      before: before,
+      after: after,
+    );
+
+    state = state.copyWith(
+      tracks: tracks,
+      selectedClipId: selectedClipId,
+      clearSelectedClip: selectedClipId == null,
+      history: history,
+    );
     await _resynchronizeArrangement(
       requestId: requestId,
       positionSeconds: previousPosition,

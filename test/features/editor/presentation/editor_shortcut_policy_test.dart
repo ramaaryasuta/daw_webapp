@@ -1,4 +1,5 @@
 import 'package:daw_webapp/features/editor/presentation/editor_shortcut_policy.dart';
+import 'package:daw_webapp/features/editor/presentation/intents/delete_clip_intent.dart';
 import 'package:daw_webapp/features/editor/presentation/intents/play_pause_intent.dart';
 import 'package:daw_webapp/features/editor/presentation/intents/edit_history_intents.dart';
 import 'package:flutter/material.dart';
@@ -228,5 +229,135 @@ void main() {
       EditorShortcutPolicy.canHandleTransportShortcut(editorContext),
       isFalse,
     );
+  });
+
+  testWidgets('Delete and Backspace run the shared editor action', (
+    tester,
+  ) async {
+    var invocationCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (editorContext) => Shortcuts(
+            shortcuts: const {
+              EditorCommandShortcutActivator(LogicalKeyboardKey.delete):
+                  DeleteClipIntent(),
+              EditorCommandShortcutActivator(LogicalKeyboardKey.backspace):
+                  DeleteClipIntent(),
+            },
+            child: Actions(
+              actions: {
+                DeleteClipIntent: CallbackAction<DeleteClipIntent>(
+                  onInvoke: (_) {
+                    if (EditorShortcutPolicy.canHandleEditorCommand(
+                      editorContext,
+                    )) {
+                      invocationCount++;
+                    }
+                    return null;
+                  },
+                ),
+              },
+              child: const Focus(
+                autofocus: true,
+                child: Scaffold(body: SizedBox.expand()),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+    await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+
+    expect(invocationCount, 2);
+  });
+
+  testWidgets('Delete and Backspace remain text editing keys', (tester) async {
+    var invocationCount = 0;
+    final textController = TextEditingController(text: 'abcd');
+    addTearDown(textController.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Shortcuts(
+          shortcuts: const {
+            EditorCommandShortcutActivator(LogicalKeyboardKey.delete):
+                DeleteClipIntent(),
+            EditorCommandShortcutActivator(LogicalKeyboardKey.backspace):
+                DeleteClipIntent(),
+          },
+          child: Actions(
+            actions: {
+              DeleteClipIntent: CallbackAction<DeleteClipIntent>(
+                onInvoke: (_) {
+                  invocationCount++;
+                  return null;
+                },
+              ),
+            },
+            child: Scaffold(
+              body: TextField(controller: textController, autofocus: true),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    textController.selection = const TextSelection.collapsed(offset: 4);
+    await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    await tester.pump();
+    textController.selection = const TextSelection(
+      baseOffset: 1,
+      extentOffset: 2,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+    await tester.pump();
+
+    expect(invocationCount, 0);
+    expect(textController.text, 'ac');
+  });
+
+  testWidgets('Delete is left to a focused editor control', (tester) async {
+    var invocationCount = 0;
+    final buttonFocusNode = FocusNode();
+    addTearDown(buttonFocusNode.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Shortcuts(
+          shortcuts: const {
+            EditorCommandShortcutActivator(LogicalKeyboardKey.delete):
+                DeleteClipIntent(),
+          },
+          child: Actions(
+            actions: {
+              DeleteClipIntent: CallbackAction<DeleteClipIntent>(
+                onInvoke: (_) {
+                  invocationCount++;
+                  return null;
+                },
+              ),
+            },
+            child: Scaffold(
+              body: TextButton(
+                focusNode: buttonFocusNode,
+                onPressed: () {},
+                child: const Text('Menu control'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    buttonFocusNode.requestFocus();
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+
+    expect(invocationCount, 0);
   });
 }

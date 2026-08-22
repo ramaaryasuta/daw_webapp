@@ -27,4 +27,16 @@ void main() {
     expect(redo.shortcutParts, ['Ctrl', 'Shift', 'Z']);
     expect(redo.description, contains('Ctrl + Y'));
   });
+
+  test('Help commands define Delete Clip keyboard shortcuts', () {
+    final command = EditorCommands.all.singleWhere(
+      (command) => command.title == 'Delete Clip',
+    );
+
+    expect(command.shortcutParts, ['Delete / Backspace']);
+    expect(
+      command.description,
+      'Remove the selected audio clip from the arrangement.',
+    );
+  });
 }

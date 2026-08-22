@@ -86,6 +86,13 @@ abstract final class EditorCommands {
     category: AppCommandCategory.editing,
   );
 
+  static const deleteAudioClip = AppCommand(
+    title: 'Delete Clip',
+    description: 'Remove the selected audio clip from the arrangement.',
+    shortcutParts: ['Delete / Backspace'],
+    category: AppCommandCategory.editing,
+  );
+
   static const renameTrack = AppCommand(
     title: 'Rename Track',
     description: 'Rename a track directly in its header.',
@@ -119,6 +126,7 @@ abstract final class EditorCommands {
     undo,
     redo,
     splitAudioClip,
+    deleteAudioClip,
     renameTrack,
     changeTrackColor,
     playPause,

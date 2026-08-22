@@ -17,8 +17,9 @@ import '../infrastructure/audio_import_service.dart';
 import '../infrastructure/audio_mixdown_service.dart';
 import 'controllers/timeline_clip_drag_controller.dart';
 import 'editor_shortcut_policy.dart';
-import 'intents/play_pause_intent.dart';
+import 'intents/delete_clip_intent.dart';
 import 'intents/edit_history_intents.dart';
+import 'intents/play_pause_intent.dart';
 import 'intents/split_clip_intent.dart';
 import 'models/app_command.dart';
 import 'models/timeline_ruler_mode.dart';
@@ -295,6 +296,10 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         .splitClip(clipId, editorState.playheadSeconds);
   }
 
+  Future<void> _deleteSelectedClip() async {
+    await ref.read(editorControllerProvider.notifier).deleteSelectedClip();
+  }
+
   void _undo() {
     ref.read(editorControllerProvider.notifier).undo();
   }
@@ -307,6 +312,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     required bool isImporting,
     required bool hasTracks,
     required bool canSplitClip,
+    required bool canDeleteClip,
     required bool canUndo,
     required bool canRedo,
   }) {
@@ -355,6 +361,12 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             shortcut: const SingleActivator(LogicalKeyboardKey.keyS),
             separatorBefore: true,
             onSelected: canSplitClip ? _splitSelectedClip : null,
+          ),
+          EditorMenuAction(
+            label: 'Delete Clip',
+            icon: Icons.delete_outline,
+            shortcut: const SingleActivator(LogicalKeyboardKey.delete),
+            onSelected: canDeleteClip ? _deleteSelectedClip : null,
           ),
         ],
       ),
@@ -717,7 +729,12 @@ class _EditorPageState extends ConsumerState<EditorPage> {
           shift: true,
         ): RedoIntent(),
         EditorHistoryShortcutActivator(LogicalKeyboardKey.keyY): RedoIntent(),
-        SingleActivator(LogicalKeyboardKey.keyS): SplitClipIntent(),
+        EditorCommandShortcutActivator(LogicalKeyboardKey.keyS):
+            SplitClipIntent(),
+        EditorCommandShortcutActivator(LogicalKeyboardKey.delete):
+            DeleteClipIntent(),
+        EditorCommandShortcutActivator(LogicalKeyboardKey.backspace):
+            DeleteClipIntent(),
         PlayPauseShortcutActivator(): PlayPauseIntent(),
       },
       child: Actions(
@@ -746,6 +763,14 @@ class _EditorPageState extends ConsumerState<EditorPage> {
               return null;
             },
           ),
+          DeleteClipIntent: CallbackAction<DeleteClipIntent>(
+            onInvoke: (_) {
+              if (EditorShortcutPolicy.canHandleEditorCommand(context)) {
+                _deleteSelectedClip();
+              }
+              return null;
+            },
+          ),
           PlayPauseIntent: CallbackAction<PlayPauseIntent>(
             onInvoke: (_) {
               if (EditorShortcutPolicy.canHandleTransportShortcut(context)) {
@@ -765,6 +790,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                     isImporting: editorState.isImporting,
                     hasTracks: editorState.tracks.isNotEmpty,
                     canSplitClip: editorState.canSplitSelectedClip,
+                    canDeleteClip: editorState.canDeleteSelectedClip,
                     canUndo: editorState.canUndo,
                     canRedo: editorState.canRedo,
                   ),

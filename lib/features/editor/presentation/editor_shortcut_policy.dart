@@ -48,6 +48,27 @@ class EditorHistoryShortcutActivator extends ShortcutActivator {
   }
 }
 
+/// Unmodified editing shortcut which yields to focused text and editor controls.
+class EditorCommandShortcutActivator extends ShortcutActivator {
+  const EditorCommandShortcutActivator(this.key);
+
+  final LogicalKeyboardKey key;
+
+  @override
+  String debugDescribeKeys() => key.keyLabel;
+
+  @override
+  bool accepts(KeyEvent event, HardwareKeyboard state) {
+    return event is KeyDownEvent &&
+        event.logicalKey == key &&
+        !state.isAltPressed &&
+        !state.isControlPressed &&
+        !state.isMetaPressed &&
+        !state.isShiftPressed &&
+        !EditorShortcutPolicy._primaryFocusOwnsEditorCommands;
+  }
+}
+
 /// Focus and route rules shared by editor-level keyboard commands.
 abstract final class EditorShortcutPolicy {
   static bool get primaryFocusIsEditable {
@@ -116,7 +137,17 @@ abstract final class EditorShortcutPolicy {
     return focusContext != null &&
         _hasAncestorMatching(
           focusContext,
-          (widget) => widget is EditableText || widget is EditorShortcutScope,
+          (widget) =>
+              widget is EditableText ||
+              widget is EditorShortcutScope ||
+              widget is ButtonStyleButton ||
+              widget is IconButton ||
+              widget is PopupMenuButton ||
+              widget is DropdownButton ||
+              widget is Slider ||
+              widget is Checkbox ||
+              widget is Radio ||
+              widget is Switch,
         );
   }
 }

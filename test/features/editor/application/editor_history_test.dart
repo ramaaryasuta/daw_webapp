@@ -196,4 +196,51 @@ void main() {
     expect(redoColor.snapshot.tracks.single.name, 'Vocals');
     expect(redoColor.snapshot.tracks.single.colorValue, 0xFF123456);
   });
+
+  test('delete undo and redo preserve an exact trimmed split clip', () {
+    final before = snapshot(
+      start: 12.5,
+      sourceStart: 3.2,
+      duration: 9.4,
+      split: true,
+    );
+    final left = before.tracks.single.clips.first;
+    final deleted = before.tracks.single.clips.last;
+    final after = ProjectSnapshot(
+      tracks: [before.tracks.single.copyWith(clips: [left])],
+      bpm: before.bpm,
+      selectedTrackId: before.selectedTrackId,
+      selectedClipId: null,
+    );
+
+    var history = EditorHistory().record(
+      label: 'Delete Clip',
+      before: before,
+      after: after,
+    );
+    expect(history.past.single.label, 'Delete Clip');
+    expect(calculateProjectDurationSeconds(after.tracks), closeTo(17.2, 1e-9));
+
+    final undo = history.undo(after)!;
+    history = undo.history;
+    final restored = undo.snapshot.tracks.single.clips.last;
+    expect(restored.id, deleted.id);
+    expect(restored.timelineStartSeconds, closeTo(17.2, 1e-9));
+    expect(restored.sourceStartSeconds, closeTo(7.9, 1e-9));
+    expect(restored.clipDurationSeconds, closeTo(4.7, 1e-9));
+    expect(identical(restored.audio, deleted.audio), isTrue);
+    expect(undo.snapshot.selectedClipId, deleted.id);
+    expect(
+      calculateProjectDurationSeconds(undo.snapshot.tracks),
+      closeTo(21.9, 1e-9),
+    );
+
+    final redo = history.redo(undo.snapshot)!;
+    expect(redo.snapshot.tracks.single.clips, [left]);
+    expect(redo.snapshot.selectedClipId, isNull);
+    expect(
+      calculateProjectDurationSeconds(redo.snapshot.tracks),
+      closeTo(17.2, 1e-9),
+    );
+  });
 }
