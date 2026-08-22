@@ -9,7 +9,7 @@ class DawTrack {
     required this.name,
     required this.clips,
     int colorValue = TrackColors.purple,
-    this.volume = 1,
+    this.volumeDb = 0,
     this.isMuted = false,
     this.isSolo = false,
   }) : colorValue = 0xFF000000 | (colorValue & 0x00FFFFFF);
@@ -20,7 +20,8 @@ class DawTrack {
 
   final List<AudioClip> clips;
 
-  final double volume;
+  /// Authoritative track fader value in decibels. 0 dB is unity gain.
+  final double volumeDb;
   final bool isMuted;
   final bool isSolo;
 
@@ -39,7 +40,7 @@ class DawTrack {
     String? name,
     List<AudioClip>? clips,
     int? colorValue,
-    double? volume,
+    double? volumeDb,
     bool? isMuted,
     bool? isSolo,
   }) {
@@ -48,7 +49,7 @@ class DawTrack {
       name: name ?? this.name,
       clips: clips ?? this.clips,
       colorValue: colorValue ?? this.colorValue,
-      volume: volume ?? this.volume,
+      volumeDb: volumeDb ?? this.volumeDb,
       isMuted: isMuted ?? this.isMuted,
       isSolo: isSolo ?? this.isSolo,
     );
@@ -65,12 +66,4 @@ double calculateProjectDurationSeconds(Iterable<DawTrack> tracks) {
   }
 
   return duration;
-}
-
-double effectiveTrackGain(DawTrack track, {required bool hasSolo}) {
-  if (track.isMuted || (hasSolo && !track.isSolo)) {
-    return 0;
-  }
-
-  return track.volume;
 }

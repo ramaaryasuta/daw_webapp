@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../application/editor_controller.dart';
 import '../../application/snap_controller.dart';
 import '../../application/tempo_controller.dart';
+import '../../domain/daw_track.dart';
 import '../../domain/timeline_scale.dart';
 import '../controllers/timeline_clip_drag_controller.dart';
 import 'track_header.dart';
@@ -31,7 +32,7 @@ class TrackHeaderList extends ConsumerWidget {
           key: ValueKey(track.id),
           name: track.name,
           colorValue: track.colorValue,
-          volume: track.volume,
+          volumeDb: track.volumeDb,
           isMuted: track.isMuted,
           isSolo: track.isSolo,
           isSelected: editorState.selectedTrackId == track.id,
@@ -50,6 +51,7 @@ class TrackHeaderList extends ConsumerWidget {
           onVolumeChangeStart: (_) => controller.beginVolumeChange(track.id),
           onVolumeChanged: (value) => controller.previewVolume(track.id, value),
           onVolumeChangeEnd: (_) => controller.commitVolumeChange(track.id),
+          onVolumeReset: () => controller.resetVolume(track.id),
         );
       },
     );
@@ -74,12 +76,22 @@ class TimelineTrackList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final editorState = ref.watch(editorControllerProvider);
+    final tracks = ref.watch(
+      editorControllerProvider.select(
+        (state) => _TimelineTracksSnapshot(state.tracks),
+      ),
+    );
+    final playheadSeconds = ref.watch(
+      editorControllerProvider.select((state) => state.playheadSeconds),
+    );
+    final selectedClipId = ref.watch(
+      editorControllerProvider.select((state) => state.selectedClipId),
+    );
     final bpm = ref.watch(tempoControllerProvider.select((state) => state.bpm));
     final snapSettings = ref.watch(snapControllerProvider);
     final controller = ref.read(editorControllerProvider.notifier);
 
-    if (editorState.tracks.isEmpty) {
+    if (tracks.values.isEmpty) {
       return const _EmptyTracks();
     }
 
@@ -87,18 +99,18 @@ class TimelineTrackList extends ConsumerWidget {
       controller: scrollController,
       physics: scrollPhysics,
       padding: EdgeInsets.zero,
-      itemCount: editorState.tracks.length,
+      itemCount: tracks.values.length,
       itemExtent: trackHeight,
       itemBuilder: (context, index) {
-        final track = editorState.tracks[index];
+        final track = tracks.values[index];
 
         return TimelineTrackLane(
           key: ValueKey(track.id),
           clips: track.clips,
           trackColorValue: track.colorValue,
-          playheadSeconds: editorState.playheadSeconds,
+          playheadSeconds: playheadSeconds,
           gridMetrics: gridMetrics,
-          selectedClipId: editorState.selectedClipId,
+          selectedClipId: selectedClipId,
           clipDragController: clipDragController,
           bpm: bpm,
           snapSettings: snapSettings,
@@ -122,6 +134,40 @@ class TimelineTrackList extends ConsumerWidget {
       },
     );
   }
+}
+
+/// Ignores mixer-only track copies so fader drags do not rebuild waveforms.
+class _TimelineTracksSnapshot {
+  _TimelineTracksSnapshot(Iterable<DawTrack> tracks)
+    : values = List<DawTrack>.unmodifiable(tracks);
+
+  final List<DawTrack> values;
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) {
+      return true;
+    }
+    if (other is! _TimelineTracksSnapshot ||
+        values.length != other.values.length) {
+      return false;
+    }
+    for (var index = 0; index < values.length; index++) {
+      final left = values[index];
+      final right = other.values[index];
+      if (left.id != right.id ||
+          left.colorValue != right.colorValue ||
+          !identical(left.clips, right.clips)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => Object.hashAll(
+    values.map((track) => Object.hash(track.id, track.colorValue, track.clips)),
+  );
 }
 
 class _EmptyTracks extends StatelessWidget {

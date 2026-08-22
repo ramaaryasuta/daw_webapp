@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:web/web.dart' as web;
 
 import '../domain/daw_track.dart';
+import '../domain/track_mixer.dart';
 import 'audio_render_duration.dart';
 import 'generated_export.dart';
 import 'wav_encoder.dart';

@@ -26,6 +26,9 @@ void main() {
     bool split = false,
     String trackName = 'Track',
     int trackColorValue = TrackColors.purple,
+    double volumeDb = 0,
+    bool isMuted = false,
+    bool isSolo = false,
   }) {
     final original = AudioClip(
       id: 'clip-1',
@@ -40,6 +43,9 @@ void main() {
           id: 'track-1',
           name: trackName,
           colorValue: trackColorValue,
+          volumeDb: volumeDb,
+          isMuted: isMuted,
+          isSolo: isSolo,
           clips: split
               ? [
                   original.copyWith(clipDurationSeconds: duration / 2),
@@ -197,6 +203,43 @@ void main() {
     expect(redoColor.snapshot.tracks.single.colorValue, 0xFF123456);
   });
 
+  test('track volume, mute, and solo are exact undoable mixer state', () {
+    final initial = snapshot(start: 0);
+    final quieter = snapshot(start: 0, volumeDb: -10);
+    final muted = snapshot(start: 0, volumeDb: -10, isMuted: true);
+    final soloed = snapshot(
+      start: 0,
+      volumeDb: -10,
+      isMuted: true,
+      isSolo: true,
+    );
+
+    var history = EditorHistory()
+        .record(label: 'Change Track Volume', before: initial, after: quieter)
+        .record(label: 'Mute Track', before: quieter, after: muted)
+        .record(label: 'Solo Track', before: muted, after: soloed);
+
+    expect(history.past.map((entry) => entry.label), [
+      'Change Track Volume',
+      'Mute Track',
+      'Solo Track',
+    ]);
+
+    final undoSolo = history.undo(soloed)!;
+    expect(undoSolo.snapshot.tracks.single.isSolo, isFalse);
+    final undoMute = undoSolo.history.undo(undoSolo.snapshot)!;
+    expect(undoMute.snapshot.tracks.single.isMuted, isFalse);
+    final undoVolume = undoMute.history.undo(undoMute.snapshot)!;
+    expect(undoVolume.snapshot.tracks.single.volumeDb, 0);
+
+    history = EditorHistory().record(
+      label: 'Change Track Volume',
+      before: initial,
+      after: snapshot(start: 0, volumeDb: 0),
+    );
+    expect(history.canUndo, isFalse);
+  });
+
   test('delete undo and redo preserve an exact trimmed split clip', () {
     final before = snapshot(
       start: 12.5,
@@ -207,7 +250,9 @@ void main() {
     final left = before.tracks.single.clips.first;
     final deleted = before.tracks.single.clips.last;
     final after = ProjectSnapshot(
-      tracks: [before.tracks.single.copyWith(clips: [left])],
+      tracks: [
+        before.tracks.single.copyWith(clips: [left]),
+      ],
       bpm: before.bpm,
       selectedTrackId: before.selectedTrackId,
       selectedClipId: null,

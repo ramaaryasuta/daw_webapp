@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../domain/daw_track.dart';
+import '../../domain/track_mixer.dart';
 import 'track_color_popover.dart';
 
 const double trackHeaderWidth = 280;
@@ -14,7 +15,7 @@ class TrackHeader extends StatefulWidget {
     super.key,
     required this.name,
     required this.colorValue,
-    required this.volume,
+    required this.volumeDb,
     required this.isMuted,
     required this.isSolo,
     required this.isSelected,
@@ -30,11 +31,12 @@ class TrackHeader extends StatefulWidget {
     required this.onVolumeChangeStart,
     required this.onVolumeChanged,
     required this.onVolumeChangeEnd,
+    required this.onVolumeReset,
   });
 
   final String name;
   final int colorValue;
-  final double volume;
+  final double volumeDb;
 
   final bool isMuted;
   final bool isSolo;
@@ -53,6 +55,7 @@ class TrackHeader extends StatefulWidget {
   final ValueChanged<double> onVolumeChanged;
   final ValueChanged<double> onVolumeChangeStart;
   final ValueChanged<double> onVolumeChangeEnd;
+  final VoidCallback onVolumeReset;
 
   @override
   State<TrackHeader> createState() => _TrackHeaderState();
@@ -253,6 +256,7 @@ class _TrackHeaderState extends State<TrackHeader> {
                         tooltip: 'Track actions',
                         iconSize: 18,
                         padding: EdgeInsets.zero,
+                        position: PopupMenuPosition.under,
                         onSelected: (action) {
                           switch (action) {
                             case _TrackAction.rename:
@@ -292,35 +296,67 @@ class _TrackHeaderState extends State<TrackHeader> {
               const SizedBox(height: 4),
 
               SizedBox(
-                height: 36,
+                height: 38,
                 child: Row(
                   children: [
-                    _TrackButton(
+                    _MixerStateButton(
                       label: 'M',
+                      tooltip: 'Mute track',
+                      semanticLabel: widget.isMuted
+                          ? 'Unmute ${widget.name}'
+                          : 'Mute ${widget.name}',
                       active: widget.isMuted,
+                      activeColor: colorScheme.error,
                       onPressed: widget.onMutePressed,
                     ),
 
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 5),
 
-                    _TrackButton(
+                    _MixerStateButton(
                       label: 'S',
+                      tooltip: 'Solo track',
+                      semanticLabel: widget.isSolo
+                          ? 'Unsolo ${widget.name}'
+                          : 'Solo ${widget.name}',
                       active: widget.isSolo,
+                      activeColor: colorScheme.tertiary,
                       onPressed: widget.onSoloPressed,
                     ),
 
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 7),
 
-                    const Icon(Icons.volume_down, size: 18),
+                    Icon(
+                      widget.isMuted ? Icons.volume_off : Icons.volume_down,
+                      size: 16,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+
+                    const SizedBox(width: 2),
 
                     Expanded(
-                      child: Slider(
-                        value: widget.volume,
-                        min: 0,
-                        max: 1,
+                      child: _TrackVolumeSlider(
+                        valueDb: widget.volumeDb,
                         onChangeStart: widget.onVolumeChangeStart,
                         onChanged: widget.onVolumeChanged,
                         onChangeEnd: widget.onVolumeChangeEnd,
+                        onReset: widget.onVolumeReset,
+                      ),
+                    ),
+
+                    const SizedBox(width: 4),
+
+                    SizedBox(
+                      width: 50,
+                      child: Text(
+                        formatTrackVolumeDb(widget.volumeDb),
+                        key: const ValueKey('track-volume-value'),
+                        textAlign: TextAlign.right,
+                        maxLines: 1,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ],
@@ -409,32 +445,208 @@ class _ColorDot extends StatelessWidget {
   }
 }
 
-class _TrackButton extends StatelessWidget {
-  const _TrackButton({
+class _MixerStateButton extends StatelessWidget {
+  const _MixerStateButton({
     required this.label,
+    required this.tooltip,
+    required this.semanticLabel,
     required this.active,
+    required this.activeColor,
     required this.onPressed,
   });
 
   final String label;
+  final String tooltip;
+  final String semanticLabel;
   final bool active;
+  final Color activeColor;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 32,
-      height: 28,
-      child: FilledButton(
-        onPressed: onPressed,
-        style: FilledButton.styleFrom(
-          padding: EdgeInsets.zero,
-          backgroundColor: active
-              ? Theme.of(context).colorScheme.primary
-              : Theme.of(context).colorScheme.surfaceContainerHighest,
+    final colorScheme = Theme.of(context).colorScheme;
+    final foreground = active
+        ? ThemeData.estimateBrightnessForColor(activeColor) == Brightness.dark
+              ? Colors.white
+              : Colors.black
+        : colorScheme.onSurfaceVariant;
+
+    return Tooltip(
+      message: tooltip,
+      child: Semantics(
+        button: true,
+        toggled: active,
+        label: semanticLabel,
+        excludeSemantics: true,
+        child: SizedBox(
+          width: 28,
+          height: 28,
+          child: OutlinedButton(
+            key: ValueKey('track-${label.toLowerCase()}-button'),
+            onPressed: onPressed,
+            style: ButtonStyle(
+              padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+              minimumSize: const WidgetStatePropertyAll(Size(28, 28)),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+              backgroundColor: WidgetStatePropertyAll(
+                active ? activeColor : colorScheme.surfaceContainerHigh,
+              ),
+              foregroundColor: WidgetStatePropertyAll(foreground),
+              side: WidgetStatePropertyAll(
+                BorderSide(
+                  color: active
+                      ? activeColor
+                      : colorScheme.outline.withValues(alpha: 0.8),
+                ),
+              ),
+              shape: WidgetStatePropertyAll(
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+              ),
+            ),
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                height: 1,
+              ),
+            ),
+          ),
         ),
-        child: Text(label),
       ),
+    );
+  }
+}
+
+class _TrackVolumeSlider extends StatefulWidget {
+  const _TrackVolumeSlider({
+    required this.valueDb,
+    required this.onChangeStart,
+    required this.onChanged,
+    required this.onChangeEnd,
+    required this.onReset,
+  });
+
+  final double valueDb;
+  final ValueChanged<double> onChangeStart;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double> onChangeEnd;
+  final VoidCallback onReset;
+
+  @override
+  State<_TrackVolumeSlider> createState() => _TrackVolumeSliderState();
+}
+
+class _TrackVolumeSliderState extends State<_TrackVolumeSlider> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Tooltip(
+      waitDuration: const Duration(milliseconds: 350),
+      message:
+          '${formatTrackVolumeDb(widget.valueDb)}\nDouble-click to reset to 0 dB',
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onDoubleTap: widget.onReset,
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 5,
+              trackShape: const _UnityMarkedTrackShape(),
+              activeTrackColor: _hovered
+                  ? colorScheme.primary
+                  : colorScheme.primary.withValues(alpha: 0.86),
+              inactiveTrackColor: colorScheme.onSurface.withValues(alpha: 0.22),
+              thumbColor: colorScheme.onSurface,
+              overlayColor: colorScheme.primary.withValues(alpha: 0.14),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
+              thumbShape: const RoundSliderThumbShape(
+                enabledThumbRadius: 6,
+                pressedElevation: 5,
+              ),
+              thumbSize: WidgetStateProperty.resolveWith((states) {
+                final emphasized =
+                    states.contains(WidgetState.hovered) ||
+                    states.contains(WidgetState.dragged);
+                return Size.square(emphasized ? 14 : 12);
+              }),
+              showValueIndicator: ShowValueIndicator.never,
+            ),
+            child: Slider(
+              key: const ValueKey('track-volume-slider'),
+              value: clampTrackVolumeDb(widget.valueDb),
+              min: minimumTrackVolumeDb,
+              max: maximumTrackVolumeDb,
+              semanticFormatterCallback: formatTrackVolumeDb,
+              onChangeStart: widget.onChangeStart,
+              onChanged: widget.onChanged,
+              onChangeEnd: widget.onChangeEnd,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UnityMarkedTrackShape extends RoundedRectSliderTrackShape {
+  const _UnityMarkedTrackShape();
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset offset, {
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required Animation<double> enableAnimation,
+    required Offset thumbCenter,
+    Offset? secondaryOffset,
+    bool isEnabled = false,
+    bool isDiscrete = false,
+    required TextDirection textDirection,
+    double additionalActiveTrackHeight = 2,
+  }) {
+    super.paint(
+      context,
+      offset,
+      parentBox: parentBox,
+      sliderTheme: sliderTheme,
+      enableAnimation: enableAnimation,
+      thumbCenter: thumbCenter,
+      secondaryOffset: secondaryOffset,
+      isEnabled: isEnabled,
+      isDiscrete: isDiscrete,
+      textDirection: textDirection,
+      additionalActiveTrackHeight: additionalActiveTrackHeight,
+    );
+
+    final trackRect = getPreferredRect(
+      parentBox: parentBox,
+      offset: offset,
+      sliderTheme: sliderTheme,
+      isEnabled: isEnabled,
+      isDiscrete: isDiscrete,
+    );
+    const unityFraction =
+        (unityTrackVolumeDb - minimumTrackVolumeDb) /
+        (maximumTrackVolumeDb - minimumTrackVolumeDb);
+    final x = textDirection == TextDirection.ltr
+        ? trackRect.left + trackRect.width * unityFraction
+        : trackRect.right - trackRect.width * unityFraction;
+    final markerPaint = Paint()
+      ..color = sliderTheme.inactiveTrackColor!.withValues(alpha: 0.95)
+      ..strokeWidth = 1.5;
+    context.canvas.drawLine(
+      Offset(x, trackRect.top - 3),
+      Offset(x, trackRect.bottom + 3),
+      markerPaint,
     );
   }
 }

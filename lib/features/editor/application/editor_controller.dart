@@ -9,6 +9,7 @@ import '../domain/daw_track.dart';
 import '../domain/imported_audio_file.dart';
 import '../domain/timeline_scale.dart';
 import '../domain/track_color.dart';
+import '../domain/track_mixer.dart';
 import '../infrastructure/web_audio_engine.dart';
 import 'editor_history.dart';
 import 'tempo_controller.dart';
@@ -262,7 +263,7 @@ class EditorController extends Notifier<EditorState> {
       final leftTrack = left[index];
       final rightTrack = right[index];
       if (leftTrack.id != rightTrack.id ||
-          leftTrack.volume != rightTrack.volume ||
+          leftTrack.volumeDb != rightTrack.volumeDb ||
           leftTrack.isMuted != rightTrack.isMuted ||
           leftTrack.isSolo != rightTrack.isSolo) {
         return false;
@@ -949,12 +950,12 @@ class EditorController extends Notifier<EditorState> {
     _volumeEditTrackId = trackId;
   }
 
-  void previewVolume(String trackId, double volume) {
+  void previewVolume(String trackId, double volumeDb) {
     if (_volumeEditTrackId != trackId) {
       return;
     }
 
-    _setVolume(trackId, volume);
+    _setVolume(trackId, volumeDb);
   }
 
   void commitVolumeChange(String trackId) {
@@ -970,12 +971,37 @@ class EditorController extends Notifier<EditorState> {
     }
   }
 
-  void _setVolume(String trackId, double volume) {
+  void resetVolume(String trackId) {
+    final track = state.tracks
+        .where((track) => track.id == trackId)
+        .firstOrNull;
+    if (track == null) {
+      return;
+    }
+
+    final pendingBefore = _volumeEditTrackId == trackId
+        ? _volumeEditStartSnapshot
+        : null;
+    if (_volumeEditTrackId == trackId) {
+      _volumeEditStartSnapshot = null;
+      _volumeEditTrackId = null;
+    }
+    final before = pendingBefore ?? _captureProjectSnapshot();
+    if (track.volumeDb == unityTrackVolumeDb) {
+      _recordEdit('Reset Track Volume', before);
+      return;
+    }
+
+    _setVolume(trackId, unityTrackVolumeDb);
+    _recordEdit('Reset Track Volume', before);
+  }
+
+  void _setVolume(String trackId, double volumeDb) {
     state = state.copyWith(
       tracks: [
         for (final track in state.tracks)
           if (track.id == trackId)
-            track.copyWith(volume: volume.clamp(0.0, 1.0))
+            track.copyWith(volumeDb: clampTrackVolumeDb(volumeDb))
           else
             track,
       ],

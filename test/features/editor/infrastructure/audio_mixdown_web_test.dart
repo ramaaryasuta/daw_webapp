@@ -1,0 +1,130 @@
+@TestOn('browser')
+library;
+
+import 'dart:math' as math;
+import 'dart:typed_data';
+
+import 'package:daw_webapp/features/editor/domain/audio_asset.dart';
+import 'package:daw_webapp/features/editor/domain/audio_clip.dart';
+import 'package:daw_webapp/features/editor/domain/daw_track.dart';
+import 'package:daw_webapp/features/editor/infrastructure/audio_mixdown_service.dart';
+import 'package:daw_webapp/features/editor/infrastructure/wav_encoder.dart';
+import 'package:daw_webapp/features/editor/infrastructure/web_audio_engine.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  const sampleRate = 48000;
+  const durationSeconds = 0.12;
+  late WebAudioEngine engine;
+  late AudioMixdownService mixdown;
+  late AudioAsset asset;
+
+  setUp(() async {
+    engine = WebAudioEngine();
+    mixdown = AudioMixdownService(engine);
+    final samples = Float32List(sampleRate * durationSeconds ~/ 1)
+      ..fillRange(0, sampleRate * durationSeconds ~/ 1, 0.1);
+    final bytes = WavEncoder.encodePcm16(
+      channels: [samples, samples],
+      sampleRate: sampleRate,
+    );
+    final decoded = await engine.decode(assetId: 'asset-1', bytes: bytes);
+    asset = AudioAsset(
+      id: 'asset-1',
+      name: 'tone.wav',
+      extension: 'wav',
+      size: bytes.length,
+      durationSeconds: decoded.durationSeconds,
+      sampleRate: decoded.sampleRate,
+      numberOfChannels: decoded.numberOfChannels,
+      waveformPeaks: decoded.waveformPeaks,
+    );
+  });
+
+  tearDown(() async {
+    await engine.dispose();
+  });
+
+  DawTrack track(
+    String id, {
+    double volumeDb = 0,
+    bool isMuted = false,
+    bool isSolo = false,
+  }) {
+    return DawTrack(
+      id: id,
+      name: id,
+      volumeDb: volumeDb,
+      isMuted: isMuted,
+      isSolo: isSolo,
+      clips: [
+        AudioClip(
+          id: 'clip-$id',
+          audio: asset,
+          clipDurationSeconds: asset.durationSeconds,
+        ),
+      ],
+    );
+  }
+
+  test(
+    'offline WAV applies volume, mute, solo, and multiple-solo rules',
+    () async {
+      final unity = _leftChannelRms(
+        (await mixdown.generateWavExport([track('a')])).wavBytes,
+      );
+      final minusSix = _leftChannelRms(
+        (await mixdown.generateWavExport([track('b', volumeDb: -6)])).wavBytes,
+      );
+      expect(minusSix / unity, closeTo(0.501187, 0.015));
+
+      final muted = _leftChannelRms(
+        (await mixdown.generateWavExport([
+          track('muted', isMuted: true),
+        ])).wavBytes,
+      );
+      expect(muted, lessThan(0.00001));
+
+      final soloOnly = _leftChannelRms(
+        (await mixdown.generateWavExport([
+          track('a'),
+          track('b', volumeDb: -6, isSolo: true),
+          track('c'),
+        ])).wavBytes,
+      );
+      expect(soloOnly / unity, closeTo(0.501187, 0.015));
+
+      final multipleSolo = _leftChannelRms(
+        (await mixdown.generateWavExport([
+          track('a', isSolo: true),
+          track('b', volumeDb: -6, isSolo: true),
+          track('c'),
+        ])).wavBytes,
+      );
+      expect(multipleSolo / unity, closeTo(1.501187, 0.025));
+
+      final muteWins = _leftChannelRms(
+        (await mixdown.generateWavExport([
+          track('a'),
+          track('b', isSolo: true, isMuted: true),
+        ])).wavBytes,
+      );
+      expect(muteWins, lessThan(0.00001));
+    },
+  );
+}
+
+double _leftChannelRms(Uint8List wavBytes) {
+  final data = ByteData.sublistView(wavBytes);
+  const headerLength = 44;
+  const stereoFrameBytes = 4;
+  final frameCount = (wavBytes.length - headerLength) ~/ stereoFrameBytes;
+  var squareSum = 0.0;
+  for (var frame = 0; frame < frameCount; frame++) {
+    final sample =
+        data.getInt16(headerLength + frame * stereoFrameBytes, Endian.little) /
+        32768;
+    squareSum += sample * sample;
+  }
+  return math.sqrt(squareSum / frameCount);
+}

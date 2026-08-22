@@ -34,7 +34,7 @@ class ProjectSnapshot {
       if (leftTrack.id != rightTrack.id ||
           leftTrack.name != rightTrack.name ||
           leftTrack.colorValue != rightTrack.colorValue ||
-          leftTrack.volume != rightTrack.volume ||
+          leftTrack.volumeDb != rightTrack.volumeDb ||
           leftTrack.isMuted != rightTrack.isMuted ||
           leftTrack.isSolo != rightTrack.isSolo ||
           leftTrack.clips.length != rightTrack.clips.length) {

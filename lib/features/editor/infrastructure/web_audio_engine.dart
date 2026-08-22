@@ -1,11 +1,11 @@
 import 'dart:js_interop';
 import 'dart:math' as math;
 import 'dart:typed_data';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:web/web.dart' as web;
 
 import '../domain/daw_track.dart';
+import '../domain/track_mixer.dart';
 import 'web_metronome_scheduler.dart';
 
 class DecodedAudioInfo {
@@ -44,6 +44,8 @@ class WebAudioEngine {
   double _contextStartTime = 0;
 
   double _projectDurationSeconds = 0;
+
+  static const double _mixerRampSeconds = 0.008;
 
   bool get isPlaying => _isPlaying;
 
@@ -262,8 +264,20 @@ class WebAudioEngine {
         continue;
       }
 
-      gain.gain.value = effectiveTrackGain(track, hasSolo: hasSolo);
+      _smoothGainTo(gain, effectiveTrackGain(track, hasSolo: hasSolo));
     }
+  }
+
+  void _smoothGainTo(web.GainNode gainNode, double targetGain) {
+    final now = _audioContext.currentTime;
+    final gain = gainNode.gain;
+    try {
+      gain.cancelAndHoldAtTime(now);
+    } catch (_) {
+      gain.cancelScheduledValues(now);
+      gain.setValueAtTime(gain.value, now);
+    }
+    gain.linearRampToValueAtTime(targetGain, now + _mixerRampSeconds);
   }
 
   void removeTrack(String trackId) {

@@ -15,6 +15,12 @@ void main() {
     VoidCallback? onColorEditCancelled,
     String name = 'Track 1',
     int colorValue = TrackColors.purple,
+    double volumeDb = 0,
+    bool isMuted = false,
+    bool isSolo = false,
+    VoidCallback? onMutePressed,
+    VoidCallback? onSoloPressed,
+    VoidCallback? onVolumeReset,
   }) {
     return tester.pumpWidget(
       MaterialApp(
@@ -25,9 +31,9 @@ void main() {
             child: TrackHeader(
               name: name,
               colorValue: colorValue,
-              volume: 1,
-              isMuted: false,
-              isSolo: false,
+              volumeDb: volumeDb,
+              isMuted: isMuted,
+              isSolo: isSolo,
               isSelected: false,
               onTap: () {},
               onRename: onRename,
@@ -35,12 +41,13 @@ void main() {
               onColorPreviewed: onColorPreviewed ?? (_) {},
               onColorEditCommitted: onColorEditCommitted ?? () {},
               onColorEditCancelled: onColorEditCancelled ?? () {},
-              onMutePressed: () {},
-              onSoloPressed: () {},
+              onMutePressed: onMutePressed ?? () {},
+              onSoloPressed: onSoloPressed ?? () {},
               onDeletePressed: () {},
               onVolumeChangeStart: (_) {},
               onVolumeChanged: (_) {},
               onVolumeChangeEnd: (_) {},
+              onVolumeReset: onVolumeReset ?? () {},
             ),
           ),
         ),
@@ -205,5 +212,60 @@ void main() {
     await tester.tap(find.text('Rename'));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('track-name-editor')), findsOneWidget);
+  });
+
+  testWidgets('mixer row exposes symmetrical M/S controls and dB fader', (
+    tester,
+  ) async {
+    var mutePresses = 0;
+    var soloPresses = 0;
+    await pumpHeader(
+      tester,
+      onRename: (_) {},
+      volumeDb: -6.2,
+      isMuted: true,
+      onMutePressed: () => mutePresses++,
+      onSoloPressed: () => soloPresses++,
+    );
+
+    final mute = find.byKey(const ValueKey('track-m-button'));
+    final solo = find.byKey(const ValueKey('track-s-button'));
+    expect(mute, findsOneWidget);
+    expect(solo, findsOneWidget);
+    expect(tester.getSize(mute), tester.getSize(solo));
+    expect(find.text('-6.2 dB'), findsOneWidget);
+
+    final slider = tester.widget<Slider>(
+      find.byKey(const ValueKey('track-volume-slider')),
+    );
+    expect(slider.min, -60);
+    expect(slider.max, 6);
+
+    await tester.tap(mute);
+    await tester.tap(solo);
+    expect(mutePresses, 1);
+    expect(soloPresses, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('double-clicking volume fader requests unity reset', (
+    tester,
+  ) async {
+    var resets = 0;
+    await pumpHeader(
+      tester,
+      onRename: (_) {},
+      volumeDb: -12,
+      onVolumeReset: () => resets++,
+    );
+
+    final slider = find.byKey(const ValueKey('track-volume-slider'));
+    await tester.tap(slider);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(slider);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(resets, 1);
   });
 }

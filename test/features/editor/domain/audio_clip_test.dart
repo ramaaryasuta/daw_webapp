@@ -1,6 +1,7 @@
 import 'package:daw_webapp/features/editor/domain/audio_asset.dart';
 import 'package:daw_webapp/features/editor/domain/audio_clip.dart';
 import 'package:daw_webapp/features/editor/domain/daw_track.dart';
+import 'package:daw_webapp/features/editor/domain/track_mixer.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -312,15 +313,21 @@ void main() {
     });
   });
 
-  test('effective gain respects volume, mute, and project solo state', () {
+  test('dB conversion and effective gain share DAW mixer semantics', () {
     const track = DawTrack(
       id: 'track-1',
       name: 'Track 1',
       clips: [AudioClip(id: 'clip-1', audio: asset, clipDurationSeconds: 4.5)],
-      volume: 0.4,
+      volumeDb: -6,
     );
 
-    expect(effectiveTrackGain(track, hasSolo: false), 0.4);
+    expect(dbToLinearGain(0), 1);
+    expect(dbToLinearGain(-6), closeTo(0.501187, 0.000001));
+    expect(dbToLinearGain(6), closeTo(1.995262, 0.000001));
+    expect(
+      effectiveTrackGain(track, hasSolo: false),
+      closeTo(0.501187, 0.000001),
+    );
     expect(
       effectiveTrackGain(track.copyWith(isMuted: true), hasSolo: false),
       0,
@@ -328,7 +335,16 @@ void main() {
     expect(effectiveTrackGain(track, hasSolo: true), 0);
     expect(
       effectiveTrackGain(track.copyWith(isSolo: true), hasSolo: true),
-      0.4,
+      closeTo(0.501187, 0.000001),
     );
+    expect(
+      effectiveTrackGain(
+        track.copyWith(isSolo: true, isMuted: true),
+        hasSolo: true,
+      ),
+      0,
+    );
+    expect(formatTrackVolumeDb(3), '+3.0 dB');
+    expect(formatTrackVolumeDb(-8.42), '-8.4 dB');
   });
 }
