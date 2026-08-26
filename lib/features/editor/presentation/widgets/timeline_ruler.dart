@@ -1,17 +1,27 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../../domain/loop_region.dart';
 import '../../domain/musical_timing.dart';
+import '../../domain/snap_settings.dart';
 import '../../domain/timeline_scale.dart';
+import '../../domain/timeline_snapper.dart';
 import '../models/timeline_ruler_mode.dart';
 
-class TimelineRuler extends StatelessWidget {
+class TimelineRuler extends StatefulWidget {
   const TimelineRuler({
     super.key,
     required this.playheadSeconds,
     required this.gridMetrics,
     required this.onSeek,
+    this.loopRegion,
+    this.isLoopEnabled = false,
+    this.snapSettings = const SnapSettings(enabled: false),
+    this.onLoopRegionChanged,
+    this.onLoopRegionPreviewChanged,
     this.mode = TimelineRulerMode.barsBeats,
     this.bpm = 120,
     this.beatsPerBar = defaultBeatsPerBar,
@@ -22,33 +32,198 @@ class TimelineRuler extends StatelessWidget {
   final double playheadSeconds;
   final TimelineGridMetrics gridMetrics;
   final ValueChanged<double> onSeek;
+  final LoopRegion? loopRegion;
+  final bool isLoopEnabled;
+  final SnapSettings snapSettings;
+  final ValueChanged<LoopRegion>? onLoopRegionChanged;
+  final ValueChanged<LoopRegion?>? onLoopRegionPreviewChanged;
   final TimelineRulerMode mode;
   final double bpm;
   final int beatsPerBar;
 
   @override
+  State<TimelineRuler> createState() => _TimelineRulerState();
+}
+
+enum _LoopDragMode { create, start, end }
+
+class _TimelineRulerState extends State<TimelineRuler> {
+  static const double _dragThresholdPixels = 4;
+  static const double _handleHitWidth = 9;
+
+  int? _pointer;
+  double _pointerDownX = 0;
+  bool _isDragging = false;
+  _LoopDragMode _dragMode = _LoopDragMode.create;
+  LoopRegion? _dragBaseRegion;
+  LoopRegion? _previewRegion;
+  MouseCursor _cursor = MouseCursor.defer;
+
+  double _timeAt(double x) {
+    return widget.gridMetrics.transform.contentXToTime(x);
+  }
+
+  double _snap(double seconds) {
+    return TimelineSnapper.snapTime(
+      candidateSeconds: seconds,
+      bpm: widget.bpm,
+      settings: widget.snapSettings,
+      beatsPerBar: widget.beatsPerBar,
+    );
+  }
+
+  double get _minimumDuration {
+    if (!widget.snapSettings.enabled) {
+      return minimumLoopDurationSeconds;
+    }
+    return TimelineSnapper.intervalSeconds(
+      bpm: widget.bpm,
+      subdivision: widget.snapSettings.subdivision,
+      beatsPerBar: widget.beatsPerBar,
+    );
+  }
+
+  _LoopDragMode _modeAt(double x) {
+    final region = widget.loopRegion;
+    if (region == null) {
+      return _LoopDragMode.create;
+    }
+    final startX = widget.gridMetrics.transform.timeToContentX(
+      region.startSeconds,
+    );
+    final endX = widget.gridMetrics.transform.timeToContentX(region.endSeconds);
+    if ((x - startX).abs() <= _handleHitWidth) {
+      return _LoopDragMode.start;
+    }
+    if ((x - endX).abs() <= _handleHitWidth) {
+      return _LoopDragMode.end;
+    }
+    return _LoopDragMode.create;
+  }
+
+  void _handlePointerDown(PointerDownEvent event) {
+    if ((event.buttons & kPrimaryMouseButton) == 0 || _pointer != null) {
+      return;
+    }
+    _pointer = event.pointer;
+    _pointerDownX = event.localPosition.dx;
+    _dragMode = _modeAt(_pointerDownX);
+    _dragBaseRegion = widget.loopRegion;
+    _isDragging = false;
+    _previewRegion = null;
+    widget.onLoopRegionPreviewChanged?.call(null);
+  }
+
+  void _handlePointerMove(PointerMoveEvent event) {
+    if (event.pointer != _pointer) {
+      return;
+    }
+    if ((event.buttons & kPrimaryMouseButton) == 0) {
+      _finishPointer(event.pointer, event.localPosition.dx);
+      return;
+    }
+    if (!_isDragging &&
+        (event.localPosition.dx - _pointerDownX).abs() < _dragThresholdPixels) {
+      return;
+    }
+
+    _isDragging = true;
+    final candidate = _snap(_timeAt(event.localPosition.dx));
+    final region = _dragBaseRegion;
+    final first = switch (_dragMode) {
+      _LoopDragMode.create => _snap(_timeAt(_pointerDownX)),
+      _LoopDragMode.start => region?.endSeconds ?? candidate,
+      _LoopDragMode.end => region?.startSeconds ?? candidate,
+    };
+    final preview = LoopRegion.normalized(
+      firstSeconds: first,
+      secondSeconds: candidate,
+      minimumDurationSeconds: _minimumDuration,
+    );
+    setState(() => _previewRegion = preview);
+    widget.onLoopRegionPreviewChanged?.call(preview);
+  }
+
+  void _handlePointerUp(PointerUpEvent event) {
+    _finishPointer(event.pointer, event.localPosition.dx);
+  }
+
+  void _finishPointer(int pointer, double x) {
+    if (pointer != _pointer) {
+      return;
+    }
+    final wasDragging = _isDragging;
+    final preview = _previewRegion;
+    _pointer = null;
+    _isDragging = false;
+    _previewRegion = null;
+    _dragBaseRegion = null;
+
+    if (wasDragging && preview != null) {
+      widget.onLoopRegionChanged?.call(preview);
+      widget.onLoopRegionPreviewChanged?.call(null);
+    } else {
+      widget.onLoopRegionPreviewChanged?.call(null);
+      widget.onSeek(_timeAt(x));
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _handlePointerCancel(PointerCancelEvent event) {
+    if (event.pointer != _pointer) {
+      return;
+    }
+    setState(() {
+      _pointer = null;
+      _isDragging = false;
+      _dragBaseRegion = null;
+      _previewRegion = null;
+    });
+    widget.onLoopRegionPreviewChanged?.call(null);
+  }
+
+  void _handleHover(PointerHoverEvent event) {
+    final next = _modeAt(event.localPosition.dx) == _LoopDragMode.create
+        ? MouseCursor.defer
+        : SystemMouseCursors.resizeLeftRight;
+    if (next != _cursor) {
+      setState(() => _cursor = next);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (details) {
-        onSeek(gridMetrics.transform.contentXToTime(details.localPosition.dx));
-      },
-      child: SizedBox(
-        height: height,
-        child: CustomPaint(
-          painter: TimelineRulerPainter(
-            color: colorScheme.outline,
-            playheadColor: colorScheme.tertiary,
-            playheadSeconds: playheadSeconds,
-            gridMetrics: gridMetrics,
-            mode: mode,
-            bpm: bpm,
-            beatsPerBar: beatsPerBar,
-            devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+    return MouseRegion(
+      cursor: _isDragging ? SystemMouseCursors.resizeLeftRight : _cursor,
+      onHover: _handleHover,
+      child: Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: _handlePointerDown,
+        onPointerMove: _handlePointerMove,
+        onPointerUp: _handlePointerUp,
+        onPointerCancel: _handlePointerCancel,
+        child: SizedBox(
+          height: TimelineRuler.height,
+          child: CustomPaint(
+            painter: TimelineRulerPainter(
+              color: colorScheme.outline,
+              playheadColor: colorScheme.tertiary,
+              loopColor: colorScheme.primary,
+              loopRegion: _previewRegion ?? widget.loopRegion,
+              isLoopEnabled: widget.isLoopEnabled,
+              playheadSeconds: widget.playheadSeconds,
+              gridMetrics: widget.gridMetrics,
+              mode: widget.mode,
+              bpm: widget.bpm,
+              beatsPerBar: widget.beatsPerBar,
+              devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+            ),
+            child: const SizedBox.expand(),
           ),
-          child: const SizedBox.expand(),
         ),
       ),
     );
@@ -65,6 +240,9 @@ class TimelineRulerPainter extends CustomPainter {
     required this.bpm,
     required this.beatsPerBar,
     required this.devicePixelRatio,
+    this.loopColor = Colors.blue,
+    this.loopRegion,
+    this.isLoopEnabled = false,
   });
 
   static const double _minimumTickSpacing = 8;
@@ -73,6 +251,9 @@ class TimelineRulerPainter extends CustomPainter {
 
   final Color color;
   final Color playheadColor;
+  final Color loopColor;
+  final LoopRegion? loopRegion;
+  final bool isLoopEnabled;
   final double playheadSeconds;
   final TimelineGridMetrics gridMetrics;
   final TimelineRulerMode mode;
@@ -82,6 +263,7 @@ class TimelineRulerPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    _paintLoopRegion(canvas, size);
     switch (mode) {
       case TimelineRulerMode.barsBeats:
         _paintMusicalTicks(canvas, size);
@@ -92,6 +274,25 @@ class TimelineRulerPainter extends CustomPainter {
     }
 
     _paintPlayhead(canvas, size);
+  }
+
+  void _paintLoopRegion(Canvas canvas, Size size) {
+    final region = loopRegion;
+    if (region == null) {
+      return;
+    }
+    final startX = gridMetrics.transform.timeToContentX(region.startSeconds);
+    final endX = gridMetrics.transform.timeToContentX(region.endSeconds);
+    final fill = Paint()
+      ..color = loopColor.withValues(alpha: isLoopEnabled ? 0.24 : 0.13);
+    final boundary = Paint()
+      ..color = loopColor.withValues(alpha: isLoopEnabled ? 0.95 : 0.65)
+      ..strokeWidth = 2;
+    canvas.drawRect(Rect.fromLTRB(startX, 0, endX, size.height), fill);
+    canvas.drawLine(Offset(startX, 0), Offset(startX, size.height), boundary);
+    canvas.drawLine(Offset(endX, 0), Offset(endX, size.height), boundary);
+    canvas.drawRect(Rect.fromLTWH(startX - 3, 0, 6, 7), boundary);
+    canvas.drawRect(Rect.fromLTWH(endX - 3, 0, 6, 7), boundary);
   }
 
   void _paintTimeTicks(Canvas canvas, Size size) {
@@ -420,6 +621,9 @@ class TimelineRulerPainter extends CustomPainter {
     return oldDelegate.color != color ||
         oldDelegate.playheadColor != playheadColor ||
         oldDelegate.playheadSeconds != playheadSeconds ||
+        oldDelegate.loopColor != loopColor ||
+        oldDelegate.loopRegion != loopRegion ||
+        oldDelegate.isLoopEnabled != isLoopEnabled ||
         oldDelegate.gridMetrics.scale.pixelsPerSecond !=
             gridMetrics.scale.pixelsPerSecond ||
         oldDelegate.gridMetrics.transform.horizontalScrollOffset !=

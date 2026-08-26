@@ -17,7 +17,15 @@ class MusicalGridPainter extends CustomPainter {
     this.beatsPerBar = defaultBeatsPerBar,
   });
 
-  static const double minimumLineSpacing = 8;
+  /// Bars remain readable rather than collapsing into a dense barcode.
+  static const double minimumBarLineSpacing = 36;
+
+  /// Beat lines disappear before they can collapse into a dense barcode.
+  static const double minimumBeatLineSpacing = 12;
+
+  /// Snap remains precise below this threshold; only its visual subdivision
+  /// line is omitted.
+  static const double minimumSubdivisionLineSpacing = 18;
 
   final Color color;
   final TimelineGridMetrics gridMetrics;
@@ -26,9 +34,34 @@ class MusicalGridPainter extends CustomPainter {
   final double devicePixelRatio;
   final int beatsPerBar;
 
+  double get beatLineSpacing {
+    return gridMetrics.transform.timeToContentX(
+      MusicalTiming(bpm: bpm, beatsPerBar: beatsPerBar).beatDurationSeconds,
+    );
+  }
+
+  double get subdivisionLineSpacing {
+    return gridMetrics.transform.timeToContentX(
+      TimelineSnapper.intervalSeconds(
+        bpm: bpm,
+        subdivision: settings.subdivision,
+        beatsPerBar: beatsPerBar,
+      ),
+    );
+  }
+
+  bool get paintsBeatLines => beatLineSpacing >= minimumBeatLineSpacing;
+
+  bool get paintsSubdivisionLines {
+    return settings.enabled &&
+        settings.subdivision != SnapSubdivision.bar &&
+        subdivisionLineSpacing < beatLineSpacing &&
+        subdivisionLineSpacing >= minimumSubdivisionLineSpacing;
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
-    if (!settings.enabled || size.width <= 0 || size.height <= 0) {
+    if (size.width <= 0 || size.height <= 0) {
       return;
     }
 
@@ -55,7 +88,7 @@ class MusicalGridPainter extends CustomPainter {
     }
 
     final barSpacing = gridMetrics.transform.timeToContentX(barSeconds);
-    final barStride = math.max(1, (minimumLineSpacing / barSpacing).ceil());
+    final barStride = math.max(1, (minimumBarLineSpacing / barSpacing).ceil());
     _paintInterval(
       canvas: canvas,
       size: size,
@@ -63,16 +96,11 @@ class MusicalGridPainter extends CustomPainter {
       rightSeconds: rightSeconds,
       intervalSeconds: barSeconds * barStride,
       paint: Paint()
-        ..color = color.withValues(alpha: 0.48)
+        ..color = color.withValues(alpha: 0.68)
         ..strokeWidth = 1,
     );
 
-    if (settings.subdivision == SnapSubdivision.bar) {
-      return;
-    }
-
-    final beatSpacing = gridMetrics.transform.timeToContentX(beatSeconds);
-    if (beatSpacing >= minimumLineSpacing) {
+    if (paintsBeatLines) {
       _paintInterval(
         canvas: canvas,
         size: size,
@@ -81,19 +109,12 @@ class MusicalGridPainter extends CustomPainter {
         intervalSeconds: beatSeconds,
         skipEvery: beatsPerBar,
         paint: Paint()
-          ..color = color.withValues(alpha: 0.31)
+          ..color = color.withValues(alpha: 0.34)
           ..strokeWidth = 1,
       );
     }
 
-    if (subdivisionSeconds >= beatSeconds) {
-      return;
-    }
-
-    final subdivisionSpacing = gridMetrics.transform.timeToContentX(
-      subdivisionSeconds,
-    );
-    if (subdivisionSpacing < minimumLineSpacing) {
+    if (!paintsSubdivisionLines) {
       return;
     }
 
@@ -106,7 +127,7 @@ class MusicalGridPainter extends CustomPainter {
       intervalSeconds: subdivisionSeconds,
       skipEvery: subdivisionsPerBeat,
       paint: Paint()
-        ..color = color.withValues(alpha: 0.16)
+        ..color = color.withValues(alpha: 0.13)
         ..strokeWidth = 1,
     );
   }

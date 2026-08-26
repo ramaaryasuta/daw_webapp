@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:js_interop';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -5,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:web/web.dart' as web;
 
 import '../domain/daw_track.dart';
+import '../domain/loop_region.dart';
 import '../domain/track_mixer.dart';
 import 'web_metronome_scheduler.dart';
 
@@ -33,7 +35,7 @@ class WebAudioEngine {
 
   final Map<String, web.AudioBuffer> _buffers = {};
 
-  final Map<String, List<web.AudioBufferSourceNode>> _activeSources = {};
+  final Map<String, List<_ScheduledSource>> _activeSources = {};
 
   final Map<String, web.GainNode> _trackGains = {};
 
@@ -45,7 +47,15 @@ class WebAudioEngine {
 
   double _projectDurationSeconds = 0;
 
+  LoopRegion? _activeLoopRegion;
+  List<DawTrack> _scheduledTracks = const [];
+  Timer? _loopLookAheadTimer;
+  double _nextLoopContextTime = 0;
+
   static const double _mixerRampSeconds = 0.008;
+  static const Duration _loopSchedulerInterval = Duration(milliseconds: 25);
+  static const double _loopLookAheadSeconds = 0.2;
+  static const double _minimumScheduleLeadSeconds = 0.005;
 
   bool get isPlaying => _isPlaying;
 
@@ -66,11 +76,18 @@ class WebAudioEngine {
       return _timelineStartSeconds;
     }
 
-    return (_timelineStartSeconds + elapsed).clamp(
-      0.0,
-      _projectDurationSeconds,
-    );
+    final position = _timelineStartSeconds + elapsed;
+    final loop = _activeLoopRegion;
+    if (loop != null && position >= loop.endSeconds) {
+      return loop.startSeconds +
+          ((position - loop.endSeconds) % loop.durationSeconds);
+    }
+
+    return position.clamp(0.0, _transportEndSeconds);
   }
+
+  double get _transportEndSeconds =>
+      math.max(_projectDurationSeconds, _activeLoopRegion?.endSeconds ?? 0);
 
   Future<DecodedAudioInfo> decode({
     required String assetId,
@@ -97,8 +114,10 @@ class WebAudioEngine {
   Future<void> play({
     required List<DawTrack> tracks,
     required double fromSeconds,
+    LoopRegion? loopRegion,
   }) async {
-    if (tracks.isEmpty) {
+    final projectDuration = calculateProjectDurationSeconds(tracks);
+    if (projectDuration <= 0 && loopRegion == null) {
       return;
     }
 
@@ -114,9 +133,13 @@ class WebAudioEngine {
       return;
     }
 
-    _projectDurationSeconds = calculateProjectDurationSeconds(tracks);
+    _projectDurationSeconds = projectDuration;
+    _activeLoopRegion = loopRegion;
+    _scheduledTracks = List<DawTrack>.unmodifiable(tracks);
 
-    if (fromSeconds >= _projectDurationSeconds) {
+    if (loopRegion != null && !loopRegion.contains(fromSeconds)) {
+      fromSeconds = loopRegion.startSeconds;
+    } else if (loopRegion == null && fromSeconds >= _projectDurationSeconds) {
       fromSeconds = 0;
     }
 
@@ -130,6 +153,39 @@ class WebAudioEngine {
 
     _contextStartTime = startAt;
 
+    _createTrackGains(tracks);
+
+    if (loopRegion == null) {
+      _scheduleSegment(
+        tracks: tracks,
+        timelineStartSeconds: fromSeconds,
+        timelineEndSeconds: _projectDurationSeconds,
+        contextStartTime: startAt,
+      );
+    } else {
+      _scheduleSegment(
+        tracks: tracks,
+        timelineStartSeconds: fromSeconds,
+        timelineEndSeconds: loopRegion.endSeconds,
+        contextStartTime: startAt,
+      );
+      _nextLoopContextTime = startAt + (loopRegion.endSeconds - fromSeconds);
+      _scheduleLoopLookAhead();
+      _loopLookAheadTimer = Timer.periodic(
+        _loopSchedulerInterval,
+        (_) => _scheduleLoopLookAhead(),
+      );
+    }
+
+    _metronomeScheduler.startTransport(
+      timelineStartSeconds: _timelineStartSeconds,
+      contextStartTime: _contextStartTime,
+      loopRegion: loopRegion,
+    );
+    _isPlaying = true;
+  }
+
+  void _createTrackGains(List<DawTrack> tracks) {
     final hasSolo = tracks.any((track) => track.isSolo);
 
     for (final track in tracks) {
@@ -137,15 +193,31 @@ class WebAudioEngine {
       gain.gain.value = effectiveTrackGain(track, hasSolo: hasSolo);
       gain.connect(_audioContext.destination);
       _trackGains[track.id] = gain;
-      final trackSources = <web.AudioBufferSourceNode>[];
+    }
+  }
 
+  void _scheduleSegment({
+    required List<DawTrack> tracks,
+    required double timelineStartSeconds,
+    required double timelineEndSeconds,
+    required double contextStartTime,
+  }) {
+    if (timelineEndSeconds <= timelineStartSeconds) {
+      return;
+    }
+
+    for (final track in tracks) {
+      final gain = _trackGains[track.id];
+      if (gain == null) {
+        continue;
+      }
       for (final clip in track.clips) {
         final buffer = _buffers[clip.audio.id];
         if (buffer == null) {
           continue;
         }
 
-        final playbackTiming = clip.playbackTimingFrom(fromSeconds);
+        final playbackTiming = clip.playbackTimingFrom(timelineStartSeconds);
 
         // Clip sudah habis sebelum posisi playhead.
         if (playbackTiming == null ||
@@ -153,38 +225,96 @@ class WebAudioEngine {
           continue;
         }
 
+        final scheduledTimelineStart =
+            timelineStartSeconds + playbackTiming.delaySeconds;
+        final availableSegmentDuration =
+            timelineEndSeconds - scheduledTimelineStart;
+        final availableBufferDuration =
+            buffer.duration - playbackTiming.bufferOffsetSeconds;
+        final playbackDuration = math.min(
+          playbackTiming.playbackDurationSeconds,
+          math.min(availableSegmentDuration, availableBufferDuration),
+        );
+        if (playbackDuration <= 0) {
+          continue;
+        }
+
         final source = _audioContext.createBufferSource();
         source.buffer = buffer;
         source.connect(gain);
-        trackSources.add(source);
+        final sourceStartTime = contextStartTime + playbackTiming.delaySeconds;
+        final scheduledSource = _ScheduledSource(
+          node: source,
+          endTime: sourceStartTime + playbackDuration,
+        );
+        _activeSources.putIfAbsent(track.id, () => []).add(scheduledSource);
         source.start(
-          startAt + playbackTiming.delaySeconds,
+          sourceStartTime,
           playbackTiming.bufferOffsetSeconds,
-          playbackTiming.playbackDurationSeconds,
+          playbackDuration,
         );
       }
+    }
+  }
 
-      if (trackSources.isNotEmpty) {
-        _activeSources[track.id] = trackSources;
-      }
+  void _scheduleLoopLookAhead() {
+    final loop = _activeLoopRegion;
+    if (loop == null || _contextStartTime == 0) {
+      return;
     }
 
-    _metronomeScheduler.startTransport(
-      timelineStartSeconds: _timelineStartSeconds,
-      contextStartTime: _contextStartTime,
-    );
-    _isPlaying = true;
+    final now = _audioContext.currentTime;
+    _cleanUpFinishedSources(now);
+    final windowEnd = now + _loopLookAheadSeconds;
+
+    while (_nextLoopContextTime <= windowEnd) {
+      if (_nextLoopContextTime >= now + _minimumScheduleLeadSeconds) {
+        _scheduleSegment(
+          tracks: _scheduledTracks,
+          timelineStartSeconds: loop.startSeconds,
+          timelineEndSeconds: loop.endSeconds,
+          contextStartTime: _nextLoopContextTime,
+        );
+      }
+      _nextLoopContextTime += loop.durationSeconds;
+    }
+  }
+
+  void _cleanUpFinishedSources(double currentTime) {
+    for (final entry in _activeSources.entries.toList()) {
+      final sources = entry.value;
+      for (var index = sources.length - 1; index >= 0; index--) {
+        final source = sources[index];
+        if (source.endTime >= currentTime) {
+          continue;
+        }
+        try {
+          source.node.disconnect();
+        } catch (_) {}
+        sources.removeAt(index);
+      }
+      if (sources.isEmpty) {
+        _activeSources.remove(entry.key);
+      }
+    }
   }
 
   Future<void> seek({
     required List<DawTrack> tracks,
     required double positionSeconds,
+    LoopRegion? loopRegion,
   }) async {
     _projectDurationSeconds = calculateProjectDurationSeconds(tracks);
+    _activeLoopRegion = loopRegion;
 
-    final position = positionSeconds.clamp(0.0, _projectDurationSeconds);
+    final transportEnd = math.max(
+      _projectDurationSeconds,
+      loopRegion?.endSeconds ?? 0,
+    );
+    final position = positionSeconds.clamp(0.0, transportEnd);
     final shouldResumePlayback =
-        _isPlaying && position < _projectDurationSeconds;
+        _isPlaying &&
+        (loopRegion != null || position < _projectDurationSeconds);
 
     _playRequestId++;
     stopSources();
@@ -192,7 +322,7 @@ class WebAudioEngine {
     _isPlaying = false;
 
     if (shouldResumePlayback) {
-      await play(tracks: tracks, fromSeconds: position);
+      await play(tracks: tracks, fromSeconds: position, loopRegion: loopRegion);
     }
   }
 
@@ -220,18 +350,20 @@ class WebAudioEngine {
   }
 
   void stopSources() {
+    _loopLookAheadTimer?.cancel();
+    _loopLookAheadTimer = null;
     _metronomeScheduler.stopTransport();
 
     for (final sources in _activeSources.values) {
       for (final source in sources) {
         try {
-          source.stop();
+          source.node.stop();
         } catch (_) {
           // Source mungkin sudah selesai.
         }
 
         try {
-          source.disconnect();
+          source.node.disconnect();
         } catch (_) {}
       }
     }
@@ -244,6 +376,8 @@ class WebAudioEngine {
 
     _activeSources.clear();
     _trackGains.clear();
+    _scheduledTracks = const [];
+    _contextStartTime = 0;
   }
 
   void setTempoBpm(double tempoBpm) {
@@ -286,8 +420,8 @@ class WebAudioEngine {
     if (sources != null) {
       for (final source in sources) {
         try {
-          source.stop();
-          source.disconnect();
+          source.node.stop();
+          source.node.disconnect();
         } catch (_) {}
       }
     }
@@ -358,6 +492,13 @@ class WebAudioEngine {
 
     await _audioContext.close().toDart;
   }
+}
+
+class _ScheduledSource {
+  const _ScheduledSource({required this.node, required this.endTime});
+
+  final web.AudioBufferSourceNode node;
+  final double endTime;
 }
 
 final webAudioEngineProvider = Provider<WebAudioEngine>((ref) {

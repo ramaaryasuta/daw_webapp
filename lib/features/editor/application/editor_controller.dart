@@ -7,6 +7,8 @@ import '../domain/audio_asset.dart';
 import '../domain/audio_clip.dart';
 import '../domain/daw_track.dart';
 import '../domain/imported_audio_file.dart';
+import '../domain/loop_region.dart';
+import '../domain/musical_timing.dart';
 import '../domain/timeline_scale.dart';
 import '../domain/track_color.dart';
 import '../domain/track_mixer.dart';
@@ -20,6 +22,8 @@ class EditorState {
     this.isImporting = false,
     this.playheadSeconds = 0,
     this.pixelsPerSecond = TimelineScale.defaultPixelsPerSecond,
+    this.isLoopEnabled = false,
+    this.loopRegion,
     this.tracks = const [],
     this.selectedTrackId,
     this.selectedClipId,
@@ -31,6 +35,8 @@ class EditorState {
 
   final double playheadSeconds;
   final double pixelsPerSecond;
+  final bool isLoopEnabled;
+  final LoopRegion? loopRegion;
 
   final List<DawTrack> tracks;
   final String? selectedTrackId;
@@ -42,6 +48,10 @@ class EditorState {
 
   double get projectDurationSeconds {
     return calculateProjectDurationSeconds(tracks);
+  }
+
+  double get timelineDurationSeconds {
+    return math.max(projectDurationSeconds, loopRegion?.endSeconds ?? 0);
   }
 
   AudioClip? get selectedClip {
@@ -72,6 +82,8 @@ class EditorState {
     bool? isImporting,
     double? playheadSeconds,
     double? pixelsPerSecond,
+    bool? isLoopEnabled,
+    LoopRegion? loopRegion,
     List<DawTrack>? tracks,
     String? selectedTrackId,
     String? selectedClipId,
@@ -84,6 +96,8 @@ class EditorState {
       isImporting: isImporting ?? this.isImporting,
       playheadSeconds: playheadSeconds ?? this.playheadSeconds,
       pixelsPerSecond: pixelsPerSecond ?? this.pixelsPerSecond,
+      isLoopEnabled: isLoopEnabled ?? this.isLoopEnabled,
+      loopRegion: loopRegion ?? this.loopRegion,
       tracks: tracks ?? this.tracks,
       selectedTrackId: clearSelectedTrack
           ? null
@@ -208,6 +222,8 @@ class EditorController extends Notifier<EditorState> {
       isImporting: state.isImporting,
       playheadSeconds: state.playheadSeconds,
       pixelsPerSecond: state.pixelsPerSecond,
+      isLoopEnabled: state.isLoopEnabled,
+      loopRegion: state.loopRegion,
       tracks: snapshot.tracks,
       selectedTrackId: selectedTrackId,
       selectedClipId: selectedClipId,
@@ -281,6 +297,7 @@ class EditorController extends Notifier<EditorState> {
     await _audioEngine.seek(
       tracks: state.tracks,
       positionSeconds: positionSeconds,
+      loopRegion: state.isLoopEnabled ? state.loopRegion : null,
     );
 
     if (requestId != _clipEditRequestId) {
@@ -387,13 +404,19 @@ class EditorController extends Notifier<EditorState> {
   }
 
   Future<void> play() async {
-    if (state.tracks.isEmpty) {
+    final loop = state.isLoopEnabled ? state.loopRegion : null;
+    if (state.tracks.isEmpty && loop == null) {
       return;
     }
 
+    final startPosition = loop != null && !loop.contains(state.playheadSeconds)
+        ? loop.startSeconds
+        : state.playheadSeconds;
+
     await _audioEngine.play(
       tracks: state.tracks,
-      fromSeconds: state.playheadSeconds,
+      fromSeconds: startPosition,
+      loopRegion: loop,
     );
 
     state = state.copyWith(
@@ -434,7 +457,7 @@ class EditorController extends Notifier<EditorState> {
   }
 
   Future<void> seek(double positionSeconds) async {
-    final duration = state.projectDurationSeconds;
+    final duration = state.timelineDurationSeconds;
 
     if (duration <= 0) {
       return;
@@ -445,7 +468,16 @@ class EditorController extends Notifier<EditorState> {
     _playheadTimer?.cancel();
     state = state.copyWith(playheadSeconds: position);
 
-    await _audioEngine.seek(tracks: state.tracks, positionSeconds: position);
+    final loop = state.isLoopEnabled ? state.loopRegion : null;
+    final enginePosition =
+        state.isPlaying && loop != null && !loop.contains(position)
+        ? loop.startSeconds
+        : position;
+    await _audioEngine.seek(
+      tracks: state.tracks,
+      positionSeconds: enginePosition,
+      loopRegion: loop,
+    );
 
     state = state.copyWith(
       isPlaying: _audioEngine.isPlaying,
@@ -465,7 +497,7 @@ class EditorController extends Notifier<EditorState> {
 
       final duration = state.projectDurationSeconds;
 
-      if (duration > 0 && position >= duration) {
+      if (!state.isLoopEnabled && duration > 0 && position >= duration) {
         _playheadTimer?.cancel();
 
         _audioEngine.stop();
@@ -477,6 +509,69 @@ class EditorController extends Notifier<EditorState> {
 
       state = state.copyWith(playheadSeconds: position);
     });
+  }
+
+  Future<void> setLoopRegion(LoopRegion region) async {
+    if (region == state.loopRegion) {
+      return;
+    }
+
+    final wasPlaying = state.isPlaying;
+    final currentPosition = wasPlaying
+        ? _audioEngine.currentPositionSeconds
+        : state.playheadSeconds;
+    state = state.copyWith(loopRegion: region);
+
+    if (!wasPlaying || !state.isLoopEnabled) {
+      return;
+    }
+
+    final resyncPosition = region.contains(currentPosition)
+        ? currentPosition
+        : region.startSeconds;
+    await _resynchronizeLoopPlayback(resyncPosition);
+  }
+
+  Future<void> toggleLoop() async {
+    var region = state.loopRegion;
+    if (region == null) {
+      final timing = MusicalTiming(bpm: ref.read(tempoControllerProvider).bpm);
+      final barDuration = timing.barDurationSeconds;
+      final start = (state.playheadSeconds / barDuration).floor() * barDuration;
+      region = LoopRegion(startSeconds: start, endSeconds: start + barDuration);
+    }
+
+    final enabled = state.loopRegion == null ? true : !state.isLoopEnabled;
+    final wasPlaying = state.isPlaying;
+    final currentPosition = wasPlaying
+        ? _audioEngine.currentPositionSeconds
+        : state.playheadSeconds;
+    state = state.copyWith(isLoopEnabled: enabled, loopRegion: region);
+
+    if (!wasPlaying) {
+      return;
+    }
+
+    final resyncPosition = enabled && !region.contains(currentPosition)
+        ? region.startSeconds
+        : currentPosition;
+    await _resynchronizeLoopPlayback(resyncPosition);
+  }
+
+  Future<void> _resynchronizeLoopPlayback(double positionSeconds) async {
+    _playheadTimer?.cancel();
+    await _audioEngine.seek(
+      tracks: state.tracks,
+      positionSeconds: positionSeconds,
+      loopRegion: state.isLoopEnabled ? state.loopRegion : null,
+    );
+    state = state.copyWith(
+      isPlaying: _audioEngine.isPlaying,
+      playheadSeconds: _audioEngine.currentPositionSeconds,
+    );
+    if (_audioEngine.isPlaying) {
+      _startPlayheadTicker();
+    }
   }
 
   void selectTrack(String trackId) {

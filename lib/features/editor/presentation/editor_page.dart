@@ -11,6 +11,7 @@ import '../application/editor_controller.dart';
 import '../application/snap_controller.dart';
 import '../application/tempo_controller.dart';
 import '../domain/daw_track.dart';
+import '../domain/loop_region.dart';
 import '../domain/timeline_scale.dart';
 import '../domain/timeline_snapper.dart';
 import '../infrastructure/audio_import_service.dart';
@@ -21,6 +22,7 @@ import 'intents/delete_clip_intent.dart';
 import 'intents/edit_history_intents.dart';
 import 'intents/play_pause_intent.dart';
 import 'intents/split_clip_intent.dart';
+import 'intents/toggle_loop_intent.dart';
 import 'models/app_command.dart';
 import 'models/timeline_ruler_mode.dart';
 import 'widgets/commands_dialog.dart';
@@ -29,6 +31,7 @@ import 'widgets/export_dialog.dart';
 import 'widgets/track_header.dart';
 import 'widgets/track_list.dart';
 import 'widgets/timeline_ruler.dart';
+import 'widgets/timeline_loop_overlay.dart';
 import 'widgets/transport_bar.dart';
 
 typedef _PlaybackFollowState = ({
@@ -66,6 +69,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   late final ScrollController _trackHeaderScrollController;
   late final ScrollController _trackLaneScrollController;
   late final TimelineClipDragController _clipDragController;
+  late final ValueNotifier<LoopRegion?> _loopPreviewRegion;
 
   @override
   void initState() {
@@ -74,6 +78,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     _horizontalTimelineController = ScrollController();
     _trackHeaderScrollController = ScrollController();
     _trackLaneScrollController = ScrollController();
+    _loopPreviewRegion = ValueNotifier<LoopRegion?>(null);
     _clipDragController = TimelineClipDragController(
       _horizontalTimelineController,
       _timelineViewportKey,
@@ -102,6 +107,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     _horizontalTimelineController.dispose();
     _trackHeaderScrollController.dispose();
     _trackLaneScrollController.dispose();
+    _loopPreviewRegion.dispose();
 
     super.dispose();
   }
@@ -718,16 +724,15 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   Widget build(BuildContext context) {
     final editorState = ref.watch(editorControllerProvider);
     final bpm = ref.watch(tempoControllerProvider.select((state) => state.bpm));
+    final snapSettings = ref.watch(snapControllerProvider);
 
     final controller = ref.read(editorControllerProvider.notifier);
 
     return Shortcuts(
       shortcuts: const {
         EditorHistoryShortcutActivator(LogicalKeyboardKey.keyZ): UndoIntent(),
-        EditorHistoryShortcutActivator(
-          LogicalKeyboardKey.keyZ,
-          shift: true,
-        ): RedoIntent(),
+        EditorHistoryShortcutActivator(LogicalKeyboardKey.keyZ, shift: true):
+            RedoIntent(),
         EditorHistoryShortcutActivator(LogicalKeyboardKey.keyY): RedoIntent(),
         EditorCommandShortcutActivator(LogicalKeyboardKey.keyS):
             SplitClipIntent(),
@@ -736,6 +741,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         EditorCommandShortcutActivator(LogicalKeyboardKey.backspace):
             DeleteClipIntent(),
         PlayPauseShortcutActivator(): PlayPauseIntent(),
+        EditorCommandShortcutActivator(LogicalKeyboardKey.keyL):
+            ToggleLoopIntent(),
       },
       child: Actions(
         actions: {
@@ -779,6 +786,14 @@ class _EditorPageState extends ConsumerState<EditorPage> {
               return null;
             },
           ),
+          ToggleLoopIntent: CallbackAction<ToggleLoopIntent>(
+            onInvoke: (_) {
+              if (EditorShortcutPolicy.canHandleTransportShortcut(context)) {
+                controller.toggleLoop();
+              }
+              return null;
+            },
+          ),
         },
         child: Focus(
           autofocus: true,
@@ -799,10 +814,12 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                 TransportBar(
                   isPlaying: editorState.isPlaying,
                   isImporting: editorState.isImporting,
+                  isLoopEnabled: editorState.isLoopEnabled,
                   positionSeconds: editorState.playheadSeconds,
                   rulerMode: _rulerMode,
                   onPlayPressed: controller.togglePlayback,
                   onStopPressed: controller.stop,
+                  onLoopPressed: controller.toggleLoop,
                   onRulerModeChanged: (mode) {
                     if (mode != _rulerMode) {
                       setState(() => _rulerMode = mode);
@@ -907,7 +924,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                                                 builder: (context, dragState, _) {
                                                   final previewDuration = math.max(
                                                     editorState
-                                                        .projectDurationSeconds,
+                                                        .timelineDurationSeconds,
                                                     dragState
                                                             ?.previewEndSeconds ??
                                                         0.0,
@@ -924,34 +941,86 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                                                     width: contentWidth,
                                                     height:
                                                         constraints.maxHeight,
-                                                    child: Column(
-                                                      children: [
-                                                        TimelineRuler(
-                                                          playheadSeconds:
-                                                              editorState
-                                                                  .playheadSeconds,
-                                                          gridMetrics:
-                                                              gridMetrics,
-                                                          mode: _rulerMode,
-                                                          bpm: bpm,
-                                                          onSeek:
-                                                              _handleTimelineSeek,
-                                                        ),
-                                                        Expanded(
-                                                          child: TimelineTrackList(
-                                                            scrollController:
-                                                                _trackLaneScrollController,
-                                                            gridMetrics:
-                                                                gridMetrics,
-                                                            clipDragController:
-                                                                _clipDragController,
-                                                            scrollPhysics:
-                                                                const _ControlReservedScrollPhysics(),
-                                                            onSeek:
-                                                                _handleTimelineSeek,
-                                                          ),
-                                                        ),
-                                                      ],
+                                                    child: ValueListenableBuilder<LoopRegion?>(
+                                                      valueListenable:
+                                                          _loopPreviewRegion,
+                                                      child: TimelineTrackList(
+                                                        scrollController:
+                                                            _trackLaneScrollController,
+                                                        gridMetrics:
+                                                            gridMetrics,
+                                                        clipDragController:
+                                                            _clipDragController,
+                                                        scrollPhysics:
+                                                            const _ControlReservedScrollPhysics(),
+                                                        onSeek:
+                                                            _handleTimelineSeek,
+                                                      ),
+                                                      builder:
+                                                          (
+                                                            context,
+                                                            draftRegion,
+                                                            trackList,
+                                                          ) {
+                                                            final effectiveLoopRegion =
+                                                                draftRegion ??
+                                                                editorState
+                                                                    .loopRegion;
+                                                            return Column(
+                                                              children: [
+                                                                TimelineRuler(
+                                                                  playheadSeconds:
+                                                                      editorState
+                                                                          .playheadSeconds,
+                                                                  gridMetrics:
+                                                                      gridMetrics,
+                                                                  mode:
+                                                                      _rulerMode,
+                                                                  bpm: bpm,
+                                                                  loopRegion:
+                                                                      effectiveLoopRegion,
+                                                                  isLoopEnabled:
+                                                                      editorState
+                                                                          .isLoopEnabled,
+                                                                  snapSettings:
+                                                                      snapSettings,
+                                                                  onLoopRegionPreviewChanged:
+                                                                      (
+                                                                        region,
+                                                                      ) => _loopPreviewRegion.value =
+                                                                          region,
+                                                                  onLoopRegionChanged:
+                                                                      controller
+                                                                          .setLoopRegion,
+                                                                  onSeek:
+                                                                      _handleTimelineSeek,
+                                                                ),
+                                                                Expanded(
+                                                                  child: TimelineLoopOverlay(
+                                                                    gridMetrics:
+                                                                        gridMetrics,
+                                                                    playheadSeconds:
+                                                                        editorState
+                                                                            .playheadSeconds,
+                                                                    loopRegion:
+                                                                        effectiveLoopRegion,
+                                                                    isLoopEnabled:
+                                                                        editorState
+                                                                            .isLoopEnabled,
+                                                                    bpm: bpm,
+                                                                    snapSettings:
+                                                                        snapSettings,
+                                                                    rulerMode:
+                                                                        _rulerMode,
+                                                                    verticalScrollController:
+                                                                        _trackLaneScrollController,
+                                                                    child:
+                                                                        trackList!,
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            );
+                                                          },
                                                     ),
                                                   );
                                                 },

@@ -8,6 +8,7 @@ import '../../domain/daw_track.dart';
 import '../../domain/timeline_scale.dart';
 import '../controllers/timeline_clip_drag_controller.dart';
 import 'track_header.dart';
+import 'track_lane_background_painter.dart';
 import 'timeline_view.dart';
 
 class TrackHeaderList extends ConsumerWidget {
@@ -19,8 +20,10 @@ class TrackHeaderList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final editorState = ref.watch(editorControllerProvider);
     final controller = ref.read(editorControllerProvider.notifier);
+    final colorScheme = Theme.of(context).colorScheme;
+    final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
 
-    return ListView.builder(
+    final trackList = ListView.builder(
       controller: scrollController,
       padding: EdgeInsets.zero,
       itemCount: editorState.tracks.length,
@@ -55,6 +58,39 @@ class TrackHeaderList extends ConsumerWidget {
         );
       },
     );
+
+    return AnimatedBuilder(
+      animation: scrollController,
+      child: trackList,
+      builder: (context, child) {
+        final baseColor = colorScheme.surface;
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            IgnorePointer(
+              child: CustomPaint(
+                painter: TrackLaneBackgroundPainter(
+                  baseColor: baseColor,
+                  alternateColor: Color.alphaBlend(
+                    colorScheme.onSurface.withValues(alpha: 0.018),
+                    baseColor,
+                  ),
+                  separatorColor: colorScheme.outlineVariant.withValues(
+                    alpha: 0.72,
+                  ),
+                  rowHeight: trackHeight,
+                  scrollOffset: scrollController.hasClients
+                      ? scrollController.offset
+                      : 0,
+                  devicePixelRatio: devicePixelRatio,
+                ),
+              ),
+            ),
+            child!,
+          ],
+        );
+      },
+    );
   }
 }
 
@@ -81,9 +117,6 @@ class TimelineTrackList extends ConsumerWidget {
         (state) => _TimelineTracksSnapshot(state.tracks),
       ),
     );
-    final playheadSeconds = ref.watch(
-      editorControllerProvider.select((state) => state.playheadSeconds),
-    );
     final selectedClipId = ref.watch(
       editorControllerProvider.select((state) => state.selectedClipId),
     );
@@ -91,47 +124,48 @@ class TimelineTrackList extends ConsumerWidget {
     final snapSettings = ref.watch(snapControllerProvider);
     final controller = ref.read(editorControllerProvider.notifier);
 
-    if (tracks.values.isEmpty) {
-      return const _EmptyTracks();
-    }
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ListView.builder(
+          controller: scrollController,
+          physics: scrollPhysics,
+          padding: EdgeInsets.zero,
+          itemCount: tracks.values.length,
+          itemExtent: trackHeight,
+          itemBuilder: (context, index) {
+            final track = tracks.values[index];
 
-    return ListView.builder(
-      controller: scrollController,
-      physics: scrollPhysics,
-      padding: EdgeInsets.zero,
-      itemCount: tracks.values.length,
-      itemExtent: trackHeight,
-      itemBuilder: (context, index) {
-        final track = tracks.values[index];
-
-        return TimelineTrackLane(
-          key: ValueKey(track.id),
-          clips: track.clips,
-          trackColorValue: track.colorValue,
-          playheadSeconds: playheadSeconds,
-          gridMetrics: gridMetrics,
-          selectedClipId: selectedClipId,
-          clipDragController: clipDragController,
-          bpm: bpm,
-          snapSettings: snapSettings,
-          onSeek: onSeek,
-          onSelect: (clipId) {
-            Focus.of(context).requestFocus();
-            controller.selectClip(trackId: track.id, clipId: clipId);
-          },
-          onMoveCommitted: (clipId, startSeconds) {
-            controller.moveClip(clipId, startSeconds);
-          },
-          onTrimCommitted: (clipId, result) {
-            controller.updateClipTrim(
-              clipId: clipId,
-              timelineStartSeconds: result.startSeconds,
-              sourceStartSeconds: result.sourceStartSeconds,
-              clipDurationSeconds: result.clipDurationSeconds,
+            return TimelineTrackLane(
+              key: ValueKey(track.id),
+              clips: track.clips,
+              trackColorValue: track.colorValue,
+              gridMetrics: gridMetrics,
+              selectedClipId: selectedClipId,
+              clipDragController: clipDragController,
+              bpm: bpm,
+              snapSettings: snapSettings,
+              onSeek: onSeek,
+              onSelect: (clipId) {
+                Focus.of(context).requestFocus();
+                controller.selectClip(trackId: track.id, clipId: clipId);
+              },
+              onMoveCommitted: (clipId, startSeconds) {
+                controller.moveClip(clipId, startSeconds);
+              },
+              onTrimCommitted: (clipId, result) {
+                controller.updateClipTrim(
+                  clipId: clipId,
+                  timelineStartSeconds: result.startSeconds,
+                  sourceStartSeconds: result.sourceStartSeconds,
+                  clipDurationSeconds: result.clipDurationSeconds,
+                );
+              },
             );
           },
-        );
-      },
+        ),
+        if (tracks.values.isEmpty) const _EmptyArrangementHint(),
+      ],
     );
   }
 }
@@ -170,27 +204,24 @@ class _TimelineTracksSnapshot {
   );
 }
 
-class _EmptyTracks extends StatelessWidget {
-  const _EmptyTracks();
+class _EmptyArrangementHint extends StatelessWidget {
+  const _EmptyArrangementHint();
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.multitrack_audio, size: 48, color: Colors.white24),
-          SizedBox(height: 16),
-          Text(
-            'No tracks',
-            style: TextStyle(fontSize: 18, color: Colors.white54),
-          ),
-          SizedBox(height: 4),
-          Text(
-            'Add a track to start editing',
-            style: TextStyle(color: Colors.white38),
-          ),
-        ],
+    return const IgnorePointer(
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.multitrack_audio, size: 30, color: Colors.white30),
+            SizedBox(height: 10),
+            Text(
+              'Drop audio here to start',
+              style: TextStyle(fontSize: 14, color: Colors.white54),
+            ),
+          ],
+        ),
       ),
     );
   }

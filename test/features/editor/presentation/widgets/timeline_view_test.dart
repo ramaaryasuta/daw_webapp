@@ -57,7 +57,6 @@ void main() {
                       clipDurationSeconds: 4,
                     ),
                   ],
-                  playheadSeconds: 0,
                   gridMetrics: const TimelineGridMetrics(
                     transform: TimelineTransform(scale: TimelineScale(100)),
                   ),

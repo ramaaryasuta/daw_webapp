@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:web/web.dart' as web;
 
 import '../domain/musical_timing.dart';
+import '../domain/loop_region.dart';
 
 /// Schedules metronome clicks on the Web Audio clock.
 ///
@@ -25,7 +27,11 @@ class WebMetronomeScheduler {
   double _tempoBpm = 120;
   double _timelineStartSeconds = 0;
   double _contextStartTime = 0;
+  double _passTimelineStartSeconds = 0;
+  double _passTimelineEndSeconds = double.infinity;
+  double _passContextStartTime = 0;
   int _nextBeatIndex = 0;
+  LoopRegion? _loopRegion;
   bool _enabled = false;
   bool _transportRunning = false;
 
@@ -58,9 +64,11 @@ class WebMetronomeScheduler {
   void startTransport({
     required double timelineStartSeconds,
     required double contextStartTime,
+    LoopRegion? loopRegion,
   }) {
     _timelineStartSeconds = timelineStartSeconds;
     _contextStartTime = contextStartTime;
+    _loopRegion = loopRegion;
     _transportRunning = true;
 
     if (_enabled) {
@@ -81,7 +89,12 @@ class WebMetronomeScheduler {
 
   void _restartScheduling() {
     _stopScheduling();
-    _nextBeatIndex = _firstBeatAtOrAfter(_currentTimelinePosition());
+    final currentTimeline = _currentTimelinePosition();
+    final now = _audioContext.currentTime;
+    _passTimelineStartSeconds = currentTimeline;
+    _passTimelineEndSeconds = _loopRegion?.endSeconds ?? double.infinity;
+    _passContextStartTime = _contextStartTime > now ? _contextStartTime : now;
+    _nextBeatIndex = _firstBeatAtOrAfter(currentTimeline);
     _scheduleLookAhead();
     _lookAheadTimer = Timer.periodic(
       _schedulerInterval,
@@ -121,7 +134,13 @@ class WebMetronomeScheduler {
       return _timelineStartSeconds;
     }
 
-    return _timelineStartSeconds + elapsed;
+    final position = _timelineStartSeconds + elapsed;
+    final loop = _loopRegion;
+    if (loop != null && position >= loop.endSeconds) {
+      return loop.startSeconds +
+          ((position - loop.endSeconds) % loop.durationSeconds);
+    }
+    return position;
   }
 
   int _firstBeatAtOrAfter(double timelineSeconds) {
@@ -140,8 +159,26 @@ class WebMetronomeScheduler {
 
     while (true) {
       final beatTimelineSeconds = timing.beatTimeSeconds(_nextBeatIndex);
+
+      if (beatTimelineSeconds >= _passTimelineEndSeconds) {
+        final loop = _loopRegion;
+        if (loop == null) {
+          break;
+        }
+        _passContextStartTime +=
+            _passTimelineEndSeconds - _passTimelineStartSeconds;
+        _passTimelineStartSeconds = loop.startSeconds;
+        _passTimelineEndSeconds = loop.endSeconds;
+        _nextBeatIndex = _firstBeatAtOrAfter(loop.startSeconds);
+        if (_passContextStartTime > windowEnd) {
+          break;
+        }
+        continue;
+      }
+
       final beatContextTime =
-          _contextStartTime + (beatTimelineSeconds - _timelineStartSeconds);
+          _passContextStartTime +
+          (beatTimelineSeconds - _passTimelineStartSeconds);
 
       if (beatContextTime > windowEnd) {
         break;
@@ -151,6 +188,10 @@ class WebMetronomeScheduler {
         _scheduleClick(
           contextTime: beatContextTime,
           isDownbeat: timing.isDownbeat(_nextBeatIndex),
+          latestEndTime: _passTimelineEndSeconds.isFinite
+              ? _passContextStartTime +
+                    (_passTimelineEndSeconds - _passTimelineStartSeconds)
+              : double.infinity,
         );
       }
 
@@ -158,10 +199,21 @@ class WebMetronomeScheduler {
     }
   }
 
-  void _scheduleClick({required double contextTime, required bool isDownbeat}) {
+  void _scheduleClick({
+    required double contextTime,
+    required bool isDownbeat,
+    required double latestEndTime,
+  }) {
+    final endTime = math.min(
+      contextTime + _clickDurationSeconds,
+      latestEndTime,
+    );
+    if (endTime <= contextTime) {
+      return;
+    }
+    final attackEndTime = math.min(contextTime + 0.002, endTime);
     final oscillator = _audioContext.createOscillator();
     final gain = _audioContext.createGain();
-    final endTime = contextTime + _clickDurationSeconds;
 
     oscillator.type = 'sine';
     oscillator.frequency.setValueAtTime(isDownbeat ? 1760 : 1160, contextTime);
@@ -169,7 +221,7 @@ class WebMetronomeScheduler {
     gain.gain.setValueAtTime(_silenceGain, contextTime);
     gain.gain.exponentialRampToValueAtTime(
       isDownbeat ? 0.24 : 0.14,
-      contextTime + 0.002,
+      attackEndTime,
     );
     gain.gain.exponentialRampToValueAtTime(_silenceGain, endTime);
 

@@ -8,7 +8,6 @@ import '../../domain/audio_clip.dart';
 import '../../domain/snap_settings.dart';
 import '../../domain/timeline_scale.dart';
 import '../controllers/timeline_clip_drag_controller.dart';
-import 'musical_grid_painter.dart';
 import 'track_header.dart';
 
 class TimelineTrackLane extends StatelessWidget {
@@ -16,7 +15,6 @@ class TimelineTrackLane extends StatelessWidget {
     super.key,
     required this.clips,
     this.trackColorValue = 0xFF8468C8,
-    required this.playheadSeconds,
     required this.gridMetrics,
     required this.selectedClipId,
     required this.clipDragController,
@@ -30,7 +28,6 @@ class TimelineTrackLane extends StatelessWidget {
 
   final List<AudioClip> clips;
   final int trackColorValue;
-  final double playheadSeconds;
   final TimelineGridMetrics gridMetrics;
   final String? selectedClipId;
   final TimelineClipDragController clipDragController;
@@ -50,7 +47,6 @@ class TimelineTrackLane extends StatelessWidget {
     return Container(
       height: trackHeight,
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLowest,
         border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
       ),
       child: Stack(
@@ -62,27 +58,7 @@ class TimelineTrackLane extends StatelessWidget {
               onTapDown: (details) {
                 onSeek(transform.contentXToTime(details.localPosition.dx));
               },
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  CustomPaint(
-                    painter: _GridPainter(
-                      color: colorScheme.outlineVariant,
-                      gridMetrics: gridMetrics,
-                      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-                    ),
-                  ),
-                  CustomPaint(
-                    painter: MusicalGridPainter(
-                      color: colorScheme.primary,
-                      gridMetrics: gridMetrics,
-                      bpm: bpm,
-                      settings: snapSettings,
-                      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-                    ),
-                  ),
-                ],
-              ),
+              child: const SizedBox.expand(),
             ),
           ),
           for (final clip in clips)
@@ -99,14 +75,6 @@ class TimelineTrackLane extends StatelessWidget {
               onMoveCommitted: (start) => onMoveCommitted(clip.id, start),
               onTrimCommitted: (result) => onTrimCommitted(clip.id, result),
             ),
-          Positioned(
-            left: transform.timeToContentX(playheadSeconds) - 1,
-            top: 0,
-            bottom: 0,
-            child: IgnorePointer(
-              child: Container(width: 2, color: colorScheme.tertiary),
-            ),
-          ),
         ],
       ),
     );
@@ -586,52 +554,5 @@ class _WaveformPainter extends CustomPainter {
         oldDelegate.clipDurationSeconds != clipDurationSeconds ||
         oldDelegate.sourceAudioDurationSeconds != sourceAudioDurationSeconds ||
         oldDelegate.color != color;
-  }
-}
-
-class _GridPainter extends CustomPainter {
-  const _GridPainter({
-    required this.color,
-    required this.gridMetrics,
-    required this.devicePixelRatio,
-  });
-
-  final Color color;
-  final TimelineGridMetrics gridMetrics;
-  final double devicePixelRatio;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final majorPaint = Paint()
-      ..color = color.withValues(alpha: 0.5)
-      ..strokeWidth = 1;
-    final minorPaint = Paint()
-      ..color = color.withValues(alpha: 0.2)
-      ..strokeWidth = 1;
-    final clipBounds = canvas.getLocalClipBounds();
-
-    for (final tick in gridMetrics.ticksInContentRange(
-      left: clipBounds.left,
-      right: clipBounds.right,
-      contentWidth: size.width,
-    )) {
-      final x = gridMetrics.alignStrokeCenter(
-        tick.contentX,
-        devicePixelRatio: devicePixelRatio,
-      );
-      canvas.drawLine(
-        Offset(x, 0),
-        Offset(x, size.height),
-        tick.isMajor ? majorPaint : minorPaint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _GridPainter oldDelegate) {
-    return oldDelegate.color != color ||
-        oldDelegate.gridMetrics.scale.pixelsPerSecond !=
-            gridMetrics.scale.pixelsPerSecond ||
-        oldDelegate.devicePixelRatio != devicePixelRatio;
   }
 }

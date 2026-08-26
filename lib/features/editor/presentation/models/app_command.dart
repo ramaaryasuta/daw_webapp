@@ -44,6 +44,21 @@ abstract final class EditorCommands {
     category: AppCommandCategory.timeline,
   );
 
+  static const toggleLoop = AppCommand(
+    title: 'Toggle Loop',
+    description:
+        'Enable or disable playback looping for the selected cycle region.',
+    shortcutParts: ['L'],
+    category: AppCommandCategory.timeline,
+  );
+
+  static const setLoopRegion = AppCommand(
+    title: 'Set Loop Region',
+    description: 'Create or resize the playback loop region.',
+    shortcutParts: ['Drag Timeline Ruler'],
+    category: AppCommandCategory.timeline,
+  );
+
   static const zoomTimeline = AppCommand(
     title: 'Zoom Timeline',
     description: 'Zoom the timeline horizontally around the pointer position.',
@@ -110,7 +125,7 @@ abstract final class EditorCommands {
   static const snapToGrid = AppCommand(
     title: 'Snap to Grid',
     description:
-        'Align clip movement, trimming, and timeline seeking to the selected musical grid.',
+        'Align clip movement, trimming, loop boundaries, and timeline seeking to the selected musical grid.',
     shortcutParts: ['Toolbar', 'Snap'],
     category: AppCommandCategory.timeline,
   );
@@ -130,6 +145,8 @@ abstract final class EditorCommands {
     renameTrack,
     changeTrackColor,
     playPause,
+    toggleLoop,
+    setLoopRegion,
     snapToGrid,
     temporarilyDisableSnap,
     zoomTimeline,
