@@ -10,9 +10,11 @@ class DawTrack {
     required this.clips,
     int colorValue = TrackColors.purple,
     this.volumeDb = 0,
+    double pan = 0,
     this.isMuted = false,
     this.isSolo = false,
-  }) : colorValue = 0xFF000000 | (colorValue & 0x00FFFFFF);
+  }) : colorValue = 0xFF000000 | (colorValue & 0x00FFFFFF),
+       pan = pan != pan ? 0 : (pan < -1 ? -1 : (pan > 1 ? 1 : pan));
 
   final String id;
   final String name;
@@ -22,6 +24,9 @@ class DawTrack {
 
   /// Authoritative track fader value in decibels. 0 dB is unity gain.
   final double volumeDb;
+
+  /// Authoritative stereo pan. -1 is hard left, 0 center, and +1 hard right.
+  final double pan;
   final bool isMuted;
   final bool isSolo;
 
@@ -41,6 +46,7 @@ class DawTrack {
     List<AudioClip>? clips,
     int? colorValue,
     double? volumeDb,
+    double? pan,
     bool? isMuted,
     bool? isSolo,
   }) {
@@ -50,6 +56,7 @@ class DawTrack {
       clips: clips ?? this.clips,
       colorValue: colorValue ?? this.colorValue,
       volumeDb: volumeDb ?? this.volumeDb,
+      pan: pan ?? this.pan,
       isMuted: isMuted ?? this.isMuted,
       isSolo: isSolo ?? this.isSolo,
     );

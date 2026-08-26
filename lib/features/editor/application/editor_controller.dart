@@ -119,6 +119,8 @@ class EditorController extends Notifier<EditorState> {
   ProjectSnapshot? _tempoEditStartSnapshot;
   ProjectSnapshot? _volumeEditStartSnapshot;
   String? _volumeEditTrackId;
+  ProjectSnapshot? _panEditStartSnapshot;
+  String? _panEditTrackId;
   ProjectSnapshot? _trackColorEditStartSnapshot;
   String? _trackColorEditTrackId;
   int? _trackColorEditOriginalValue;
@@ -160,6 +162,8 @@ class EditorController extends Notifier<EditorState> {
     _tempoEditStartSnapshot = null;
     _volumeEditStartSnapshot = null;
     _volumeEditTrackId = null;
+    _panEditStartSnapshot = null;
+    _panEditTrackId = null;
     _trackColorEditStartSnapshot = null;
     _trackColorEditTrackId = null;
     _trackColorEditOriginalValue = null;
@@ -280,6 +284,7 @@ class EditorController extends Notifier<EditorState> {
       final rightTrack = right[index];
       if (leftTrack.id != rightTrack.id ||
           leftTrack.volumeDb != rightTrack.volumeDb ||
+          leftTrack.pan != rightTrack.pan ||
           leftTrack.isMuted != rightTrack.isMuted ||
           leftTrack.isSolo != rightTrack.isSolo) {
         return false;
@@ -1097,6 +1102,75 @@ class EditorController extends Notifier<EditorState> {
         for (final track in state.tracks)
           if (track.id == trackId)
             track.copyWith(volumeDb: clampTrackVolumeDb(volumeDb))
+          else
+            track,
+      ],
+    );
+
+    _audioEngine.syncMixer(state.tracks);
+  }
+
+  void beginPanChange(String trackId) {
+    if (_panEditStartSnapshot != null ||
+        !state.tracks.any((track) => track.id == trackId)) {
+      return;
+    }
+
+    _panEditStartSnapshot = _captureProjectSnapshot();
+    _panEditTrackId = trackId;
+  }
+
+  void previewPan(String trackId, double pan) {
+    if (_panEditTrackId != trackId) {
+      return;
+    }
+
+    _setPan(trackId, pan);
+  }
+
+  void commitPanChange(String trackId) {
+    if (_panEditTrackId != trackId) {
+      return;
+    }
+
+    final before = _panEditStartSnapshot;
+    _panEditStartSnapshot = null;
+    _panEditTrackId = null;
+    if (before != null) {
+      _recordEdit('Change Track Pan', before);
+    }
+  }
+
+  void resetPan(String trackId) {
+    final track = state.tracks
+        .where((track) => track.id == trackId)
+        .firstOrNull;
+    if (track == null) {
+      return;
+    }
+
+    final pendingBefore = _panEditTrackId == trackId
+        ? _panEditStartSnapshot
+        : null;
+    if (_panEditTrackId == trackId) {
+      _panEditStartSnapshot = null;
+      _panEditTrackId = null;
+    }
+    if (track.pan == centerTrackPan) {
+      return;
+    }
+
+    final before = pendingBefore ?? _captureProjectSnapshot();
+    _setPan(trackId, centerTrackPan);
+    _recordEdit('Change Track Pan', before);
+  }
+
+  void _setPan(String trackId, double pan) {
+    state = state.copyWith(
+      tracks: [
+        for (final track in state.tracks)
+          if (track.id == trackId)
+            track.copyWith(pan: clampTrackPan(pan))
           else
             track,
       ],

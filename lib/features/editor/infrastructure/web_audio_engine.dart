@@ -38,6 +38,7 @@ class WebAudioEngine {
   final Map<String, List<_ScheduledSource>> _activeSources = {};
 
   final Map<String, web.GainNode> _trackGains = {};
+  final Map<String, web.StereoPannerNode> _trackPanners = {};
 
   bool _isPlaying = false;
   int _playRequestId = 0;
@@ -153,7 +154,7 @@ class WebAudioEngine {
 
     _contextStartTime = startAt;
 
-    _createTrackGains(tracks);
+    _createTrackMixerNodes(tracks);
 
     if (loopRegion == null) {
       _scheduleSegment(
@@ -185,14 +186,18 @@ class WebAudioEngine {
     _isPlaying = true;
   }
 
-  void _createTrackGains(List<DawTrack> tracks) {
+  void _createTrackMixerNodes(List<DawTrack> tracks) {
     final hasSolo = tracks.any((track) => track.isSolo);
 
     for (final track in tracks) {
       final gain = _audioContext.createGain();
+      final panner = _audioContext.createStereoPanner();
       gain.gain.value = effectiveTrackGain(track, hasSolo: hasSolo);
-      gain.connect(_audioContext.destination);
+      panner.pan.value = clampTrackPan(track.pan);
+      gain.connect(panner);
+      panner.connect(_audioContext.destination);
       _trackGains[track.id] = gain;
+      _trackPanners[track.id] = panner;
     }
   }
 
@@ -374,8 +379,15 @@ class WebAudioEngine {
       } catch (_) {}
     }
 
+    for (final panner in _trackPanners.values) {
+      try {
+        panner.disconnect();
+      } catch (_) {}
+    }
+
     _activeSources.clear();
     _trackGains.clear();
+    _trackPanners.clear();
     _scheduledTracks = const [];
     _contextStartTime = 0;
   }
@@ -393,25 +405,32 @@ class WebAudioEngine {
 
     for (final track in tracks) {
       final gain = _trackGains[track.id];
+      final panner = _trackPanners[track.id];
 
       if (gain == null) {
         continue;
       }
 
       _smoothGainTo(gain, effectiveTrackGain(track, hasSolo: hasSolo));
+      if (panner != null) {
+        _smoothAudioParamTo(panner.pan, clampTrackPan(track.pan));
+      }
     }
   }
 
   void _smoothGainTo(web.GainNode gainNode, double targetGain) {
+    _smoothAudioParamTo(gainNode.gain, targetGain);
+  }
+
+  void _smoothAudioParamTo(web.AudioParam parameter, double targetValue) {
     final now = _audioContext.currentTime;
-    final gain = gainNode.gain;
     try {
-      gain.cancelAndHoldAtTime(now);
+      parameter.cancelAndHoldAtTime(now);
     } catch (_) {
-      gain.cancelScheduledValues(now);
-      gain.setValueAtTime(gain.value, now);
+      parameter.cancelScheduledValues(now);
+      parameter.setValueAtTime(parameter.value, now);
     }
-    gain.linearRampToValueAtTime(targetGain, now + _mixerRampSeconds);
+    parameter.linearRampToValueAtTime(targetValue, now + _mixerRampSeconds);
   }
 
   void removeTrack(String trackId) {
@@ -427,10 +446,17 @@ class WebAudioEngine {
     }
 
     final gain = _trackGains.remove(trackId);
+    final panner = _trackPanners.remove(trackId);
 
     if (gain != null) {
       try {
         gain.disconnect();
+      } catch (_) {}
+    }
+
+    if (panner != null) {
+      try {
+        panner.disconnect();
       } catch (_) {}
     }
   }

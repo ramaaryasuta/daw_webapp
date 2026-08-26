@@ -35,6 +35,7 @@ class ProjectSnapshot {
           leftTrack.name != rightTrack.name ||
           leftTrack.colorValue != rightTrack.colorValue ||
           leftTrack.volumeDb != rightTrack.volumeDb ||
+          leftTrack.pan != rightTrack.pan ||
           leftTrack.isMuted != rightTrack.isMuted ||
           leftTrack.isSolo != rightTrack.isSolo ||
           leftTrack.clips.length != rightTrack.clips.length) {

@@ -27,6 +27,7 @@ void main() {
     String trackName = 'Track',
     int trackColorValue = TrackColors.purple,
     double volumeDb = 0,
+    double pan = 0,
     bool isMuted = false,
     bool isSolo = false,
   }) {
@@ -44,6 +45,7 @@ void main() {
           name: trackName,
           colorValue: trackColorValue,
           volumeDb: volumeDb,
+          pan: pan,
           isMuted: isMuted,
           isSolo: isSolo,
           clips: split
@@ -236,6 +238,30 @@ void main() {
       label: 'Change Track Volume',
       before: initial,
       after: snapshot(start: 0, volumeDb: 0),
+    );
+    expect(history.canUndo, isFalse);
+  });
+
+  test('track pan is exact undoable mixer state and ignores no-ops', () {
+    final centered = snapshot(start: 0);
+    final panned = snapshot(start: 0, pan: 0.7);
+
+    var history = EditorHistory().record(
+      label: 'Change Track Pan',
+      before: centered,
+      after: panned,
+    );
+    expect(history.past.single.label, 'Change Track Pan');
+
+    final undo = history.undo(panned)!;
+    expect(undo.snapshot.tracks.single.pan, 0);
+    final redo = undo.history.redo(undo.snapshot)!;
+    expect(redo.snapshot.tracks.single.pan, 0.7);
+
+    history = EditorHistory().record(
+      label: 'Change Track Pan',
+      before: centered,
+      after: snapshot(start: 0, pan: 0),
     );
     expect(history.canUndo, isFalse);
   });

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -16,6 +18,7 @@ class TrackHeader extends StatefulWidget {
     required this.name,
     required this.colorValue,
     required this.volumeDb,
+    required this.pan,
     required this.isMuted,
     required this.isSolo,
     required this.isSelected,
@@ -32,11 +35,16 @@ class TrackHeader extends StatefulWidget {
     required this.onVolumeChanged,
     required this.onVolumeChangeEnd,
     required this.onVolumeReset,
+    required this.onPanChangeStart,
+    required this.onPanChanged,
+    required this.onPanChangeEnd,
+    required this.onPanReset,
   });
 
   final String name;
   final int colorValue;
   final double volumeDb;
+  final double pan;
 
   final bool isMuted;
   final bool isSolo;
@@ -56,6 +64,10 @@ class TrackHeader extends StatefulWidget {
   final ValueChanged<double> onVolumeChangeStart;
   final ValueChanged<double> onVolumeChangeEnd;
   final VoidCallback onVolumeReset;
+  final ValueChanged<double> onPanChanged;
+  final ValueChanged<double> onPanChangeStart;
+  final ValueChanged<double> onPanChangeEnd;
+  final VoidCallback onPanReset;
 
   @override
   State<TrackHeader> createState() => _TrackHeaderState();
@@ -293,70 +305,80 @@ class _TrackHeaderState extends State<TrackHeader> {
                 ),
               ),
 
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
 
               SizedBox(
-                height: 38,
-                child: Row(
+                height: 51,
+                child: Column(
                   children: [
-                    _MixerStateButton(
-                      label: 'M',
-                      tooltip: 'Mute track',
-                      semanticLabel: widget.isMuted
-                          ? 'Unmute ${widget.name}'
-                          : 'Mute ${widget.name}',
-                      active: widget.isMuted,
-                      activeColor: colorScheme.error,
-                      onPressed: widget.onMutePressed,
-                    ),
-
-                    const SizedBox(width: 5),
-
-                    _MixerStateButton(
-                      label: 'S',
-                      tooltip: 'Solo track',
-                      semanticLabel: widget.isSolo
-                          ? 'Unsolo ${widget.name}'
-                          : 'Solo ${widget.name}',
-                      active: widget.isSolo,
-                      activeColor: colorScheme.tertiary,
-                      onPressed: widget.onSoloPressed,
-                    ),
-
-                    const SizedBox(width: 7),
-
-                    Icon(
-                      widget.isMuted ? Icons.volume_off : Icons.volume_down,
-                      size: 16,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-
-                    const SizedBox(width: 2),
-
-                    Expanded(
-                      child: _TrackVolumeSlider(
-                        valueDb: widget.volumeDb,
-                        onChangeStart: widget.onVolumeChangeStart,
-                        onChanged: widget.onVolumeChanged,
-                        onChangeEnd: widget.onVolumeChangeEnd,
-                        onReset: widget.onVolumeReset,
+                    SizedBox(
+                      height: 24,
+                      child: Row(
+                        children: [
+                          _MixerStateButton(
+                            label: 'M',
+                            tooltip: 'Mute track',
+                            semanticLabel: widget.isMuted
+                                ? 'Unmute ${widget.name}'
+                                : 'Mute ${widget.name}',
+                            active: widget.isMuted,
+                            activeColor: colorScheme.error,
+                            onPressed: widget.onMutePressed,
+                          ),
+                          const SizedBox(width: 5),
+                          _MixerStateButton(
+                            label: 'S',
+                            tooltip: 'Solo track',
+                            semanticLabel: widget.isSolo
+                                ? 'Unsolo ${widget.name}'
+                                : 'Solo ${widget.name}',
+                            active: widget.isSolo,
+                            activeColor: colorScheme.tertiary,
+                            onPressed: widget.onSoloPressed,
+                          ),
+                          const SizedBox(width: 7),
+                          const _MixerParameterLabel('VOL'),
+                          const SizedBox(width: 2),
+                          Expanded(
+                            child: _TrackVolumeSlider(
+                              valueDb: widget.volumeDb,
+                              onChangeStart: widget.onVolumeChangeStart,
+                              onChanged: widget.onVolumeChanged,
+                              onChangeEnd: widget.onVolumeChangeEnd,
+                              onReset: widget.onVolumeReset,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          _MixerValueLabel(
+                            valueKey: const ValueKey('track-volume-value'),
+                            text: formatTrackVolumeDb(widget.volumeDb),
+                          ),
+                        ],
                       ),
                     ),
-
-                    const SizedBox(width: 4),
-
+                    const SizedBox(height: 3),
                     SizedBox(
-                      width: 50,
-                      child: Text(
-                        formatTrackVolumeDb(widget.volumeDb),
-                        key: const ValueKey('track-volume-value'),
-                        textAlign: TextAlign.right,
-                        maxLines: 1,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                          fontWeight: FontWeight.w600,
-                        ),
+                      height: 24,
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 60),
+                          const _MixerParameterLabel('PAN'),
+                          const SizedBox(width: 2),
+                          Expanded(
+                            child: _TrackPanSlider(
+                              pan: widget.pan,
+                              onChangeStart: widget.onPanChangeStart,
+                              onChanged: widget.onPanChanged,
+                              onChangeEnd: widget.onPanChangeEnd,
+                              onReset: widget.onPanReset,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          _MixerValueLabel(
+                            valueKey: const ValueKey('track-pan-value'),
+                            text: formatTrackPan(widget.pan),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -479,14 +501,14 @@ class _MixerStateButton extends StatelessWidget {
         label: semanticLabel,
         excludeSemantics: true,
         child: SizedBox(
-          width: 28,
-          height: 28,
+          width: 24,
+          height: 24,
           child: OutlinedButton(
             key: ValueKey('track-${label.toLowerCase()}-button'),
             onPressed: onPressed,
             style: ButtonStyle(
               padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-              minimumSize: const WidgetStatePropertyAll(Size(28, 28)),
+              minimumSize: const WidgetStatePropertyAll(Size(24, 24)),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               visualDensity: VisualDensity.compact,
               backgroundColor: WidgetStatePropertyAll(
@@ -513,6 +535,53 @@ class _MixerStateButton extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MixerParameterLabel extends StatelessWidget {
+  const _MixerParameterLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 24,
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _MixerValueLabel extends StatelessWidget {
+  const _MixerValueLabel({required this.valueKey, required this.text});
+
+  final Key valueKey;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 48,
+      child: Text(
+        text,
+        key: valueKey,
+        textAlign: TextAlign.right,
+        maxLines: 1,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+          fontFeatures: const [FontFeature.tabularFigures()],
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -647,6 +716,159 @@ class _UnityMarkedTrackShape extends RoundedRectSliderTrackShape {
       Offset(x, trackRect.top - 3),
       Offset(x, trackRect.bottom + 3),
       markerPaint,
+    );
+  }
+}
+
+class _TrackPanSlider extends StatefulWidget {
+  const _TrackPanSlider({
+    required this.pan,
+    required this.onChangeStart,
+    required this.onChanged,
+    required this.onChangeEnd,
+    required this.onReset,
+  });
+
+  final double pan;
+  final ValueChanged<double> onChangeStart;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double> onChangeEnd;
+  final VoidCallback onReset;
+
+  @override
+  State<_TrackPanSlider> createState() => _TrackPanSliderState();
+}
+
+class _TrackPanSliderState extends State<_TrackPanSlider> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final semanticValue = formatTrackPanSemantics(widget.pan);
+
+    return Tooltip(
+      waitDuration: const Duration(milliseconds: 350),
+      message: 'Track pan: $semanticValue\nDouble-click to center',
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onDoubleTap: widget.onReset,
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 5,
+              trackShape: const _BipolarPanTrackShape(),
+              activeTrackColor: _hovered
+                  ? colorScheme.primary
+                  : colorScheme.primary.withValues(alpha: 0.86),
+              inactiveTrackColor: colorScheme.onSurface.withValues(alpha: 0.22),
+              thumbColor: colorScheme.onSurface,
+              overlayColor: colorScheme.primary.withValues(alpha: 0.14),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
+              thumbShape: const RoundSliderThumbShape(
+                enabledThumbRadius: 6,
+                pressedElevation: 5,
+              ),
+              thumbSize: WidgetStateProperty.resolveWith((states) {
+                final emphasized =
+                    states.contains(WidgetState.hovered) ||
+                    states.contains(WidgetState.dragged);
+                return Size.square(emphasized ? 14 : 12);
+              }),
+              showValueIndicator: ShowValueIndicator.never,
+            ),
+            child: Semantics(
+              label: 'Track pan',
+              child: Slider(
+                key: const ValueKey('track-pan-slider'),
+                value: clampTrackPan(widget.pan),
+                min: minimumTrackPan,
+                max: maximumTrackPan,
+                semanticFormatterCallback: formatTrackPanSemantics,
+                onChangeStart: widget.onChangeStart,
+                onChanged: widget.onChanged,
+                onChangeEnd: widget.onChangeEnd,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BipolarPanTrackShape extends SliderTrackShape {
+  const _BipolarPanTrackShape();
+
+  @override
+  Rect getPreferredRect({
+    required RenderBox parentBox,
+    Offset offset = Offset.zero,
+    required SliderThemeData sliderTheme,
+    bool isEnabled = false,
+    bool isDiscrete = false,
+  }) {
+    final trackHeight = sliderTheme.trackHeight ?? 0;
+    final thumbWidth =
+        sliderTheme.thumbShape?.getPreferredSize(isEnabled, isDiscrete).width ??
+        0;
+    return Rect.fromLTWH(
+      offset.dx + thumbWidth / 2,
+      offset.dy + (parentBox.size.height - trackHeight) / 2,
+      parentBox.size.width - thumbWidth,
+      trackHeight,
+    );
+  }
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset offset, {
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required Animation<double> enableAnimation,
+    required Offset thumbCenter,
+    Offset? secondaryOffset,
+    bool isEnabled = false,
+    bool isDiscrete = false,
+    required TextDirection textDirection,
+  }) {
+    final trackRect = getPreferredRect(
+      parentBox: parentBox,
+      offset: offset,
+      sliderTheme: sliderTheme,
+      isEnabled: isEnabled,
+      isDiscrete: isDiscrete,
+    );
+    final radius = Radius.circular(trackRect.height / 2);
+    context.canvas.drawRRect(
+      RRect.fromRectAndRadius(trackRect, radius),
+      Paint()..color = sliderTheme.inactiveTrackColor!,
+    );
+
+    final centerX = trackRect.center.dx;
+    final activeRect = Rect.fromLTRB(
+      math.min(centerX, thumbCenter.dx),
+      trackRect.top,
+      math.max(centerX, thumbCenter.dx),
+      trackRect.bottom,
+    );
+    if (activeRect.width > 0) {
+      context.canvas.drawRRect(
+        RRect.fromRectAndRadius(activeRect, radius),
+        Paint()..color = sliderTheme.activeTrackColor!,
+      );
+    }
+
+    context.canvas.drawLine(
+      Offset(centerX, trackRect.top - 3),
+      Offset(centerX, trackRect.bottom + 3),
+      Paint()
+        ..color = sliderTheme.thumbColor!.withValues(alpha: 0.75)
+        ..strokeWidth = 1.5,
     );
   }
 }

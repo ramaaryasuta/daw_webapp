@@ -36,6 +36,7 @@ class TrackHeaderList extends ConsumerWidget {
           name: track.name,
           colorValue: track.colorValue,
           volumeDb: track.volumeDb,
+          pan: track.pan,
           isMuted: track.isMuted,
           isSolo: track.isSolo,
           isSelected: editorState.selectedTrackId == track.id,
@@ -55,6 +56,10 @@ class TrackHeaderList extends ConsumerWidget {
           onVolumeChanged: (value) => controller.previewVolume(track.id, value),
           onVolumeChangeEnd: (_) => controller.commitVolumeChange(track.id),
           onVolumeReset: () => controller.resetVolume(track.id),
+          onPanChangeStart: (_) => controller.beginPanChange(track.id),
+          onPanChanged: (value) => controller.previewPan(track.id, value),
+          onPanChangeEnd: (_) => controller.commitPanChange(track.id),
+          onPanReset: () => controller.resetPan(track.id),
         );
       },
     );

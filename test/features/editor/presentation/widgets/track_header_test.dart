@@ -16,11 +16,13 @@ void main() {
     String name = 'Track 1',
     int colorValue = TrackColors.purple,
     double volumeDb = 0,
+    double pan = 0,
     bool isMuted = false,
     bool isSolo = false,
     VoidCallback? onMutePressed,
     VoidCallback? onSoloPressed,
     VoidCallback? onVolumeReset,
+    VoidCallback? onPanReset,
   }) {
     return tester.pumpWidget(
       MaterialApp(
@@ -32,6 +34,7 @@ void main() {
               name: name,
               colorValue: colorValue,
               volumeDb: volumeDb,
+              pan: pan,
               isMuted: isMuted,
               isSolo: isSolo,
               isSelected: false,
@@ -48,6 +51,10 @@ void main() {
               onVolumeChanged: (_) {},
               onVolumeChangeEnd: (_) {},
               onVolumeReset: onVolumeReset ?? () {},
+              onPanChangeStart: (_) {},
+              onPanChanged: (_) {},
+              onPanChangeEnd: (_) {},
+              onPanReset: onPanReset ?? () {},
             ),
           ),
         ),
@@ -260,6 +267,47 @@ void main() {
     );
 
     final slider = find.byKey(const ValueKey('track-volume-slider'));
+    await tester.tap(slider);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(slider);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(resets, 1);
+  });
+
+  testWidgets('pan fader is bipolar and formats left, center, and right', (
+    tester,
+  ) async {
+    await pumpHeader(tester, onRename: (_) {}, pan: -0.42);
+
+    final slider = tester.widget<Slider>(
+      find.byKey(const ValueKey('track-pan-slider')),
+    );
+    expect(slider.min, -1);
+    expect(slider.max, 1);
+    expect(find.text('L 42'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await pumpHeader(tester, onRename: (_) {}, pan: 0);
+    expect(find.text('C'), findsOneWidget);
+
+    await pumpHeader(tester, onRename: (_) {}, pan: 0.75);
+    expect(find.text('R 75'), findsOneWidget);
+  });
+
+  testWidgets('double-clicking pan fader requests center reset', (
+    tester,
+  ) async {
+    var resets = 0;
+    await pumpHeader(
+      tester,
+      onRename: (_) {},
+      pan: 0.6,
+      onPanReset: () => resets++,
+    );
+
+    final slider = find.byKey(const ValueKey('track-pan-slider'));
     await tester.tap(slider);
     await tester.pump(const Duration(milliseconds: 50));
     await tester.tap(slider);

@@ -80,8 +80,11 @@ class AudioMixdownService implements AudioExportGenerator {
       }
 
       final gain = offlineContext.createGain();
+      final panner = offlineContext.createStereoPanner();
       gain.gain.value = gainValue;
-      gain.connect(offlineContext.destination);
+      panner.pan.value = clampTrackPan(track.pan);
+      gain.connect(panner);
+      panner.connect(offlineContext.destination);
 
       for (final clip in track.clips) {
         final buffer = _audioEngine.decodedBufferForAsset(clip.audio.id);

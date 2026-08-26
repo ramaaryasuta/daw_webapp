@@ -6,9 +6,19 @@ import 'daw_track.dart';
 const double minimumTrackVolumeDb = -60;
 const double maximumTrackVolumeDb = 6;
 const double unityTrackVolumeDb = 0;
+const double minimumTrackPan = -1;
+const double maximumTrackPan = 1;
+const double centerTrackPan = 0;
 
 double clampTrackVolumeDb(double volumeDb) {
   return volumeDb.clamp(minimumTrackVolumeDb, maximumTrackVolumeDb).toDouble();
+}
+
+double clampTrackPan(double pan) {
+  if (pan.isNaN) {
+    return centerTrackPan;
+  }
+  return pan.clamp(minimumTrackPan, maximumTrackPan).toDouble();
 }
 
 /// Converts a decibel fader value to the linear amplitude used by Web Audio.
@@ -27,4 +37,22 @@ String formatTrackVolumeDb(double volumeDb) {
   final value = clampTrackVolumeDb(volumeDb);
   final prefix = value > 0 ? '+' : '';
   return '$prefix${value.toStringAsFixed(1)} dB';
+}
+
+String formatTrackPan(double pan) {
+  final value = clampTrackPan(pan);
+  final percent = (value.abs() * 100).round();
+  if (percent == 0) {
+    return 'C';
+  }
+  return '${value < 0 ? 'L' : 'R'} $percent';
+}
+
+String formatTrackPanSemantics(double pan) {
+  final value = clampTrackPan(pan);
+  final percent = (value.abs() * 100).round();
+  if (percent == 0) {
+    return 'center';
+  }
+  return '$percent percent ${value < 0 ? 'left' : 'right'}';
 }

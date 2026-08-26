@@ -48,6 +48,7 @@ void main() {
   DawTrack track(
     String id, {
     double volumeDb = 0,
+    double pan = 0,
     bool isMuted = false,
     bool isSolo = false,
   }) {
@@ -55,6 +56,7 @@ void main() {
       id: id,
       name: id,
       volumeDb: volumeDb,
+      pan: pan,
       isMuted: isMuted,
       isSolo: isSolo,
       clips: [
@@ -112,19 +114,50 @@ void main() {
       expect(muteWins, lessThan(0.00001));
     },
   );
+
+  test('offline WAV applies stereo track pan', () async {
+    final centered = await mixdown.generateWavExport([track('center')]);
+    final hardLeft = await mixdown.generateWavExport([track('left', pan: -1)]);
+    final hardRight = await mixdown.generateWavExport([track('right', pan: 1)]);
+
+    final centeredRms = _stereoChannelRms(centered.wavBytes);
+    final leftRms = _stereoChannelRms(hardLeft.wavBytes);
+    final rightRms = _stereoChannelRms(hardRight.wavBytes);
+
+    expect(centeredRms.left, closeTo(centeredRms.right, 0.0001));
+    expect(leftRms.left, greaterThan(0.05));
+    expect(leftRms.right, lessThan(0.0001));
+    expect(rightRms.left, lessThan(0.0001));
+    expect(rightRms.right, greaterThan(0.05));
+  });
 }
 
 double _leftChannelRms(Uint8List wavBytes) {
+  return _stereoChannelRms(wavBytes).left;
+}
+
+({double left, double right}) _stereoChannelRms(Uint8List wavBytes) {
   final data = ByteData.sublistView(wavBytes);
   const headerLength = 44;
   const stereoFrameBytes = 4;
   final frameCount = (wavBytes.length - headerLength) ~/ stereoFrameBytes;
-  var squareSum = 0.0;
+  var leftSquareSum = 0.0;
+  var rightSquareSum = 0.0;
   for (var frame = 0; frame < frameCount; frame++) {
-    final sample =
+    final leftSample =
         data.getInt16(headerLength + frame * stereoFrameBytes, Endian.little) /
         32768;
-    squareSum += sample * sample;
+    final rightSample =
+        data.getInt16(
+          headerLength + frame * stereoFrameBytes + 2,
+          Endian.little,
+        ) /
+        32768;
+    leftSquareSum += leftSample * leftSample;
+    rightSquareSum += rightSample * rightSample;
   }
-  return math.sqrt(squareSum / frameCount);
+  return (
+    left: math.sqrt(leftSquareSum / frameCount),
+    right: math.sqrt(rightSquareSum / frameCount),
+  );
 }
