@@ -12,8 +12,11 @@ import '../domain/musical_timing.dart';
 import '../domain/timeline_scale.dart';
 import '../domain/track_color.dart';
 import '../domain/track_mixer.dart';
+import '../domain/timeline_snapper.dart';
 import '../infrastructure/web_audio_engine.dart';
+import 'editor_clipboard.dart';
 import 'editor_history.dart';
+import 'snap_controller.dart';
 import 'tempo_controller.dart';
 
 class EditorState {
@@ -27,8 +30,10 @@ class EditorState {
     this.tracks = const [],
     this.selectedTrackId,
     this.selectedClipId,
+    EditorClipClipboard? clipClipboard,
     EditorHistory? history,
-  }) : history = history ?? EditorHistory();
+  }) : clipClipboard = clipClipboard ?? EditorClipClipboard.empty,
+       history = history ?? EditorHistory();
 
   final bool isPlaying;
   final bool isImporting;
@@ -41,6 +46,7 @@ class EditorState {
   final List<DawTrack> tracks;
   final String? selectedTrackId;
   final String? selectedClipId;
+  final EditorClipClipboard clipClipboard;
   final EditorHistory history;
 
   bool get canUndo => history.canUndo;
@@ -76,6 +82,13 @@ class EditorState {
   }
 
   bool get canDeleteSelectedClip => selectedClip != null;
+  bool get canCopySelectedClip => selectedClip != null;
+  bool get canDuplicateSelectedClip => selectedClip != null;
+  bool get canPasteClip {
+    final copied = clipClipboard.singleClip;
+    return copied != null &&
+        tracks.any((track) => track.id == copied.originalTrackId);
+  }
 
   EditorState copyWith({
     bool? isPlaying,
@@ -89,6 +102,7 @@ class EditorState {
     String? selectedClipId,
     bool clearSelectedTrack = false,
     bool clearSelectedClip = false,
+    EditorClipClipboard? clipClipboard,
     EditorHistory? history,
   }) {
     return EditorState(
@@ -105,6 +119,7 @@ class EditorState {
       selectedClipId: clearSelectedClip
           ? null
           : selectedClipId ?? this.selectedClipId,
+      clipClipboard: clipClipboard ?? this.clipClipboard,
       history: history ?? this.history,
     );
   }
@@ -237,6 +252,7 @@ class EditorController extends Notifier<EditorState> {
       tracks: snapshot.tracks,
       selectedTrackId: selectedTrackId,
       selectedClipId: selectedClipId,
+      clipClipboard: state.clipClipboard,
       history: history,
     );
     ref.read(tempoControllerProvider.notifier).setBpm(snapshot.bpm);
@@ -594,6 +610,108 @@ class EditorController extends Notifier<EditorState> {
 
   void selectClip({required String trackId, required String clipId}) {
     state = state.copyWith(selectedTrackId: trackId, selectedClipId: clipId);
+  }
+
+  void copySelectedClip() {
+    final selectedClipId = state.selectedClipId;
+    if (selectedClipId == null) {
+      return;
+    }
+
+    final location = _findClipLocation(selectedClipId);
+    if (location == null) {
+      return;
+    }
+
+    state = state.copyWith(
+      clipClipboard: EditorClipClipboard.single(
+        CopiedClipData.fromClip(
+          trackId: location.track.id,
+          clip: location.clip,
+        ),
+      ),
+    );
+  }
+
+  Future<void> pasteCopiedClip() async {
+    final copied = state.clipClipboard.singleClip;
+    if (copied == null ||
+        !state.tracks.any((track) => track.id == copied.originalTrackId)) {
+      return;
+    }
+
+    final timelineStartSeconds = TimelineSnapper.snapTime(
+      candidateSeconds: state.playheadSeconds,
+      bpm: ref.read(tempoControllerProvider).bpm,
+      settings: ref.read(snapControllerProvider),
+    );
+    await _insertCopiedClip(
+      copied: copied,
+      timelineStartSeconds: timelineStartSeconds,
+      historyLabel: 'Paste Clip',
+    );
+  }
+
+  Future<void> duplicateSelectedClip() async {
+    final selectedClipId = state.selectedClipId;
+    if (selectedClipId == null) {
+      return;
+    }
+
+    final location = _findClipLocation(selectedClipId);
+    if (location == null) {
+      return;
+    }
+
+    await _insertCopiedClip(
+      copied: CopiedClipData.fromClip(
+        trackId: location.track.id,
+        clip: location.clip,
+      ),
+      timelineStartSeconds: location.clip.timelineEndSeconds,
+      historyLabel: 'Duplicate Clip',
+    );
+  }
+
+  Future<void> _insertCopiedClip({
+    required CopiedClipData copied,
+    required double timelineStartSeconds,
+    required String historyLabel,
+  }) async {
+    if (!timelineStartSeconds.isFinite ||
+        !state.tracks.any((track) => track.id == copied.originalTrackId)) {
+      return;
+    }
+
+    final normalizedStart = timelineStartSeconds
+        .clamp(0.0, double.infinity)
+        .toDouble();
+    final clipId = _nextClipId();
+    final newClip = copied.createClip(
+      id: clipId,
+      timelineStartSeconds: normalizedStart,
+    );
+    final before = _captureProjectSnapshot();
+    final requestId = ++_clipEditRequestId;
+    final previousPosition = _audioEngine.currentPositionSeconds;
+    final tracks = [
+      for (final track in state.tracks)
+        if (track.id == copied.originalTrackId)
+          track.copyWith(clips: _orderedClips([...track.clips, newClip]))
+        else
+          track,
+    ];
+
+    state = state.copyWith(
+      tracks: tracks,
+      selectedTrackId: copied.originalTrackId,
+      selectedClipId: clipId,
+    );
+    _recordEdit(historyLabel, before);
+    await _resynchronizeArrangement(
+      requestId: requestId,
+      positionSeconds: previousPosition,
+    );
   }
 
   void renameTrack(String trackId, String name) {
@@ -1051,10 +1169,14 @@ class EditorController extends Notifier<EditorState> {
   bool _containsClip(String clipId) => _findClip(clipId) != null;
 
   AudioClip? _findClip(String clipId) {
+    return _findClipLocation(clipId)?.clip;
+  }
+
+  ({DawTrack track, AudioClip clip})? _findClipLocation(String clipId) {
     for (final track in state.tracks) {
       for (final clip in track.clips) {
         if (clip.id == clipId) {
-          return clip;
+          return (track: track, clip: clip);
         }
       }
     }

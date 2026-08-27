@@ -18,6 +18,7 @@ import '../infrastructure/audio_import_service.dart';
 import '../infrastructure/audio_mixdown_service.dart';
 import 'controllers/timeline_clip_drag_controller.dart';
 import 'editor_shortcut_policy.dart';
+import 'intents/clip_clipboard_intents.dart';
 import 'intents/delete_clip_intent.dart';
 import 'intents/edit_history_intents.dart';
 import 'intents/play_pause_intent.dart';
@@ -306,6 +307,18 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     await ref.read(editorControllerProvider.notifier).deleteSelectedClip();
   }
 
+  void _copySelectedClip() {
+    ref.read(editorControllerProvider.notifier).copySelectedClip();
+  }
+
+  Future<void> _pasteCopiedClip() async {
+    await ref.read(editorControllerProvider.notifier).pasteCopiedClip();
+  }
+
+  Future<void> _duplicateSelectedClip() async {
+    await ref.read(editorControllerProvider.notifier).duplicateSelectedClip();
+  }
+
   void _undo() {
     ref.read(editorControllerProvider.notifier).undo();
   }
@@ -319,6 +332,9 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     required bool hasTracks,
     required bool canSplitClip,
     required bool canDeleteClip,
+    required bool canCopyClip,
+    required bool canPasteClip,
+    required bool canDuplicateClip,
     required bool canUndo,
     required bool canRedo,
   }) {
@@ -360,6 +376,34 @@ class _EditorPageState extends ConsumerState<EditorPage> {
               shift: true,
             ),
             onSelected: canRedo ? _redo : null,
+          ),
+          EditorMenuAction(
+            label: 'Copy',
+            icon: Icons.copy_outlined,
+            shortcut: const SingleActivator(
+              LogicalKeyboardKey.keyC,
+              control: true,
+            ),
+            separatorBefore: true,
+            onSelected: canCopyClip ? _copySelectedClip : null,
+          ),
+          EditorMenuAction(
+            label: 'Paste',
+            icon: Icons.content_paste_outlined,
+            shortcut: const SingleActivator(
+              LogicalKeyboardKey.keyV,
+              control: true,
+            ),
+            onSelected: canPasteClip ? _pasteCopiedClip : null,
+          ),
+          EditorMenuAction(
+            label: 'Duplicate',
+            icon: Icons.control_point_duplicate_outlined,
+            shortcut: const SingleActivator(
+              LogicalKeyboardKey.keyD,
+              control: true,
+            ),
+            onSelected: canDuplicateClip ? _duplicateSelectedClip : null,
           ),
           EditorMenuAction(
             label: 'Split Clip',
@@ -734,6 +778,12 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         EditorHistoryShortcutActivator(LogicalKeyboardKey.keyZ, shift: true):
             RedoIntent(),
         EditorHistoryShortcutActivator(LogicalKeyboardKey.keyY): RedoIntent(),
+        EditorClipboardShortcutActivator(LogicalKeyboardKey.keyC):
+            CopyClipIntent(),
+        EditorClipboardShortcutActivator(LogicalKeyboardKey.keyV):
+            PasteClipIntent(),
+        EditorClipboardShortcutActivator(LogicalKeyboardKey.keyD):
+            DuplicateClipIntent(),
         EditorCommandShortcutActivator(LogicalKeyboardKey.keyS):
             SplitClipIntent(),
         EditorCommandShortcutActivator(LogicalKeyboardKey.delete):
@@ -758,6 +808,30 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             onInvoke: (_) {
               if (EditorShortcutPolicy.canHandleEditorCommand(context)) {
                 _redo();
+              }
+              return null;
+            },
+          ),
+          CopyClipIntent: CallbackAction<CopyClipIntent>(
+            onInvoke: (_) {
+              if (EditorShortcutPolicy.canHandleEditorCommand(context)) {
+                _copySelectedClip();
+              }
+              return null;
+            },
+          ),
+          PasteClipIntent: CallbackAction<PasteClipIntent>(
+            onInvoke: (_) {
+              if (EditorShortcutPolicy.canHandleEditorCommand(context)) {
+                _pasteCopiedClip();
+              }
+              return null;
+            },
+          ),
+          DuplicateClipIntent: CallbackAction<DuplicateClipIntent>(
+            onInvoke: (_) {
+              if (EditorShortcutPolicy.canHandleEditorCommand(context)) {
+                _duplicateSelectedClip();
               }
               return null;
             },
@@ -806,6 +880,9 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                     hasTracks: editorState.tracks.isNotEmpty,
                     canSplitClip: editorState.canSplitSelectedClip,
                     canDeleteClip: editorState.canDeleteSelectedClip,
+                    canCopyClip: editorState.canCopySelectedClip,
+                    canPasteClip: editorState.canPasteClip,
+                    canDuplicateClip: editorState.canDuplicateSelectedClip,
                     canUndo: editorState.canUndo,
                     canRedo: editorState.canRedo,
                   ),

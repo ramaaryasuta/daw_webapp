@@ -40,6 +40,28 @@ void main() {
     );
   });
 
+  test('Help commands define clip clipboard shortcuts and descriptions', () {
+    final copy = EditorCommands.all.singleWhere(
+      (command) => command.title == 'Copy Clip',
+    );
+    final paste = EditorCommands.all.singleWhere(
+      (command) => command.title == 'Paste Clip',
+    );
+    final duplicate = EditorCommands.all.singleWhere(
+      (command) => command.title == 'Duplicate Clip',
+    );
+
+    expect(copy.shortcutParts, ['Ctrl', 'C']);
+    expect(copy.description, 'Copy the selected audio clip.');
+    expect(paste.shortcutParts, ['Ctrl', 'V']);
+    expect(paste.description, 'Paste the copied audio clip at the playhead.');
+    expect(duplicate.shortcutParts, ['Ctrl', 'D']);
+    expect(
+      duplicate.description,
+      'Duplicate the selected clip immediately after itself.',
+    );
+  });
+
   test('Help commands define the Clip Properties gesture', () {
     final command = EditorCommands.all.singleWhere(
       (command) => command.title == 'Clip Properties',

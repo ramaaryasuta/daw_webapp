@@ -48,6 +48,27 @@ class EditorHistoryShortcutActivator extends ShortcutActivator {
   }
 }
 
+/// Ctrl-based clip command which leaves native shortcuts to focused controls.
+class EditorClipboardShortcutActivator extends ShortcutActivator {
+  const EditorClipboardShortcutActivator(this.key);
+
+  final LogicalKeyboardKey key;
+
+  @override
+  String debugDescribeKeys() => 'Ctrl + ${key.keyLabel}';
+
+  @override
+  bool accepts(KeyEvent event, HardwareKeyboard state) {
+    return event is KeyDownEvent &&
+        event.logicalKey == key &&
+        state.isControlPressed &&
+        !state.isMetaPressed &&
+        !state.isAltPressed &&
+        !state.isShiftPressed &&
+        !EditorShortcutPolicy._primaryFocusOwnsEditorCommands;
+  }
+}
+
 /// Unmodified editing shortcut which yields to focused text and editor controls.
 class EditorCommandShortcutActivator extends ShortcutActivator {
   const EditorCommandShortcutActivator(this.key);

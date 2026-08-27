@@ -37,6 +37,27 @@ abstract final class EditorCommands {
     category: AppCommandCategory.editing,
   );
 
+  static const copyAudioClip = AppCommand(
+    title: 'Copy Clip',
+    description: 'Copy the selected audio clip.',
+    shortcutParts: ['Ctrl', 'C'],
+    category: AppCommandCategory.editing,
+  );
+
+  static const pasteAudioClip = AppCommand(
+    title: 'Paste Clip',
+    description: 'Paste the copied audio clip at the playhead.',
+    shortcutParts: ['Ctrl', 'V'],
+    category: AppCommandCategory.editing,
+  );
+
+  static const duplicateAudioClip = AppCommand(
+    title: 'Duplicate Clip',
+    description: 'Duplicate the selected clip immediately after itself.',
+    shortcutParts: ['Ctrl', 'D'],
+    category: AppCommandCategory.editing,
+  );
+
   static const playPause = AppCommand(
     title: 'Play / Pause',
     description: 'Start or pause playback at the current playhead position.',
@@ -147,6 +168,9 @@ abstract final class EditorCommands {
   static const all = <AppCommand>[
     undo,
     redo,
+    copyAudioClip,
+    pasteAudioClip,
+    duplicateAudioClip,
     splitAudioClip,
     deleteAudioClip,
     clipProperties,

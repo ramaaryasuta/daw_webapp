@@ -1,4 +1,5 @@
 import 'package:daw_webapp/features/editor/presentation/editor_shortcut_policy.dart';
+import 'package:daw_webapp/features/editor/presentation/intents/clip_clipboard_intents.dart';
 import 'package:daw_webapp/features/editor/presentation/intents/delete_clip_intent.dart';
 import 'package:daw_webapp/features/editor/presentation/intents/play_pause_intent.dart';
 import 'package:daw_webapp/features/editor/presentation/intents/edit_history_intents.dart';
@@ -81,6 +82,119 @@ void main() {
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+
+    expect(invocationCount, 0);
+    expect(EditorShortcutPolicy.primaryFocusIsEditable, isTrue);
+  });
+
+  testWidgets('Ctrl + C, V, and D run clip commands with editor focus', (
+    tester,
+  ) async {
+    var invocationCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Shortcuts(
+          shortcuts: const {
+            EditorClipboardShortcutActivator(LogicalKeyboardKey.keyC):
+                CopyClipIntent(),
+            EditorClipboardShortcutActivator(LogicalKeyboardKey.keyV):
+                PasteClipIntent(),
+            EditorClipboardShortcutActivator(LogicalKeyboardKey.keyD):
+                DuplicateClipIntent(),
+          },
+          child: Actions(
+            actions: {
+              CopyClipIntent: CallbackAction<CopyClipIntent>(
+                onInvoke: (_) {
+                  invocationCount++;
+                  return null;
+                },
+              ),
+              PasteClipIntent: CallbackAction<PasteClipIntent>(
+                onInvoke: (_) {
+                  invocationCount++;
+                  return null;
+                },
+              ),
+              DuplicateClipIntent: CallbackAction<DuplicateClipIntent>(
+                onInvoke: (_) {
+                  invocationCount++;
+                  return null;
+                },
+              ),
+            },
+            child: const Focus(
+              autofocus: true,
+              child: Scaffold(body: SizedBox.expand()),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+
+    expect(invocationCount, 3);
+  });
+
+  testWidgets('clip clipboard shortcuts are left to focused text fields', (
+    tester,
+  ) async {
+    var invocationCount = 0;
+    final textController = TextEditingController(text: 'clip name');
+    addTearDown(textController.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Shortcuts(
+          shortcuts: const {
+            EditorClipboardShortcutActivator(LogicalKeyboardKey.keyC):
+                CopyClipIntent(),
+            EditorClipboardShortcutActivator(LogicalKeyboardKey.keyV):
+                PasteClipIntent(),
+            EditorClipboardShortcutActivator(LogicalKeyboardKey.keyD):
+                DuplicateClipIntent(),
+          },
+          child: Actions(
+            actions: {
+              CopyClipIntent: CallbackAction<CopyClipIntent>(
+                onInvoke: (_) {
+                  invocationCount++;
+                  return null;
+                },
+              ),
+              PasteClipIntent: CallbackAction<PasteClipIntent>(
+                onInvoke: (_) {
+                  invocationCount++;
+                  return null;
+                },
+              ),
+              DuplicateClipIntent: CallbackAction<DuplicateClipIntent>(
+                onInvoke: (_) {
+                  invocationCount++;
+                  return null;
+                },
+              ),
+            },
+            child: Scaffold(
+              body: TextField(controller: textController, autofocus: true),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
 
     expect(invocationCount, 0);
