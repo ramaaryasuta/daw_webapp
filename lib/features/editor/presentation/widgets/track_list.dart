@@ -109,6 +109,7 @@ class TrackHeaderList extends ConsumerWidget {
 class TimelineTrackList extends ConsumerStatefulWidget {
   const TimelineTrackList({
     super.key,
+    required this.viewportKey,
     required this.scrollController,
     required this.gridMetrics,
     required this.clipDragController,
@@ -116,6 +117,7 @@ class TimelineTrackList extends ConsumerStatefulWidget {
     required this.onSeek,
   });
 
+  final GlobalKey viewportKey;
   final ScrollController scrollController;
   final TimelineGridMetrics gridMetrics;
   final TimelineClipDragController clipDragController;
@@ -161,8 +163,25 @@ class _TimelineTrackListState extends ConsumerState<TimelineTrackList> {
     final groupMinimumStartSeconds = selectedStarts.isEmpty
         ? 0.0
         : selectedStarts.reduce(math.min);
+    final selectedTrackIndices = [
+      for (var index = 0; index < tracks.values.length; index++)
+        if (tracks.values[index].clips.any(
+          (clip) => effectiveSelection.contains(clip.id),
+        ))
+          index,
+    ];
+    final minimumSelectedTrackIndex = selectedTrackIndices.isEmpty
+        ? 0
+        : selectedTrackIndices.reduce(math.min);
+    final maximumSelectedTrackIndex = selectedTrackIndices.isEmpty
+        ? 0
+        : selectedTrackIndices.reduce(math.max);
+    final orderedTrackColorValues = [
+      for (final track in tracks.values) track.colorValue,
+    ];
 
     return Listener(
+      key: widget.viewportKey,
       behavior: HitTestBehavior.translucent,
       onPointerDown: (event) => _beginMarquee(event, tracks, selectedClipIds),
       onPointerMove: (event) => _updateMarquee(event, tracks),
@@ -187,6 +206,10 @@ class _TimelineTrackListState extends ConsumerState<TimelineTrackList> {
                 gridMetrics: widget.gridMetrics,
                 selectedClipIds: effectiveSelection,
                 groupMinimumStartSeconds: groupMinimumStartSeconds,
+                trackIndex: index,
+                orderedTrackColorValues: orderedTrackColorValues,
+                minimumSelectedTrackIndex: minimumSelectedTrackIndex,
+                maximumSelectedTrackIndex: maximumSelectedTrackIndex,
                 clipDragController: widget.clipDragController,
                 bpm: bpm,
                 snapSettings: snapSettings,
@@ -200,8 +223,12 @@ class _TimelineTrackListState extends ConsumerState<TimelineTrackList> {
                     preserveExistingIfSelected: preserveExistingIfSelected,
                   );
                 },
-                onMoveCommitted: (clipId, startSeconds) {
-                  controller.moveClip(clipId, startSeconds);
+                onMoveCommitted: (clipId, result) {
+                  controller.moveClip(
+                    clipId,
+                    result.startSeconds,
+                    trackDelta: result.trackDelta,
+                  );
                 },
                 onTrimCommitted: (clipId, result) {
                   controller.updateClipTrim(
@@ -219,6 +246,38 @@ class _TimelineTrackListState extends ConsumerState<TimelineTrackList> {
                 onFadeOutChanged: controller.previewFadeOut,
                 onFadeOutChangeEnd: controller.commitFadeOutChange,
                 onFadeOutReset: controller.resetFadeOut,
+              );
+            },
+          ),
+          ValueListenableBuilder<TimelineClipDragState?>(
+            valueListenable: widget.clipDragController,
+            builder: (context, dragState, _) {
+              final destinationIndex =
+                  dragState?.mode == TimelineClipDragMode.move
+                  ? dragState?.destinationTrackIndex
+                  : null;
+              if (destinationIndex == null ||
+                  destinationIndex < 0 ||
+                  destinationIndex >= tracks.values.length) {
+                return const SizedBox.shrink();
+              }
+              final scrollOffset = widget.scrollController.hasClients
+                  ? widget.scrollController.offset
+                  : 0.0;
+              final color = Theme.of(context).colorScheme.primary;
+              return Positioned(
+                left: 0,
+                right: 0,
+                top: destinationIndex * trackHeight - scrollOffset,
+                height: trackHeight,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.055),
+                      border: Border.all(color: color.withValues(alpha: 0.5)),
+                    ),
+                  ),
+                ),
               );
             },
           ),

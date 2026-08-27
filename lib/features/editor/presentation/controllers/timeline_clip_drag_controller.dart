@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../../domain/audio_clip.dart';
 import '../../domain/snap_settings.dart';
 import '../../domain/timeline_snapper.dart';
+import '../widgets/track_header.dart';
 
 enum TimelineClipDragMode { move, trimStart, trimEnd }
 
@@ -18,6 +19,8 @@ class TimelineClipDragState {
     required this.previewStartSeconds,
     required this.previewSourceStartSeconds,
     required this.clipDurationSeconds,
+    this.trackDelta = 0,
+    this.destinationTrackIndex,
   });
 
   final String clipId;
@@ -26,6 +29,8 @@ class TimelineClipDragState {
   final double previewStartSeconds;
   final double previewSourceStartSeconds;
   final double clipDurationSeconds;
+  final int trackDelta;
+  final int? destinationTrackIndex;
 
   double get previewEndSeconds {
     return previewStartSeconds + clipDurationSeconds;
@@ -41,6 +46,7 @@ class TimelineClipDragResult {
     required this.clipDurationSeconds,
     required this.mode,
     required this.didMove,
+    this.trackDelta = 0,
   });
 
   final double startSeconds;
@@ -48,6 +54,7 @@ class TimelineClipDragResult {
   final double clipDurationSeconds;
   final TimelineClipDragMode mode;
   final bool didMove;
+  final int trackDelta;
 
   bool get didChange => didMove;
 }
@@ -60,8 +67,10 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
   TimelineClipDragController(
     this._horizontalScrollController,
     this._timelineViewportKey,
-    this._onTimelineInteraction,
-  ) : super(null);
+    this._onTimelineInteraction, {
+    this.verticalScrollController,
+    this.trackViewportKey,
+  }) : super(null);
 
   static const double _edgeThreshold = 64;
   static const double _maximumAutoScrollPixelsPerSecond = 720;
@@ -70,11 +79,14 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
   final ScrollController _horizontalScrollController;
   final GlobalKey _timelineViewportKey;
   final VoidCallback _onTimelineInteraction;
+  final ScrollController? verticalScrollController;
+  final GlobalKey? trackViewportKey;
 
   Timer? _autoScrollTimer;
   DateTime? _lastAutoScrollTick;
   int? _pointer;
   double _pointerGlobalX = 0;
+  double? _pointerGlobalY;
   double _dragStartPointerGlobalX = 0;
   double _dragStartScrollOffset = 0;
   double _dragStartClipSeconds = 0;
@@ -85,6 +97,10 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
   double _pixelsPerSecond = 1;
   double _bpm = 120;
   SnapSettings _snapSettings = const SnapSettings(enabled: false);
+  int? _anchorTrackIndex;
+  int? _minimumSelectedTrackIndex;
+  int? _maximumSelectedTrackIndex;
+  int? _trackCount;
 
   bool get isDragging => value != null;
 
@@ -100,6 +116,11 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     double bpm = 120,
     SnapSettings snapSettings = const SnapSettings(enabled: false),
     double minimumMoveAnchorStartSeconds = 0,
+    double? pointerGlobalY,
+    int? anchorTrackIndex,
+    int? minimumSelectedTrackIndex,
+    int? maximumSelectedTrackIndex,
+    int? trackCount,
   }) {
     return _begin(
       pointer: pointer,
@@ -115,6 +136,11 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
       bpm: bpm,
       snapSettings: snapSettings,
       minimumMoveAnchorStartSeconds: minimumMoveAnchorStartSeconds,
+      pointerGlobalY: pointerGlobalY,
+      anchorTrackIndex: anchorTrackIndex,
+      minimumSelectedTrackIndex: minimumSelectedTrackIndex,
+      maximumSelectedTrackIndex: maximumSelectedTrackIndex,
+      trackCount: trackCount,
     );
   }
 
@@ -145,6 +171,11 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
       bpm: bpm,
       snapSettings: snapSettings,
       minimumMoveAnchorStartSeconds: 0,
+      pointerGlobalY: null,
+      anchorTrackIndex: null,
+      minimumSelectedTrackIndex: null,
+      maximumSelectedTrackIndex: null,
+      trackCount: null,
     );
   }
 
@@ -161,6 +192,11 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     required double bpm,
     required SnapSettings snapSettings,
     required double minimumMoveAnchorStartSeconds,
+    required double? pointerGlobalY,
+    required int? anchorTrackIndex,
+    required int? minimumSelectedTrackIndex,
+    required int? maximumSelectedTrackIndex,
+    required int? trackCount,
   }) {
     if (isDragging ||
         !_horizontalScrollController.hasClients ||
@@ -171,6 +207,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
 
     _pointer = pointer;
     _pointerGlobalX = pointerGlobalX;
+    _pointerGlobalY = pointerGlobalY;
     _dragStartPointerGlobalX = pointerGlobalX;
     _dragStartScrollOffset = _horizontalScrollController.offset;
     _dragStartClipSeconds = math.max(0.0, clipStartSeconds);
@@ -184,6 +221,11 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     _pixelsPerSecond = pixelsPerSecond;
     _bpm = bpm;
     _snapSettings = snapSettings;
+    _anchorTrackIndex = anchorTrackIndex;
+    _minimumSelectedTrackIndex = minimumSelectedTrackIndex;
+    _maximumSelectedTrackIndex = maximumSelectedTrackIndex;
+    _trackCount = trackCount;
+    final initialTrackDelta = _calculateTrackDelta();
     value = TimelineClipDragState(
       clipId: clipId,
       mode: mode,
@@ -191,6 +233,10 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
       previewStartSeconds: _dragStartClipSeconds,
       previewSourceStartSeconds: _dragStartSourceSeconds,
       clipDurationSeconds: clipDurationSeconds,
+      trackDelta: initialTrackDelta,
+      destinationTrackIndex: anchorTrackIndex == null
+          ? null
+          : anchorTrackIndex + initialTrackDelta,
     );
     _onTimelineInteraction();
     return true;
@@ -199,6 +245,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
   void update({
     required int pointer,
     required double pointerGlobalX,
+    double? pointerGlobalY,
     bool bypassSnap = false,
   }) {
     if (pointer != _pointer || !isDragging) {
@@ -206,6 +253,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     }
 
     _pointerGlobalX = pointerGlobalX;
+    _pointerGlobalY = pointerGlobalY ?? _pointerGlobalY;
     _onTimelineInteraction();
     _updatePreviewPosition(bypassSnap: bypassSnap);
     _updateAutoScroll();
@@ -227,7 +275,9 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
           (value!.previewSourceStartSeconds - _dragStartSourceSeconds).abs() >
               0.000001 ||
           (value!.clipDurationSeconds - _dragStartClipDurationSeconds).abs() >
-              0.000001,
+              0.000001 ||
+          value!.trackDelta != 0,
+      trackDelta: value!.trackDelta,
     );
 
     _finish();
@@ -245,6 +295,11 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
   void _finish() {
     _stopAutoScroll();
     _pointer = null;
+    _pointerGlobalY = null;
+    _anchorTrackIndex = null;
+    _minimumSelectedTrackIndex = null;
+    _maximumSelectedTrackIndex = null;
+    _trackCount = null;
     value = null;
     _onTimelineInteraction();
   }
@@ -262,6 +317,9 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     var previewStart = _dragStartClipSeconds;
     var previewSourceStart = _dragStartSourceSeconds;
     var previewDuration = _dragStartClipDurationSeconds;
+    final trackDelta = currentState.mode == TimelineClipDragMode.move
+        ? _calculateTrackDelta()
+        : 0;
 
     switch (currentState.mode) {
       case TimelineClipDragMode.move:
@@ -325,7 +383,9 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
         (previewSourceStart - currentState.previewSourceStartSeconds).abs() <
             0.000001 &&
         (previewDuration - currentState.clipDurationSeconds).abs() < 0.000001) {
-      return;
+      if (trackDelta == currentState.trackDelta) {
+        return;
+      }
     }
 
     value = TimelineClipDragState(
@@ -335,7 +395,44 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
       previewStartSeconds: previewStart,
       previewSourceStartSeconds: previewSourceStart,
       clipDurationSeconds: previewDuration,
+      trackDelta: trackDelta,
+      destinationTrackIndex: _anchorTrackIndex == null
+          ? null
+          : _anchorTrackIndex! + trackDelta,
     );
+  }
+
+  int _calculateTrackDelta() {
+    final pointerGlobalY = _pointerGlobalY;
+    final anchorIndex = _anchorTrackIndex;
+    final minimumIndex = _minimumSelectedTrackIndex;
+    final maximumIndex = _maximumSelectedTrackIndex;
+    final trackCount = _trackCount;
+    final scrollController = verticalScrollController;
+    final renderObject = trackViewportKey?.currentContext?.findRenderObject();
+    if (pointerGlobalY == null ||
+        anchorIndex == null ||
+        minimumIndex == null ||
+        maximumIndex == null ||
+        trackCount == null ||
+        trackCount <= 0 ||
+        scrollController == null ||
+        !scrollController.hasClients ||
+        renderObject is! RenderBox ||
+        !renderObject.hasSize) {
+      return 0;
+    }
+
+    final viewportTop = renderObject.localToGlobal(Offset.zero).dy;
+    final contentY = pointerGlobalY - viewportTop + scrollController.offset;
+    final targetIndex = (contentY / trackHeight).floor().clamp(
+      0,
+      trackCount - 1,
+    );
+    final requestedDelta = targetIndex - anchorIndex;
+    final minimumDelta = -minimumIndex;
+    final maximumDelta = trackCount - 1 - maximumIndex;
+    return requestedDelta.clamp(minimumDelta, maximumDelta);
   }
 
   double _snapTimelineTime(

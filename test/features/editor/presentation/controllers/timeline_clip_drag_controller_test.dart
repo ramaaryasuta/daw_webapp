@@ -150,6 +150,92 @@ void main() {
     dragController.cancel(9);
   });
 
+  testWidgets('uses one clamped track delta for a vertical group move', (
+    tester,
+  ) async {
+    final horizontalScrollController = ScrollController();
+    final verticalScrollController = ScrollController();
+    final timelineViewportKey = GlobalKey();
+    final trackViewportKey = GlobalKey();
+    final dragController = TimelineClipDragController(
+      horizontalScrollController,
+      timelineViewportKey,
+      () {},
+      verticalScrollController: verticalScrollController,
+      trackViewportKey: trackViewportKey,
+    );
+    addTearDown(() {
+      dragController.dispose();
+      horizontalScrollController.dispose();
+      verticalScrollController.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Column(
+          children: [
+            SizedBox(
+              key: timelineViewportKey,
+              width: 300,
+              height: 100,
+              child: SingleChildScrollView(
+                controller: horizontalScrollController,
+                scrollDirection: Axis.horizontal,
+                child: const SizedBox(width: 1200, height: 100),
+              ),
+            ),
+            SizedBox(
+              key: trackViewportKey,
+              width: 300,
+              height: 220,
+              child: ListView(
+                controller: verticalScrollController,
+                children: const [SizedBox(height: 440)],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(
+      dragController.begin(
+        pointer: 10,
+        clipId: 'clip-a',
+        pointerGlobalX: 100,
+        pointerGlobalY: 150,
+        clipStartSeconds: 5,
+        clipDurationSeconds: 2,
+        pixelsPerSecond: 100,
+        anchorTrackIndex: 0,
+        minimumSelectedTrackIndex: 0,
+        maximumSelectedTrackIndex: 2,
+        trackCount: 4,
+      ),
+      isTrue,
+    );
+
+    dragController.update(
+      pointer: 10,
+      pointerGlobalX: 100,
+      pointerGlobalY: 290,
+    );
+    expect(dragController.value!.trackDelta, 1);
+    expect(dragController.value!.destinationTrackIndex, 1);
+
+    dragController.update(
+      pointer: 10,
+      pointerGlobalX: 100,
+      pointerGlobalY: 1000,
+    );
+    expect(dragController.value!.trackDelta, 1);
+
+    final result = dragController.end(10);
+    expect(result!.trackDelta, 1);
+    expect(result.didChange, isTrue);
+    expect(result.startSeconds, 5);
+  });
+
   testWidgets('left trim changes timeline and source starts from drag origin', (
     tester,
   ) async {

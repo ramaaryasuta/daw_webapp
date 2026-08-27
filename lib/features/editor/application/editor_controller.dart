@@ -927,7 +927,11 @@ class EditorController extends Notifier<EditorState> {
     );
   }
 
-  Future<void> moveClip(String clipId, double timelineStartSeconds) async {
+  Future<void> moveClip(
+    String clipId,
+    double timelineStartSeconds, {
+    int trackDelta = 0,
+  }) async {
     if (!timelineStartSeconds.isFinite) {
       return;
     }
@@ -940,21 +944,48 @@ class EditorController extends Notifier<EditorState> {
         ? state.selectedClipIds
         : {clipId};
     final movingClips = [
-      for (final track in state.tracks)
-        for (final clip in track.clips)
-          if (movingIds.contains(clip.id)) clip,
+      for (var trackIndex = 0; trackIndex < state.tracks.length; trackIndex++)
+        for (final clip in state.tracks[trackIndex].clips)
+          if (movingIds.contains(clip.id)) (clip: clip, trackIndex: trackIndex),
     ];
-    if (movingClips.isEmpty) {
+    if (movingClips.isEmpty || state.tracks.isEmpty) {
       return;
     }
+    final minimumTrackIndex = movingClips
+        .map((location) => location.trackIndex)
+        .reduce(math.min);
+    final maximumTrackIndex = movingClips
+        .map((location) => location.trackIndex)
+        .reduce(math.max);
+    final clampedTrackDelta = trackDelta
+        .clamp(-minimumTrackIndex, state.tracks.length - 1 - maximumTrackIndex)
+        .toInt();
     final minimumStart = movingClips
-        .map((clip) => clip.timelineStartSeconds)
+        .map((location) => location.clip.timelineStartSeconds)
         .reduce(math.min);
     final requestedDelta = timelineStartSeconds - anchor.timelineStartSeconds;
-    final delta = math.max(requestedDelta, -minimumStart);
-    if (delta.abs() < 0.000001) {
+    final timelineDelta = math.max(requestedDelta, -minimumStart);
+    if (timelineDelta.abs() < 0.000001 && clampedTrackDelta == 0) {
       return;
     }
+
+    final clipsByDestinationTrackId = <String, List<AudioClip>>{};
+    var anchorDestinationTrackId = state.selectedTrackId;
+    for (final location in movingClips) {
+      final destinationTrack =
+          state.tracks[location.trackIndex + clampedTrackDelta];
+      final movedClip = location.clip.copyWith(
+        timelineStartSeconds:
+            location.clip.timelineStartSeconds + timelineDelta,
+      );
+      (clipsByDestinationTrackId[destinationTrack.id] ??= []).add(movedClip);
+      if (location.clip.id == clipId) {
+        anchorDestinationTrackId = destinationTrack.id;
+      }
+    }
+    final effectiveMovingIds = {
+      for (final location in movingClips) location.clip.id,
+    };
 
     final before = _captureProjectSnapshot();
     final requestId = ++_clipEditRequestId;
@@ -963,18 +994,18 @@ class EditorController extends Notifier<EditorState> {
         track.copyWith(
           clips: _orderedClips([
             for (final clip in track.clips)
-              if (movingIds.contains(clip.id))
-                clip.copyWith(
-                  timelineStartSeconds: clip.timelineStartSeconds + delta,
-                )
-              else
-                clip,
+              if (!effectiveMovingIds.contains(clip.id)) clip,
+            ...(clipsByDestinationTrackId[track.id] ?? const <AudioClip>[]),
           ]),
         ),
     ];
     final previousPosition = _audioEngine.currentPositionSeconds;
 
-    state = state.copyWith(tracks: tracks, selectedClipIds: movingIds);
+    state = state.copyWith(
+      tracks: tracks,
+      selectedTrackId: anchorDestinationTrackId,
+      selectedClipIds: effectiveMovingIds,
+    );
     _recordEdit('Move Clips', before);
     await _resynchronizeArrangement(
       requestId: requestId,

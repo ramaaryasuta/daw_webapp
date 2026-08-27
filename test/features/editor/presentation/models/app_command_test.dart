@@ -87,4 +87,16 @@ void main() {
       'Open Fade In / Fade Out properties for the audio clip.',
     );
   });
+
+  test('Help commands describe two-dimensional clip movement', () {
+    final command = EditorCommands.all.singleWhere(
+      (command) => command.title == 'Move Clip(s)',
+    );
+
+    expect(command.shortcutParts, ['Left Mouse', 'Drag']);
+    expect(
+      command.description,
+      'Move selected audio clips in time or between tracks.',
+    );
+  });
 }

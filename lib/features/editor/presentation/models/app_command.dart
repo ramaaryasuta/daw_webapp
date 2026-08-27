@@ -102,8 +102,8 @@ abstract final class EditorCommands {
   );
 
   static const moveAudioClip = AppCommand(
-    title: 'Move Audio Clip',
-    description: 'Move an audio clip horizontally on the timeline.',
+    title: 'Move Clip(s)',
+    description: 'Move selected audio clips in time or between tracks.',
     shortcutParts: ['Left Mouse', 'Drag'],
     category: AppCommandCategory.timeline,
   );

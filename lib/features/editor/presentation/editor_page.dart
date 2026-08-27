@@ -69,6 +69,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   TimelineRulerMode _rulerMode = TimelineRulerMode.barsBeats;
 
   final GlobalKey _timelineViewportKey = GlobalKey();
+  final GlobalKey _trackLaneViewportKey = GlobalKey();
 
   late final ScrollController _horizontalTimelineController;
   late final ScrollController _trackHeaderScrollController;
@@ -88,6 +89,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       _horizontalTimelineController,
       _timelineViewportKey,
       _markTimelineUserInteraction,
+      verticalScrollController: _trackLaneScrollController,
+      trackViewportKey: _trackLaneViewportKey,
     );
 
     _trackHeaderScrollController.addListener(_syncLanesToHeaders);
@@ -1035,6 +1038,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                                                       valueListenable:
                                                           _loopPreviewRegion,
                                                       child: TimelineTrackList(
+                                                        viewportKey:
+                                                            _trackLaneViewportKey,
                                                         scrollController:
                                                             _trackLaneScrollController,
                                                         gridMetrics:
