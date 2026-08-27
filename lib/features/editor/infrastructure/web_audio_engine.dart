@@ -30,13 +30,17 @@ class DecodedAudioInfo {
 class WebAudioEngine implements AudioMeterPeakSource {
   WebAudioEngine() : _audioContext = web.AudioContext() {
     _masterMix = _audioContext.createGain();
-    _masterMix.connect(_audioContext.destination);
-    _masterMeterTap = _StereoMeterTap.create(_audioContext, _masterMix);
+    _masterGain = _audioContext.createGain();
+    _masterGain.gain.value = masterDbToLinearGain(_masterVolumeDb);
+    _masterMix.connect(_masterGain);
+    _masterGain.connect(_audioContext.destination);
+    _masterMeterTap = _StereoMeterTap.create(_audioContext, _masterGain);
     _metronomeScheduler = WebMetronomeScheduler(_audioContext, _masterMix);
   }
 
   final web.AudioContext _audioContext;
   late final web.GainNode _masterMix;
+  late final web.GainNode _masterGain;
   late final _StereoMeterTap _masterMeterTap;
   late final WebMetronomeScheduler _metronomeScheduler;
 
@@ -49,6 +53,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
   final Map<String, _StereoMeterTap> _trackMeterTaps = {};
 
   bool _isPlaying = false;
+  double _masterVolumeDb = unityMasterVolumeDb;
   int _playRequestId = 0;
 
   double _timelineStartSeconds = 0;
@@ -69,6 +74,13 @@ class WebAudioEngine implements AudioMeterPeakSource {
   bool get isPlaying => _isPlaying;
 
   double get sampleRate => _audioContext.sampleRate;
+
+  double get masterVolumeDb => _masterVolumeDb;
+
+  void setMasterVolumeDb(double volumeDb) {
+    _masterVolumeDb = clampMasterVolumeDb(volumeDb);
+    _smoothGainTo(_masterGain, masterDbToLinearGain(_masterVolumeDb));
+  }
 
   @override
   MeterPeaksSnapshot readMeterPeaks() {
@@ -634,6 +646,9 @@ class WebAudioEngine implements AudioMeterPeakSource {
     _masterMeterTap.dispose();
     try {
       _masterMix.disconnect();
+    } catch (_) {}
+    try {
+      _masterGain.disconnect();
     } catch (_) {}
     _buffers.clear();
 

@@ -28,6 +28,7 @@ class EditorState {
     this.pixelsPerSecond = TimelineScale.defaultPixelsPerSecond,
     this.isLoopEnabled = false,
     this.loopRegion,
+    this.masterVolumeDb = unityMasterVolumeDb,
     this.tracks = const [],
     this.selectedTrackId,
     Set<String> selectedClipIds = const {},
@@ -48,6 +49,7 @@ class EditorState {
   final double pixelsPerSecond;
   final bool isLoopEnabled;
   final LoopRegion? loopRegion;
+  final double masterVolumeDb;
 
   final List<DawTrack> tracks;
   final String? selectedTrackId;
@@ -110,6 +112,7 @@ class EditorState {
     double? pixelsPerSecond,
     bool? isLoopEnabled,
     LoopRegion? loopRegion,
+    double? masterVolumeDb,
     List<DawTrack>? tracks,
     String? selectedTrackId,
     Set<String>? selectedClipIds,
@@ -126,6 +129,7 @@ class EditorState {
       pixelsPerSecond: pixelsPerSecond ?? this.pixelsPerSecond,
       isLoopEnabled: isLoopEnabled ?? this.isLoopEnabled,
       loopRegion: loopRegion ?? this.loopRegion,
+      masterVolumeDb: masterVolumeDb ?? this.masterVolumeDb,
       tracks: tracks ?? this.tracks,
       selectedTrackId: clearSelectedTrack
           ? null
@@ -165,6 +169,7 @@ class EditorController extends Notifier<EditorState> {
   ProjectSnapshot? _tempoEditStartSnapshot;
   ProjectSnapshot? _volumeEditStartSnapshot;
   String? _volumeEditTrackId;
+  ProjectSnapshot? _masterVolumeEditStartSnapshot;
   ProjectSnapshot? _panEditStartSnapshot;
   String? _panEditTrackId;
   ProjectSnapshot? _trackColorEditStartSnapshot;
@@ -193,6 +198,7 @@ class EditorController extends Notifier<EditorState> {
     return ProjectSnapshot(
       tracks: state.tracks,
       bpm: ref.read(tempoControllerProvider).bpm,
+      masterVolumeDb: state.masterVolumeDb,
       selectedTrackId: state.selectedTrackId,
       selectedClipIds: state.selectedClipIds,
     );
@@ -213,6 +219,7 @@ class EditorController extends Notifier<EditorState> {
     _tempoEditStartSnapshot = null;
     _volumeEditStartSnapshot = null;
     _volumeEditTrackId = null;
+    _masterVolumeEditStartSnapshot = null;
     _panEditStartSnapshot = null;
     _panEditTrackId = null;
     _trackColorEditStartSnapshot = null;
@@ -288,6 +295,7 @@ class EditorController extends Notifier<EditorState> {
       pixelsPerSecond: state.pixelsPerSecond,
       isLoopEnabled: state.isLoopEnabled,
       loopRegion: state.loopRegion,
+      masterVolumeDb: snapshot.masterVolumeDb,
       tracks: snapshot.tracks,
       selectedTrackId: selectedTrackId,
       selectedClipIds: selectedClipIds,
@@ -295,6 +303,7 @@ class EditorController extends Notifier<EditorState> {
       history: history,
     );
     ref.read(tempoControllerProvider.notifier).setBpm(snapshot.bpm);
+    _audioEngine.setMasterVolumeDb(snapshot.masterVolumeDb);
 
     if (arrangementChanged) {
       await _resynchronizeArrangement(
@@ -1485,6 +1494,7 @@ class EditorController extends Notifier<EditorState> {
     final after = ProjectSnapshot(
       tracks: tracks,
       bpm: ref.read(tempoControllerProvider).bpm,
+      masterVolumeDb: state.masterVolumeDb,
       selectedTrackId: state.selectedTrackId,
       selectedClipIds: const {},
     );
@@ -1662,6 +1672,48 @@ class EditorController extends Notifier<EditorState> {
     );
 
     _audioEngine.syncMixer(state.tracks);
+  }
+
+  void beginMasterVolumeChange() {
+    _masterVolumeEditStartSnapshot ??= _captureProjectSnapshot();
+  }
+
+  /// Auditions the master level without publishing an editor-wide state frame.
+  /// The final value is committed once at the end of the pointer gesture.
+  void previewMasterVolume(double volumeDb) {
+    if (_masterVolumeEditStartSnapshot == null) {
+      return;
+    }
+    _audioEngine.setMasterVolumeDb(clampMasterVolumeDb(volumeDb));
+  }
+
+  void commitMasterVolumeChange(double volumeDb) {
+    final before = _masterVolumeEditStartSnapshot;
+    if (before == null) {
+      return;
+    }
+
+    _masterVolumeEditStartSnapshot = null;
+    _setMasterVolume(volumeDb);
+    _recordEdit('Change Master Volume', before);
+  }
+
+  void resetMasterVolume() {
+    final pendingBefore = _masterVolumeEditStartSnapshot;
+    _masterVolumeEditStartSnapshot = null;
+    if (state.masterVolumeDb == unityMasterVolumeDb && pendingBefore == null) {
+      return;
+    }
+
+    final before = pendingBefore ?? _captureProjectSnapshot();
+    _setMasterVolume(unityMasterVolumeDb);
+    _recordEdit('Change Master Volume', before);
+  }
+
+  void _setMasterVolume(double volumeDb) {
+    final clamped = clampMasterVolumeDb(volumeDb);
+    state = state.copyWith(masterVolumeDb: clamped);
+    _audioEngine.setMasterVolumeDb(clamped);
   }
 
   void beginPanChange(String trackId) {

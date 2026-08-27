@@ -137,6 +137,18 @@ void main() {
     expect(rightRms.right, greaterThan(0.05));
   });
 
+  test('offline WAV applies the live master volume state', () async {
+    final unity = _leftChannelRms(
+      (await mixdown.generateWavExport([track('unity')])).wavBytes,
+    );
+    engine.setMasterVolumeDb(-6);
+    final quieter = _leftChannelRms(
+      (await mixdown.generateWavExport([track('quieter')])).wavBytes,
+    );
+
+    expect(quieter / unity, closeTo(0.501187, 0.015));
+  });
+
   test('offline WAV applies clip fade envelopes', () async {
     final unity = _leftChannelRms(
       (await mixdown.generateWavExport([track('unity')])).wavBytes,

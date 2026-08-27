@@ -948,11 +948,16 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                   isImporting: editorState.isImporting,
                   isLoopEnabled: editorState.isLoopEnabled,
                   positionSeconds: editorState.playheadSeconds,
+                  masterVolumeDb: editorState.masterVolumeDb,
                   rulerMode: _rulerMode,
                   meterController: _audioMeterController,
                   onPlayPressed: controller.togglePlayback,
                   onStopPressed: controller.stop,
                   onLoopPressed: controller.toggleLoop,
+                  onMasterVolumeChangeStart: controller.beginMasterVolumeChange,
+                  onMasterVolumeChanged: controller.previewMasterVolume,
+                  onMasterVolumeChangeEnd: controller.commitMasterVolumeChange,
+                  onMasterVolumeReset: controller.resetMasterVolume,
                   onRulerModeChanged: (mode) {
                     if (mode != _rulerMode) {
                       setState(() => _rulerMode = mode);

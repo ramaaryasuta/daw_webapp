@@ -28,4 +28,13 @@ void main() {
     expect(formatTrackPanSemantics(-0.5), '50 percent left');
     expect(formatTrackPanSemantics(0), 'center');
   });
+
+  test('master volume clamps, converts to gain, and formats silence', () {
+    expect(clampMasterVolumeDb(-100), minimumMasterVolumeDb);
+    expect(clampMasterVolumeDb(20), maximumMasterVolumeDb);
+    expect(masterDbToLinearGain(0), 1);
+    expect(masterDbToLinearGain(-6), closeTo(0.501187, 0.000001));
+    expect(formatMasterVolumeDb(-60), '-∞ dB');
+    expect(formatMasterVolumeDb(3), '+3.0 dB');
+  });
 }

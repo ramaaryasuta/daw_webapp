@@ -14,6 +14,7 @@ class ProjectSnapshot {
   ProjectSnapshot({
     required Iterable<DawTrack> tracks,
     required this.bpm,
+    this.masterVolumeDb = 0,
     required this.selectedTrackId,
     Set<String> selectedClipIds = const {},
     String? selectedClipId,
@@ -26,6 +27,7 @@ class ProjectSnapshot {
 
   final List<DawTrack> tracks;
   final double bpm;
+  final double masterVolumeDb;
 
   /// Selection is a restoration hint, not an independently undoable edit.
   final String? selectedTrackId;
@@ -36,7 +38,9 @@ class ProjectSnapshot {
       selectedClipIds.length == 1 ? selectedClipIds.single : null;
 
   bool hasSameProjectState(ProjectSnapshot other) {
-    if (bpm != other.bpm || tracks.length != other.tracks.length) {
+    if (bpm != other.bpm ||
+        masterVolumeDb != other.masterVolumeDb ||
+        tracks.length != other.tracks.length) {
       return false;
     }
 

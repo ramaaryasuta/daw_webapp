@@ -36,9 +36,18 @@ class TrackStereoMeter extends StatelessWidget {
 }
 
 class MasterStereoMeter extends StatelessWidget {
-  const MasterStereoMeter({super.key, required this.controller});
+  const MasterStereoMeter({
+    super.key,
+    required this.controller,
+    this.width = 168,
+    this.height = 48,
+    this.showLabel = true,
+  });
 
   final AudioMeterController controller;
+  final double width;
+  final double height;
+  final bool showLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -47,13 +56,14 @@ class MasterStereoMeter extends StatelessWidget {
         label: 'Master stereo level meter',
         child: SizedBox(
           key: const ValueKey('master-level-meter'),
-          width: 168,
-          height: 48,
+          width: width,
+          height: height,
           child: CustomPaint(
             painter: _MasterMeterPainter(
               level: () => controller.masterLevel,
               repaint: controller,
               colorScheme: Theme.of(context).colorScheme,
+              showLabel: showLabel,
             ),
           ),
         ),
@@ -119,11 +129,13 @@ class _MasterMeterPainter extends CustomPainter {
   _MasterMeterPainter({
     required this.level,
     required this.colorScheme,
+    required this.showLabel,
     required super.repaint,
   });
 
   final StereoMeterLevel Function() level;
   final ColorScheme colorScheme;
+  final bool showLabel;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -144,61 +156,72 @@ class _MasterMeterPainter extends CustomPainter {
         ..strokeWidth = 1,
     );
 
-    _paintText(
-      canvas,
-      'MASTER',
-      const Offset(9, 4),
-      color: colorScheme.onSurfaceVariant,
-      fontSize: 8,
-      fontWeight: FontWeight.w800,
-      letterSpacing: 0.8,
-    );
+    if (showLabel) {
+      _paintText(
+        canvas,
+        'MASTER',
+        const Offset(9, 4),
+        color: colorScheme.onSurfaceVariant,
+        fontSize: 8,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0.8,
+      );
+    }
     final clipped = current.leftClipped || current.rightClipped;
     canvas.drawCircle(
-      const Offset(156, 9),
+      Offset(size.width - 9, showLabel ? 9 : 5),
       3,
       Paint()
         ..color = clipped ? const Color(0xFFFF5252) : const Color(0xFF3B2428),
     );
 
     const barLeft = 20.0;
-    const barWidth = 105.0;
+    final showValues = size.width >= 122;
+    final barWidth = math.max(
+      8.0,
+      size.width - barLeft - (showValues ? 35 : 8),
+    );
     const barHeight = 7.0;
-    _paintText(canvas, 'L', const Offset(8, 17), fontSize: 8);
-    _paintText(canvas, 'R', const Offset(8, 31), fontSize: 8);
+    final firstBarTop = showLabel ? 18.0 : 9.0;
+    final secondBarTop = showLabel ? 32.0 : 25.0;
+    _paintText(canvas, 'L', Offset(8, firstBarTop - 1), fontSize: 8);
+    _paintText(canvas, 'R', Offset(8, secondBarTop - 1), fontSize: 8);
     _paintHorizontalChannel(
       canvas,
-      const Rect.fromLTWH(barLeft, 18, barWidth, barHeight),
+      Rect.fromLTWH(barLeft, firstBarTop, barWidth, barHeight),
       db: current.leftDb,
       peakDb: current.leftPeakDb,
       clipped: current.leftClipped,
     );
     _paintHorizontalChannel(
       canvas,
-      const Rect.fromLTWH(barLeft, 32, barWidth, barHeight),
+      Rect.fromLTWH(barLeft, secondBarTop, barWidth, barHeight),
       db: current.rightDb,
       peakDb: current.rightPeakDb,
       clipped: current.rightClipped,
     );
-    _paintText(
-      canvas,
-      _formatDb(current.leftDb),
-      const Offset(132, 16),
-      color: colorScheme.onSurfaceVariant,
-      fontSize: 8,
-    );
-    _paintText(
-      canvas,
-      _formatDb(current.rightDb),
-      const Offset(132, 30),
-      color: colorScheme.onSurfaceVariant,
-      fontSize: 8,
-    );
+    if (showValues) {
+      _paintText(
+        canvas,
+        _formatDb(current.leftDb),
+        Offset(size.width - 31, firstBarTop - 2),
+        color: colorScheme.onSurfaceVariant,
+        fontSize: 8,
+      );
+      _paintText(
+        canvas,
+        _formatDb(current.rightDb),
+        Offset(size.width - 31, secondBarTop - 2),
+        color: colorScheme.onSurfaceVariant,
+        fontSize: 8,
+      );
+    }
   }
 
   @override
   bool shouldRepaint(covariant _MasterMeterPainter oldDelegate) =>
-      oldDelegate.colorScheme != colorScheme;
+      oldDelegate.colorScheme != colorScheme ||
+      oldDelegate.showLabel != showLabel;
 }
 
 const _meterGradientColors = [

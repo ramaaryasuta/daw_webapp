@@ -73,6 +73,9 @@ class AudioMixdownService implements AudioExportGenerator {
       ),
     );
     final hasSolo = tracks.any((track) => track.isSolo);
+    final masterGain = offlineContext.createGain();
+    masterGain.gain.value = masterDbToLinearGain(_audioEngine.masterVolumeDb);
+    masterGain.connect(offlineContext.destination);
 
     for (final track in tracks) {
       final gainValue = effectiveTrackGain(track, hasSolo: hasSolo);
@@ -85,7 +88,7 @@ class AudioMixdownService implements AudioExportGenerator {
       gain.gain.value = gainValue;
       panner.pan.value = clampTrackPan(track.pan);
       gain.connect(panner);
-      panner.connect(offlineContext.destination);
+      panner.connect(masterGain);
 
       for (final clip in track.clips) {
         final buffer = _audioEngine.decodedBufferForAsset(clip.audio.id);

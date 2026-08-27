@@ -6,12 +6,24 @@ import 'daw_track.dart';
 const double minimumTrackVolumeDb = -60;
 const double maximumTrackVolumeDb = 6;
 const double unityTrackVolumeDb = 0;
+const double minimumMasterVolumeDb = -60;
+const double maximumMasterVolumeDb = 6;
+const double unityMasterVolumeDb = 0;
 const double minimumTrackPan = -1;
 const double maximumTrackPan = 1;
 const double centerTrackPan = 0;
 
 double clampTrackVolumeDb(double volumeDb) {
   return volumeDb.clamp(minimumTrackVolumeDb, maximumTrackVolumeDb).toDouble();
+}
+
+double clampMasterVolumeDb(double volumeDb) {
+  if (volumeDb.isNaN) {
+    return unityMasterVolumeDb;
+  }
+  return volumeDb
+      .clamp(minimumMasterVolumeDb, maximumMasterVolumeDb)
+      .toDouble();
 }
 
 double clampTrackPan(double pan) {
@@ -26,6 +38,10 @@ double dbToLinearGain(double volumeDb) {
   return math.pow(10, clampTrackVolumeDb(volumeDb) / 20).toDouble();
 }
 
+double masterDbToLinearGain(double volumeDb) {
+  return math.pow(10, clampMasterVolumeDb(volumeDb) / 20).toDouble();
+}
+
 /// Mute wins over Solo. When any track is soloed, every non-solo track is
 /// silent; multiple soloed tracks remain audible together.
 double effectiveTrackGain(DawTrack track, {required bool hasSolo}) {
@@ -35,6 +51,15 @@ double effectiveTrackGain(DawTrack track, {required bool hasSolo}) {
 
 String formatTrackVolumeDb(double volumeDb) {
   final value = clampTrackVolumeDb(volumeDb);
+  final prefix = value > 0 ? '+' : '';
+  return '$prefix${value.toStringAsFixed(1)} dB';
+}
+
+String formatMasterVolumeDb(double volumeDb) {
+  final value = clampMasterVolumeDb(volumeDb);
+  if (value <= minimumMasterVolumeDb) {
+    return '-∞ dB';
+  }
   final prefix = value > 0 ? '+' : '';
   return '$prefix${value.toStringAsFixed(1)} dB';
 }

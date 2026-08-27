@@ -23,6 +23,7 @@ void main() {
     double sourceStart = 0,
     double duration = 10,
     double bpm = 120,
+    double masterVolumeDb = 0,
     bool split = false,
     String trackName = 'Track',
     int trackColorValue = TrackColors.purple,
@@ -68,6 +69,7 @@ void main() {
         ),
       ],
       bpm: bpm,
+      masterVolumeDb: masterVolumeDb,
       selectedTrackId: 'track-1',
       selectedClipId: split ? 'clip-2' : 'clip-1',
     );
@@ -270,6 +272,22 @@ void main() {
       after: snapshot(start: 0, pan: 0),
     );
     expect(history.canUndo, isFalse);
+  });
+
+  test('master volume is exact undoable project mixer state', () {
+    final unity = snapshot(start: 0);
+    final quieter = snapshot(start: 0, masterVolumeDb: -12);
+    final history = EditorHistory().record(
+      label: 'Change Master Volume',
+      before: unity,
+      after: quieter,
+    );
+
+    expect(history.past.single.label, 'Change Master Volume');
+    final undo = history.undo(quieter)!;
+    expect(undo.snapshot.masterVolumeDb, 0);
+    final redo = undo.history.redo(undo.snapshot)!;
+    expect(redo.snapshot.masterVolumeDb, -12);
   });
 
   test('clip fades are exact undoable arrangement state', () {
