@@ -99,4 +99,18 @@ void main() {
       'Move selected audio clips in time or between tracks.',
     );
   });
+
+  test('Help commands document add and delete track UI actions', () {
+    final add = EditorCommands.all.singleWhere(
+      (command) => command.title == 'Add Audio Track',
+    );
+    final delete = EditorCommands.all.singleWhere(
+      (command) => command.title == 'Delete Track',
+    );
+
+    expect(add.shortcutParts, ['Tracks + Button']);
+    expect(add.description, 'Create a new empty audio track.');
+    expect(delete.shortcutParts, ['Track Actions', 'Delete Track']);
+    expect(delete.description, contains('clips'));
+  });
 }

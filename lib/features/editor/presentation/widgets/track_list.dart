@@ -12,6 +12,7 @@ import '../../domain/audio_clip.dart';
 import '../../domain/daw_track.dart';
 import '../../domain/timeline_scale.dart';
 import '../controllers/timeline_clip_drag_controller.dart';
+import 'delete_track_dialog.dart';
 import 'track_header.dart';
 import 'track_lane_background_painter.dart';
 import 'timeline_view.dart';
@@ -58,7 +59,18 @@ class TrackHeaderList extends ConsumerWidget {
               controller.setTrackColor(track.id, colorValue),
           onMutePressed: () => controller.toggleMute(track.id),
           onSoloPressed: () => controller.toggleSolo(track.id),
-          onDeletePressed: () => controller.removeTrack(track.id),
+          onDeletePressed: () async {
+            if (track.clips.isNotEmpty) {
+              final confirmed = await showDeleteTrackConfirmation(
+                context,
+                clipCount: track.clips.length,
+              );
+              if (!confirmed || !context.mounted) {
+                return;
+              }
+            }
+            await controller.removeTrack(track.id);
+          },
           onVolumeChangeStart: (_) => controller.beginVolumeChange(track.id),
           onVolumeChanged: (value) => controller.previewVolume(track.id, value),
           onVolumeChangeEnd: (_) => controller.commitVolumeChange(track.id),

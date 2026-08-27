@@ -164,6 +164,20 @@ abstract final class EditorCommands {
     category: AppCommandCategory.editing,
   );
 
+  static const addAudioTrack = AppCommand(
+    title: 'Add Audio Track',
+    description: 'Create a new empty audio track.',
+    shortcutParts: ['Tracks + Button'],
+    category: AppCommandCategory.editing,
+  );
+
+  static const deleteTrack = AppCommand(
+    title: 'Delete Track',
+    description: 'Remove a track and its clips from the arrangement.',
+    shortcutParts: ['Track Actions', 'Delete Track'],
+    category: AppCommandCategory.editing,
+  );
+
   static const snapToGrid = AppCommand(
     title: 'Snap to Grid',
     description:
@@ -191,6 +205,8 @@ abstract final class EditorCommands {
     clipProperties,
     renameTrack,
     changeTrackColor,
+    addAudioTrack,
+    deleteTrack,
     playPause,
     toggleLoop,
     setLoopRegion,

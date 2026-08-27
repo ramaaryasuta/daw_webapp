@@ -371,4 +371,51 @@ void main() {
     expect(redo.snapshot.selectedClipIds, {'clip-1', 'clip-2'});
     expect(redo.history.past.last.label, 'Move Clips');
   });
+
+  test('delete track undo restores exact order, mixer, clips, and IDs', () {
+    final deletedTrack = snapshot(
+      start: 4.5,
+      sourceStart: 1.25,
+      duration: 8,
+      split: true,
+      trackName: 'Middle',
+      trackColorValue: TrackColors.orange,
+      volumeDb: -7,
+      pan: 0.4,
+      isMuted: true,
+      isSolo: true,
+      fadeIn: 0.25,
+      fadeOut: 0.75,
+    ).tracks.single;
+    const first = DawTrack(id: 'track-a', name: 'First', clips: []);
+    const last = DawTrack(id: 'track-c', name: 'Last', clips: []);
+    final before = ProjectSnapshot(
+      tracks: [first, deletedTrack, last],
+      bpm: 120,
+      selectedTrackId: deletedTrack.id,
+      selectedClipIds: deletedTrack.clips.map((clip) => clip.id).toSet(),
+    );
+    final after = ProjectSnapshot(
+      tracks: const [first, last],
+      bpm: 120,
+      selectedTrackId: null,
+    );
+
+    var history = EditorHistory().record(
+      label: 'Delete Track',
+      before: before,
+      after: after,
+    );
+    final undo = history.undo(after)!;
+    history = undo.history;
+
+    expect(undo.snapshot.hasSameProjectState(before), isTrue);
+    expect(undo.snapshot.tracks[1].id, deletedTrack.id);
+    expect(identical(undo.snapshot.tracks[1].clips[0].audio, asset), isTrue);
+    expect(undo.snapshot.selectedClipIds, {'clip-1', 'clip-2'});
+
+    final redo = history.redo(undo.snapshot)!;
+    expect(redo.snapshot.hasSameProjectState(after), isTrue);
+    expect(redo.history.past.last.label, 'Delete Track');
+  });
 }

@@ -334,6 +334,37 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     ref.read(editorControllerProvider.notifier).redo();
   }
 
+  void _addAudioTrack() {
+    final trackId = ref.read(editorControllerProvider.notifier).addTrack();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      final tracks = ref.read(editorControllerProvider).tracks;
+      final trackIndex = tracks.indexWhere((track) => track.id == trackId);
+      if (trackIndex < 0 || !_trackHeaderScrollController.hasClients) return;
+
+      final position = _trackHeaderScrollController.position;
+      final rowTop = trackIndex * trackHeight;
+      final rowBottom = rowTop + trackHeight;
+      var targetOffset = position.pixels;
+      if (rowBottom > position.pixels + position.viewportDimension) {
+        targetOffset = rowBottom - position.viewportDimension;
+      } else if (rowTop < position.pixels) {
+        targetOffset = rowTop;
+      }
+      targetOffset = targetOffset
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+      if ((targetOffset - position.pixels).abs() < 0.5) return;
+
+      _trackHeaderScrollController.animateTo(
+        targetOffset,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
   List<EditorMenuSection> _buildMenuSections({
     required bool isImporting,
     required bool hasTracks,
@@ -959,7 +990,9 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                                     width: trackHeaderWidth,
                                     child: Column(
                                       children: [
-                                        const _TrackHeaderCorner(),
+                                        _TrackHeaderCorner(
+                                          onAddPressed: _addAudioTrack,
+                                        ),
                                         Expanded(
                                           child: TrackHeaderList(
                                             scrollController:
@@ -1171,7 +1204,9 @@ class _ControlReservedScrollPhysics extends ScrollPhysics {
 }
 
 class _TrackHeaderCorner extends StatelessWidget {
-  const _TrackHeaderCorner();
+  const _TrackHeaderCorner({required this.onAddPressed});
+
+  final VoidCallback onAddPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -1187,14 +1222,30 @@ class _TrackHeaderCorner extends StatelessWidget {
           bottom: BorderSide(color: colorScheme.outlineVariant),
         ),
       ),
-      child: const Center(
-        child: Text(
-          'TRACKS',
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 1,
-          ),
+      child: Padding(
+        padding: const EdgeInsets.only(left: 14, right: 6),
+        child: Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'TRACKS',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 1,
+                ),
+              ),
+            ),
+            IconButton(
+              key: const ValueKey('add-audio-track-button'),
+              tooltip: 'Add audio track',
+              iconSize: 18,
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+              onPressed: onAddPressed,
+              icon: const Icon(Icons.add),
+            ),
+          ],
         ),
       ),
     );

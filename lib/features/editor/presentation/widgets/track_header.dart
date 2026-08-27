@@ -188,6 +188,15 @@ class _TrackHeaderState extends State<TrackHeader> {
     _beginRename();
   }
 
+  void _deleteFromProperties() {
+    _propertiesMenuController.close();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        widget.onDeletePressed();
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -295,6 +304,7 @@ class _TrackHeaderState extends State<TrackHeader> {
                           onPanChanged: widget.onPanChanged,
                           onPanChangeEnd: widget.onPanChangeEnd,
                           onPanReset: widget.onPanReset,
+                          onDelete: _deleteFromProperties,
                         ),
                       ],
                       builder: (context, controller, child) => IconButton(
@@ -312,19 +322,6 @@ class _TrackHeaderState extends State<TrackHeader> {
                             : controller.open(),
                         icon: const Icon(Icons.more_horiz),
                       ),
-                    ),
-
-                    IconButton(
-                      tooltip: 'Delete track',
-                      iconSize: 18,
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 32,
-                        height: 32,
-                      ),
-                      onPressed: widget.onDeletePressed,
-                      icon: const Icon(Icons.close),
                     ),
                   ],
                 ),

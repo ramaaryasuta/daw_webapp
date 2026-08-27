@@ -21,6 +21,7 @@ void main() {
     bool isSolo = false,
     VoidCallback? onMutePressed,
     VoidCallback? onSoloPressed,
+    VoidCallback? onDeletePressed,
     VoidCallback? onVolumeReset,
     VoidCallback? onPanReset,
   }) {
@@ -47,7 +48,7 @@ void main() {
               onColorSelected: (_) {},
               onMutePressed: onMutePressed ?? () {},
               onSoloPressed: onSoloPressed ?? () {},
-              onDeletePressed: () {},
+              onDeletePressed: onDeletePressed ?? () {},
               onVolumeChangeStart: (_) {},
               onVolumeChanged: (_) {},
               onVolumeChangeEnd: (_) {},
@@ -222,6 +223,30 @@ void main() {
       expect(find.byKey(const ValueKey('track-name-editor')), findsOneWidget);
     },
   );
+
+  testWidgets('delete is available only inside Track Properties', (
+    tester,
+  ) async {
+    var deletePresses = 0;
+    await pumpHeader(
+      tester,
+      onRename: (_) {},
+      onDeletePressed: () => deletePresses++,
+    );
+
+    expect(find.byTooltip('Delete track'), findsNothing);
+    await tester.tap(find.byTooltip('Track properties'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('track-properties-delete')));
+    await tester.pumpAndSettle();
+
+    expect(deletePresses, 1);
+    expect(
+      find.byKey(const ValueKey('track-properties-popover')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('mixer row exposes symmetrical M/S controls and dB fader', (
     tester,

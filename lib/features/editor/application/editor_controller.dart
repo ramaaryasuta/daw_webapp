@@ -391,12 +391,11 @@ class EditorController extends Notifier<EditorState> {
 
     for (final file in files) {
       _assetCounter++;
-      _trackCounter++;
       _clipCounter++;
 
       final assetId = 'asset-$_assetCounter';
 
-      final trackId = 'track-$_trackCounter';
+      final trackId = _nextTrackId();
       final clipId = 'clip-$_clipCounter';
 
       try {
@@ -452,6 +451,41 @@ class EditorController extends Notifier<EditorState> {
     }
 
     return failedFiles;
+  }
+
+  String addTrack() {
+    final before = _captureProjectSnapshot();
+    final trackId = _nextTrackId();
+    final track = DawTrack(
+      id: trackId,
+      name: _nextDefaultTrackName(),
+      colorValue: defaultTrackColorForIndex(_trackCounter - 1),
+      clips: const [],
+    );
+
+    state = state.copyWith(
+      tracks: [...state.tracks, track],
+      selectedTrackId: track.id,
+    );
+    _recordEdit('Add Track', before);
+    return track.id;
+  }
+
+  String _nextTrackId() {
+    final existingIds = state.tracks.map((track) => track.id).toSet();
+    do {
+      _trackCounter++;
+    } while (existingIds.contains('track-$_trackCounter'));
+    return 'track-$_trackCounter';
+  }
+
+  String _nextDefaultTrackName() {
+    final existingNames = state.tracks.map((track) => track.name).toSet();
+    var number = 1;
+    while (existingNames.contains('Track $number')) {
+      number++;
+    }
+    return 'Track $number';
   }
 
   void setPixelsPerSecond(double pixelsPerSecond) {
@@ -1403,19 +1437,20 @@ class EditorController extends Notifier<EditorState> {
   }
 
   Future<void> removeTrack(String trackId) async {
-    if (!state.tracks.any((track) => track.id == trackId)) {
+    final matchingTracks = state.tracks.where((track) => track.id == trackId);
+    if (matchingTracks.isEmpty) {
       return;
     }
 
+    final removedTrack = matchingTracks.single;
     final before = _captureProjectSnapshot();
-    final requestId = ++_clipEditRequestId;
-    final previousPosition = _audioEngine.currentPositionSeconds;
     final tracks = state.tracks.where((track) => track.id != trackId).toList();
-    final removedClipIds = {
-      for (final track in state.tracks)
-        if (track.id == trackId)
-          for (final clip in track.clips) clip.id,
-    };
+    final removedClipIds = removedTrack.clips.map((clip) => clip.id).toSet();
+    final hasAudioArrangementChange = removedTrack.clips.isNotEmpty;
+    final requestId = hasAudioArrangementChange ? ++_clipEditRequestId : null;
+    final previousPosition = hasAudioArrangementChange
+        ? _audioEngine.currentPositionSeconds
+        : null;
 
     state = state.copyWith(
       tracks: tracks,
@@ -1423,10 +1458,15 @@ class EditorController extends Notifier<EditorState> {
       selectedClipIds: state.selectedClipIds.difference(removedClipIds),
     );
     _recordEdit('Delete Track', before);
-    await _resynchronizeArrangement(
-      requestId: requestId,
-      positionSeconds: previousPosition,
-    );
+    if (hasAudioArrangementChange) {
+      await _resynchronizeArrangement(
+        requestId: requestId!,
+        positionSeconds: previousPosition!,
+      );
+    } else {
+      _audioEngine.removeTrack(trackId);
+      _audioEngine.syncMixer(state.tracks);
+    }
   }
 
   void toggleMute(String trackId) {

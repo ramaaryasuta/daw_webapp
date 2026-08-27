@@ -18,6 +18,7 @@ class TrackPropertiesPopover extends StatelessWidget {
     required this.onPanChanged,
     required this.onPanChangeEnd,
     required this.onPanReset,
+    required this.onDelete,
   });
 
   final String trackName;
@@ -29,6 +30,7 @@ class TrackPropertiesPopover extends StatelessWidget {
   final ValueChanged<double> onPanChanged;
   final ValueChanged<double> onPanChangeEnd;
   final VoidCallback onPanReset;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -158,6 +160,22 @@ class TrackPropertiesPopover extends StatelessWidget {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 10),
+                const Divider(height: 1),
+                const SizedBox(height: 6),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    key: const ValueKey('track-properties-delete'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: colorScheme.error,
+                      alignment: Alignment.centerLeft,
+                    ),
+                    onPressed: onDelete,
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    label: const Text('Delete Track'),
+                  ),
                 ),
               ],
             ),
