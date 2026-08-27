@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../models/timeline_ruler_mode.dart';
+import '../controllers/audio_meter_controller.dart';
+import 'audio_level_meter.dart';
 import 'tempo_controls.dart';
 import 'snap_control.dart';
 import 'timeline_ruler_mode_control.dart';
@@ -17,6 +19,7 @@ class TransportBar extends StatelessWidget {
     required this.onStopPressed,
     required this.onLoopPressed,
     required this.onRulerModeChanged,
+    this.meterController,
   });
 
   final bool isPlaying;
@@ -24,6 +27,7 @@ class TransportBar extends StatelessWidget {
   final bool isLoopEnabled;
   final double positionSeconds;
   final TimelineRulerMode rulerMode;
+  final AudioMeterController? meterController;
 
   final VoidCallback onPlayPressed;
   final VoidCallback onStopPressed;
@@ -129,6 +133,10 @@ class TransportBar extends StatelessWidget {
               mode: rulerMode,
               onChanged: onRulerModeChanged,
             ),
+            if (meterController != null) ...[
+              const SizedBox(width: 14),
+              MasterStereoMeter(controller: meterController!),
+            ],
             if (isImporting)
               const Padding(
                 padding: EdgeInsets.only(left: 20),

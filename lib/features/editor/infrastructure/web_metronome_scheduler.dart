@@ -12,7 +12,7 @@ import '../domain/loop_region.dart';
 /// given an absolute [web.AudioContext.currentTime], so UI/frame timing is not
 /// used as the musical clock.
 class WebMetronomeScheduler {
-  WebMetronomeScheduler(this._audioContext);
+  WebMetronomeScheduler(this._audioContext, this._output);
 
   static const Duration _schedulerInterval = Duration(milliseconds: 25);
   static const double _lookAheadSeconds = 0.12;
@@ -21,6 +21,7 @@ class WebMetronomeScheduler {
   static const double _silenceGain = 0.0001;
 
   final web.AudioContext _audioContext;
+  final web.AudioNode _output;
   final List<_ScheduledClick> _scheduledClicks = [];
 
   Timer? _lookAheadTimer;
@@ -226,7 +227,7 @@ class WebMetronomeScheduler {
     gain.gain.exponentialRampToValueAtTime(_silenceGain, endTime);
 
     oscillator.connect(gain);
-    gain.connect(_audioContext.destination);
+    gain.connect(_output);
     oscillator.start(contextTime);
     oscillator.stop(endTime);
 

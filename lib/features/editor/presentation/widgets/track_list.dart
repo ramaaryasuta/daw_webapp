@@ -12,15 +12,21 @@ import '../../domain/audio_clip.dart';
 import '../../domain/daw_track.dart';
 import '../../domain/timeline_scale.dart';
 import '../controllers/timeline_clip_drag_controller.dart';
+import '../controllers/audio_meter_controller.dart';
 import 'delete_track_dialog.dart';
 import 'track_header.dart';
 import 'track_lane_background_painter.dart';
 import 'timeline_view.dart';
 
 class TrackHeaderList extends ConsumerWidget {
-  const TrackHeaderList({super.key, required this.scrollController});
+  const TrackHeaderList({
+    super.key,
+    required this.scrollController,
+    required this.meterController,
+  });
 
   final ScrollController scrollController;
+  final AudioMeterController meterController;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -46,6 +52,8 @@ class TrackHeaderList extends ConsumerWidget {
           isMuted: track.isMuted,
           isSolo: track.isSolo,
           isSelected: editorState.selectedTrackId == track.id,
+          meterController: meterController,
+          trackId: track.id,
           onTap: () => controller.selectTrack(track.id),
           onRename: (name) => controller.renameTrack(track.id, name),
           onColorEditStarted: () => controller.beginTrackColorChange(track.id),

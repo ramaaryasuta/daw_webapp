@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 
 import '../../domain/daw_track.dart';
 import '../../domain/track_mixer.dart';
+import '../controllers/audio_meter_controller.dart';
+import 'audio_level_meter.dart';
 import 'track_color_popover.dart';
 import 'track_properties_popover.dart';
 
@@ -37,6 +39,8 @@ class TrackHeader extends StatefulWidget {
     required this.onPanChanged,
     required this.onPanChangeEnd,
     required this.onPanReset,
+    this.meterController,
+    this.trackId,
   });
 
   final String name;
@@ -47,6 +51,8 @@ class TrackHeader extends StatefulWidget {
   final bool isMuted;
   final bool isSolo;
   final bool isSelected;
+  final AudioMeterController? meterController;
+  final String? trackId;
 
   final VoidCallback onTap;
   final ValueChanged<String> onRename;
@@ -210,170 +216,191 @@ class _TrackHeaderState extends State<TrackHeader> {
         child: Container(
           width: trackHeaderWidth,
           height: trackHeight,
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(12, 12, 5, 12),
           decoration: BoxDecoration(
             border: Border(
               right: BorderSide(color: colorScheme.outlineVariant),
               bottom: BorderSide(color: colorScheme.outlineVariant),
             ),
           ),
-          child: Column(
+          child: Row(
             children: [
-              SizedBox(
-                height: 32,
-                child: Row(
+              Expanded(
+                child: Column(
                   children: [
-                    MenuAnchor(
-                      controller: _colorMenuController,
-                      useRootOverlay: true,
-                      consumeOutsideTap: true,
-                      onOpen: _handleColorMenuOpened,
-                      onClose: _handleColorMenuClosed,
-                      style: MenuStyle(
-                        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-                        backgroundColor: WidgetStatePropertyAll(
-                          colorScheme.surfaceContainerHigh,
-                        ),
-                        elevation: const WidgetStatePropertyAll(8),
-                        shape: WidgetStatePropertyAll(
-                          RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            side: BorderSide(color: colorScheme.outlineVariant),
-                          ),
-                        ),
-                      ),
-                      menuChildren: [
-                        TrackColorPopover(
-                          key: const ValueKey('track-color-popover'),
-                          initialColorValue: widget.colorValue,
-                          onPreview: widget.onColorPreviewed,
-                          onPresetSelected: _commitColor,
-                          onDone: _commitColor,
-                          onCancel: _colorMenuController.close,
-                        ),
-                      ],
-                      builder: (context, controller, child) => Tooltip(
-                        message: 'Change track color',
-                        child: Semantics(
-                          button: true,
-                          label: 'Change color for ${widget.name}',
-                          child: InkResponse(
-                            key: const ValueKey('track-color-swatch'),
-                            onTap: _toggleColorMenu,
-                            radius: 18,
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: _ColorDot(
-                                color: Color(widget.colorValue),
-                                size: 16,
+                    SizedBox(
+                      height: 32,
+                      child: Row(
+                        children: [
+                          MenuAnchor(
+                            controller: _colorMenuController,
+                            useRootOverlay: true,
+                            consumeOutsideTap: true,
+                            onOpen: _handleColorMenuOpened,
+                            onClose: _handleColorMenuClosed,
+                            style: MenuStyle(
+                              padding: const WidgetStatePropertyAll(
+                                EdgeInsets.zero,
+                              ),
+                              backgroundColor: WidgetStatePropertyAll(
+                                colorScheme.surfaceContainerHigh,
+                              ),
+                              elevation: const WidgetStatePropertyAll(8),
+                              shape: WidgetStatePropertyAll(
+                                RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  side: BorderSide(
+                                    color: colorScheme.outlineVariant,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            menuChildren: [
+                              TrackColorPopover(
+                                key: const ValueKey('track-color-popover'),
+                                initialColorValue: widget.colorValue,
+                                onPreview: widget.onColorPreviewed,
+                                onPresetSelected: _commitColor,
+                                onDone: _commitColor,
+                                onCancel: _colorMenuController.close,
+                              ),
+                            ],
+                            builder: (context, controller, child) => Tooltip(
+                              message: 'Change track color',
+                              child: Semantics(
+                                button: true,
+                                label: 'Change color for ${widget.name}',
+                                child: InkResponse(
+                                  key: const ValueKey('track-color-swatch'),
+                                  onTap: _toggleColorMenu,
+                                  radius: 18,
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(4),
+                                    child: _ColorDot(
+                                      color: Color(widget.colorValue),
+                                      size: 16,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(child: _buildTrackName(context)),
+                          const SizedBox(width: 4),
+                          Expanded(child: _buildTrackName(context)),
 
-                    MenuAnchor(
-                      controller: _propertiesMenuController,
-                      useRootOverlay: true,
-                      consumeOutsideTap: true,
-                      style: MenuStyle(
-                        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-                        backgroundColor: WidgetStatePropertyAll(
-                          colorScheme.surfaceContainerHigh,
-                        ),
-                        elevation: const WidgetStatePropertyAll(8),
-                        shape: WidgetStatePropertyAll(
-                          RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            side: BorderSide(color: colorScheme.outlineVariant),
+                          MenuAnchor(
+                            controller: _propertiesMenuController,
+                            useRootOverlay: true,
+                            consumeOutsideTap: true,
+                            style: MenuStyle(
+                              padding: const WidgetStatePropertyAll(
+                                EdgeInsets.zero,
+                              ),
+                              backgroundColor: WidgetStatePropertyAll(
+                                colorScheme.surfaceContainerHigh,
+                              ),
+                              elevation: const WidgetStatePropertyAll(8),
+                              shape: WidgetStatePropertyAll(
+                                RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  side: BorderSide(
+                                    color: colorScheme.outlineVariant,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            menuChildren: [
+                              TrackPropertiesPopover(
+                                key: const ValueKey('track-properties-popover'),
+                                trackName: widget.name,
+                                colorValue: widget.colorValue,
+                                pan: widget.pan,
+                                onRename: _renameFromProperties,
+                                onColorSelected: widget.onColorSelected,
+                                onPanChangeStart: widget.onPanChangeStart,
+                                onPanChanged: widget.onPanChanged,
+                                onPanChangeEnd: widget.onPanChangeEnd,
+                                onPanReset: widget.onPanReset,
+                                onDelete: _deleteFromProperties,
+                              ),
+                            ],
+                            builder: (context, controller, child) => IconButton(
+                              key: const ValueKey('track-properties-button'),
+                              tooltip: 'Track properties',
+                              iconSize: 18,
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 32,
+                                height: 32,
+                              ),
+                              onPressed: () => controller.isOpen
+                                  ? controller.close()
+                                  : controller.open(),
+                              icon: const Icon(Icons.more_horiz),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
-                      menuChildren: [
-                        TrackPropertiesPopover(
-                          key: const ValueKey('track-properties-popover'),
-                          trackName: widget.name,
-                          colorValue: widget.colorValue,
-                          pan: widget.pan,
-                          onRename: _renameFromProperties,
-                          onColorSelected: widget.onColorSelected,
-                          onPanChangeStart: widget.onPanChangeStart,
-                          onPanChanged: widget.onPanChanged,
-                          onPanChangeEnd: widget.onPanChangeEnd,
-                          onPanReset: widget.onPanReset,
-                          onDelete: _deleteFromProperties,
-                        ),
-                      ],
-                      builder: (context, controller, child) => IconButton(
-                        key: const ValueKey('track-properties-button'),
-                        tooltip: 'Track properties',
-                        iconSize: 18,
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints.tightFor(
-                          width: 32,
-                          height: 32,
-                        ),
-                        onPressed: () => controller.isOpen
-                            ? controller.close()
-                            : controller.open(),
-                        icon: const Icon(Icons.more_horiz),
+                    ),
+
+                    const SizedBox(height: 2),
+
+                    SizedBox(
+                      height: 24,
+                      child: Row(
+                        children: [
+                          _MixerStateButton(
+                            label: 'M',
+                            tooltip: 'Mute track',
+                            semanticLabel: widget.isMuted
+                                ? 'Unmute ${widget.name}'
+                                : 'Mute ${widget.name}',
+                            active: widget.isMuted,
+                            activeColor: colorScheme.error,
+                            onPressed: widget.onMutePressed,
+                          ),
+                          const SizedBox(width: 5),
+                          _MixerStateButton(
+                            label: 'S',
+                            tooltip: 'Solo track',
+                            semanticLabel: widget.isSolo
+                                ? 'Unsolo ${widget.name}'
+                                : 'Solo ${widget.name}',
+                            active: widget.isSolo,
+                            activeColor: colorScheme.tertiary,
+                            onPressed: widget.onSoloPressed,
+                          ),
+                          const SizedBox(width: 7),
+                          const _MixerParameterLabel('VOL'),
+                          const SizedBox(width: 2),
+                          Expanded(
+                            child: _TrackVolumeSlider(
+                              valueDb: widget.volumeDb,
+                              onChangeStart: widget.onVolumeChangeStart,
+                              onChanged: widget.onVolumeChanged,
+                              onChangeEnd: widget.onVolumeChangeEnd,
+                              onReset: widget.onVolumeReset,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          _MixerValueLabel(
+                            valueKey: const ValueKey('track-volume-value'),
+                            text: formatTrackVolumeDb(widget.volumeDb),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
               ),
-
-              const SizedBox(height: 2),
-
-              SizedBox(
-                height: 24,
-                child: Row(
-                  children: [
-                    _MixerStateButton(
-                      label: 'M',
-                      tooltip: 'Mute track',
-                      semanticLabel: widget.isMuted
-                          ? 'Unmute ${widget.name}'
-                          : 'Mute ${widget.name}',
-                      active: widget.isMuted,
-                      activeColor: colorScheme.error,
-                      onPressed: widget.onMutePressed,
-                    ),
-                    const SizedBox(width: 5),
-                    _MixerStateButton(
-                      label: 'S',
-                      tooltip: 'Solo track',
-                      semanticLabel: widget.isSolo
-                          ? 'Unsolo ${widget.name}'
-                          : 'Solo ${widget.name}',
-                      active: widget.isSolo,
-                      activeColor: colorScheme.tertiary,
-                      onPressed: widget.onSoloPressed,
-                    ),
-                    const SizedBox(width: 7),
-                    const _MixerParameterLabel('VOL'),
-                    const SizedBox(width: 2),
-                    Expanded(
-                      child: _TrackVolumeSlider(
-                        valueDb: widget.volumeDb,
-                        onChangeStart: widget.onVolumeChangeStart,
-                        onChanged: widget.onVolumeChanged,
-                        onChangeEnd: widget.onVolumeChangeEnd,
-                        onReset: widget.onVolumeReset,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    _MixerValueLabel(
-                      valueKey: const ValueKey('track-volume-value'),
-                      text: formatTrackVolumeDb(widget.volumeDb),
-                    ),
-                  ],
+              if (widget.meterController != null && widget.trackId != null) ...[
+                const SizedBox(width: 6),
+                TrackStereoMeter(
+                  controller: widget.meterController!,
+                  trackId: widget.trackId!,
                 ),
-              ),
+              ],
             ],
           ),
         ),

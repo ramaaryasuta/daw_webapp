@@ -46,3 +46,9 @@ app.*.map.json
 
 # FVM Version Cache
 .fvm/
+
+# Browser profiles and screenshots from automated audio-meter runtime tests
+.meter-chrome-profile*/
+.meter-static-profile/
+.meter-editor-profile/
+.meter-*.png

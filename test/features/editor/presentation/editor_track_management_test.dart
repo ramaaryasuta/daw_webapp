@@ -4,6 +4,7 @@ library;
 import 'package:daw_webapp/features/editor/application/editor_controller.dart';
 import 'package:daw_webapp/features/editor/domain/track_color.dart';
 import 'package:daw_webapp/features/editor/presentation/editor_page.dart';
+import 'package:daw_webapp/features/editor/presentation/widgets/audio_level_meter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -32,6 +33,8 @@ void main() {
 
     final addButton = find.byKey(const ValueKey('add-audio-track-button'));
     expect(addButton, findsOneWidget);
+    expect(find.byType(MasterStereoMeter), findsOneWidget);
+    expect(find.byType(TrackStereoMeter), findsNothing);
     expect(find.byTooltip('Add audio track'), findsOneWidget);
     for (var index = 0; index < 3; index++) {
       await tester.tap(addButton);
@@ -57,6 +60,7 @@ void main() {
       state.tracks.every((track) => !track.isMuted && !track.isSolo),
       isTrue,
     );
+    expect(find.byType(TrackStereoMeter), findsNWidgets(3));
     expect(state.history.past.map((entry) => entry.label), [
       'Add Track',
       'Add Track',

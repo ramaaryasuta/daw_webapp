@@ -16,6 +16,8 @@ import '../domain/timeline_scale.dart';
 import '../domain/timeline_snapper.dart';
 import '../infrastructure/audio_import_service.dart';
 import '../infrastructure/audio_mixdown_service.dart';
+import '../infrastructure/web_audio_engine.dart';
+import 'controllers/audio_meter_controller.dart';
 import 'controllers/timeline_clip_drag_controller.dart';
 import 'editor_shortcut_policy.dart';
 import 'intents/clip_clipboard_intents.dart';
@@ -76,6 +78,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   late final ScrollController _trackLaneScrollController;
   late final TimelineClipDragController _clipDragController;
   late final ValueNotifier<LoopRegion?> _loopPreviewRegion;
+  late final AudioMeterController _audioMeterController;
 
   @override
   void initState() {
@@ -85,6 +88,9 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     _trackHeaderScrollController = ScrollController();
     _trackLaneScrollController = ScrollController();
     _loopPreviewRegion = ValueNotifier<LoopRegion?>(null);
+    _audioMeterController = AudioMeterController(
+      ref.read(webAudioEngineProvider),
+    );
     _clipDragController = TimelineClipDragController(
       _horizontalTimelineController,
       _timelineViewportKey,
@@ -116,6 +122,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     _trackHeaderScrollController.dispose();
     _trackLaneScrollController.dispose();
     _loopPreviewRegion.dispose();
+    _audioMeterController.dispose();
 
     super.dispose();
   }
@@ -159,6 +166,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     _PlaybackFollowState? previous,
     _PlaybackFollowState next,
   ) {
+    _audioMeterController.setTransportActive(next.isPlaying);
     if (!next.isPlaying) {
       return;
     }
@@ -941,6 +949,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                   isLoopEnabled: editorState.isLoopEnabled,
                   positionSeconds: editorState.playheadSeconds,
                   rulerMode: _rulerMode,
+                  meterController: _audioMeterController,
                   onPlayPressed: controller.togglePlayback,
                   onStopPressed: controller.stop,
                   onLoopPressed: controller.toggleLoop,
@@ -997,6 +1006,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                                           child: TrackHeaderList(
                                             scrollController:
                                                 _trackHeaderScrollController,
+                                            meterController:
+                                                _audioMeterController,
                                           ),
                                         ),
                                       ],

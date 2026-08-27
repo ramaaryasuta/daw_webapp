@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:web/web.dart' as web;
 
 import '../domain/audio_clip.dart';
+import '../domain/audio_meter.dart';
 import '../domain/daw_track.dart';
 import '../domain/loop_region.dart';
 import '../domain/track_mixer.dart';
@@ -26,12 +27,17 @@ class DecodedAudioInfo {
   final List<double> waveformPeaks;
 }
 
-class WebAudioEngine {
+class WebAudioEngine implements AudioMeterPeakSource {
   WebAudioEngine() : _audioContext = web.AudioContext() {
-    _metronomeScheduler = WebMetronomeScheduler(_audioContext);
+    _masterMix = _audioContext.createGain();
+    _masterMix.connect(_audioContext.destination);
+    _masterMeterTap = _StereoMeterTap.create(_audioContext, _masterMix);
+    _metronomeScheduler = WebMetronomeScheduler(_audioContext, _masterMix);
   }
 
   final web.AudioContext _audioContext;
+  late final web.GainNode _masterMix;
+  late final _StereoMeterTap _masterMeterTap;
   late final WebMetronomeScheduler _metronomeScheduler;
 
   final Map<String, web.AudioBuffer> _buffers = {};
@@ -40,6 +46,7 @@ class WebAudioEngine {
 
   final Map<String, web.GainNode> _trackGains = {};
   final Map<String, web.StereoPannerNode> _trackPanners = {};
+  final Map<String, _StereoMeterTap> _trackMeterTaps = {};
 
   bool _isPlaying = false;
   int _playRequestId = 0;
@@ -62,6 +69,17 @@ class WebAudioEngine {
   bool get isPlaying => _isPlaying;
 
   double get sampleRate => _audioContext.sampleRate;
+
+  @override
+  MeterPeaksSnapshot readMeterPeaks() {
+    return MeterPeaksSnapshot(
+      tracks: {
+        for (final entry in _trackMeterTaps.entries)
+          entry.key: entry.value.readPeak(),
+      },
+      master: _masterMeterTap.readPeak(),
+    );
+  }
 
   web.AudioBuffer? decodedBufferForAsset(String assetId) {
     return _buffers[assetId];
@@ -196,9 +214,10 @@ class WebAudioEngine {
       gain.gain.value = effectiveTrackGain(track, hasSolo: hasSolo);
       panner.pan.value = clampTrackPan(track.pan);
       gain.connect(panner);
-      panner.connect(_audioContext.destination);
+      panner.connect(_masterMix);
       _trackGains[track.id] = gain;
       _trackPanners[track.id] = panner;
+      _trackMeterTaps[track.id] = _StereoMeterTap.create(_audioContext, panner);
     }
   }
 
@@ -404,9 +423,14 @@ class WebAudioEngine {
       } catch (_) {}
     }
 
+    for (final meterTap in _trackMeterTaps.values) {
+      meterTap.dispose();
+    }
+
     _activeSources.clear();
     _trackGains.clear();
     _trackPanners.clear();
+    _trackMeterTaps.clear();
     _scheduledTracks = const [];
     _contextStartTime = 0;
   }
@@ -467,6 +491,7 @@ class WebAudioEngine {
 
     final gain = _trackGains.remove(trackId);
     final panner = _trackPanners.remove(trackId);
+    final meterTap = _trackMeterTaps.remove(trackId);
 
     if (gain != null) {
       try {
@@ -479,6 +504,8 @@ class WebAudioEngine {
         panner.disconnect();
       } catch (_) {}
     }
+
+    meterTap?.dispose();
   }
 
   List<double> _extractWaveformPeaks(
@@ -555,9 +582,81 @@ class WebAudioEngine {
     _playRequestId++;
     stopSources();
     _metronomeScheduler.dispose();
+    _masterMeterTap.dispose();
+    try {
+      _masterMix.disconnect();
+    } catch (_) {}
     _buffers.clear();
 
     await _audioContext.close().toDart;
+  }
+}
+
+class _StereoMeterTap {
+  _StereoMeterTap._({
+    required this.splitter,
+    required this.leftAnalyser,
+    required this.rightAnalyser,
+  });
+
+  static const int _sampleCount = 256;
+
+  final web.ChannelSplitterNode splitter;
+  final web.AnalyserNode leftAnalyser;
+  final web.AnalyserNode rightAnalyser;
+  final JSFloat32Array _leftSamples = Float32List(_sampleCount).toJS;
+  final JSFloat32Array _rightSamples = Float32List(_sampleCount).toJS;
+
+  factory _StereoMeterTap.create(
+    web.AudioContext context,
+    web.AudioNode source,
+  ) {
+    final splitter = context.createChannelSplitter(2);
+    final leftAnalyser = context.createAnalyser();
+    final rightAnalyser = context.createAnalyser();
+    leftAnalyser
+      ..fftSize = _sampleCount
+      ..smoothingTimeConstant = 0;
+    rightAnalyser
+      ..fftSize = _sampleCount
+      ..smoothingTimeConstant = 0;
+    source.connect(splitter);
+    splitter.connect(leftAnalyser, 0);
+    splitter.connect(rightAnalyser, 1);
+    return _StereoMeterTap._(
+      splitter: splitter,
+      leftAnalyser: leftAnalyser,
+      rightAnalyser: rightAnalyser,
+    );
+  }
+
+  StereoPeak readPeak() {
+    leftAnalyser.getFloatTimeDomainData(_leftSamples);
+    rightAnalyser.getFloatTimeDomainData(_rightSamples);
+    return StereoPeak(
+      left: _peakAmplitude(_leftSamples.toDart),
+      right: _peakAmplitude(_rightSamples.toDart),
+    );
+  }
+
+  static double _peakAmplitude(Float32List samples) {
+    var peak = 0.0;
+    for (final sample in samples) {
+      peak = math.max(peak, sample.abs());
+    }
+    return peak;
+  }
+
+  void dispose() {
+    try {
+      splitter.disconnect();
+    } catch (_) {}
+    try {
+      leftAnalyser.disconnect();
+    } catch (_) {}
+    try {
+      rightAnalyser.disconnect();
+    } catch (_) {}
   }
 }
 
