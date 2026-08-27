@@ -17,6 +17,8 @@ import '../domain/track_color.dart';
 import '../domain/track_mixer.dart';
 import '../domain/timeline_snapper.dart';
 import '../infrastructure/web_audio_engine.dart';
+import '../infrastructure/project_io/fldaw_project_codec.dart';
+import '../infrastructure/project_io/project_dto.dart';
 import 'editor_clipboard.dart';
 import 'editor_history.dart';
 import 'snap_controller.dart';
@@ -24,6 +26,7 @@ import 'tempo_controller.dart';
 
 class EditorState {
   EditorState({
+    this.projectName = 'Untitled',
     this.isPlaying = false,
     this.isImporting = false,
     this.playheadSeconds = 0,
@@ -48,6 +51,7 @@ class EditorState {
 
   final bool isPlaying;
   final bool isImporting;
+  final String projectName;
 
   final double playheadSeconds;
   final double pixelsPerSecond;
@@ -127,6 +131,7 @@ class EditorState {
   }
 
   EditorState copyWith({
+    String? projectName,
     bool? isPlaying,
     bool? isImporting,
     double? playheadSeconds,
@@ -147,6 +152,7 @@ class EditorState {
     EditorHistory? history,
   }) {
     return EditorState(
+      projectName: projectName ?? this.projectName,
       isPlaying: isPlaying ?? this.isPlaying,
       isImporting: isImporting ?? this.isImporting,
       playheadSeconds: playheadSeconds ?? this.playheadSeconds,
@@ -329,6 +335,7 @@ class EditorController extends Notifier<EditorState> {
         : null;
 
     state = EditorState(
+      projectName: state.projectName,
       isPlaying: state.isPlaying,
       isImporting: state.isImporting,
       playheadSeconds: state.playheadSeconds,
@@ -479,10 +486,9 @@ class EditorController extends Notifier<EditorState> {
     final failedFiles = <String>[];
 
     for (final file in files) {
-      _assetCounter++;
       _clipCounter++;
 
-      final assetId = 'asset-$_assetCounter';
+      final assetId = _nextAssetId();
 
       final trackId = _nextTrackId();
       final clipId = 'clip-$_clipCounter';
@@ -502,6 +508,8 @@ class EditorController extends Notifier<EditorState> {
           sampleRate: decoded.sampleRate,
           numberOfChannels: decoded.numberOfChannels,
           waveformPeaks: decoded.waveformPeaks,
+          mimeType: file.mimeType,
+          sourceBytes: file.bytes,
         );
 
         newTracks.add(
@@ -540,6 +548,91 @@ class EditorController extends Notifier<EditorState> {
     }
 
     return failedFiles;
+  }
+
+  /// Decodes and validates an opened project completely before replacing the
+  /// current arrangement or its runtime audio graph.
+  Future<RestoredFldawProject> openProjectDocument(
+    FldawProjectDocument document, {
+    void Function(int completed, int total)? onSourceProgress,
+  }) async {
+    final prepared = await _audioEngine.prepareAudioSources(
+      document.audioBytesBySourceId,
+      onProgress: onSourceProgress,
+    );
+    final sourceMetadata = {
+      for (final source in document.manifest.audioSources)
+        source.sourceId: source,
+    };
+    final assets = <String, AudioAsset>{};
+    for (final entry in prepared.infoByAssetId.entries) {
+      final metadata = sourceMetadata[entry.key];
+      final bytes = document.audioBytesBySourceId[entry.key];
+      if (metadata == null || bytes == null) {
+        throw const FldawProjectException(
+          'Decoded source metadata is incomplete.',
+          userMessage:
+              'One or more required audio sources could not be restored.',
+        );
+      }
+      final decoded = entry.value;
+      assets[entry.key] = AudioAsset(
+        id: entry.key,
+        name: metadata.displayFilename,
+        extension: metadata.extension,
+        size: bytes.length,
+        durationSeconds: decoded.durationSeconds,
+        sampleRate: decoded.sampleRate,
+        numberOfChannels: decoded.numberOfChannels,
+        waveformPeaks: decoded.waveformPeaks,
+        mimeType: metadata.mimeType,
+        sourceBytes: bytes,
+      );
+    }
+
+    final restored = const FldawProjectCodec().restore(
+      document.manifest,
+      assets,
+    );
+
+    // This is the transaction boundary: every archive entry has been read,
+    // decoded, and converted to immutable project state before old state ends.
+    _playheadTimer?.cancel();
+    _clearPendingEditTransactions();
+    _clipEditRequestId++;
+    _audioEngine.commitPreparedAudioSources(prepared);
+    _audioEngine.setMasterVolumeDb(restored.masterVolumeDb);
+    ref.read(tempoControllerProvider.notifier).setBpm(restored.bpm);
+    ref
+        .read(snapControllerProvider.notifier)
+        .replaceSettings(restored.snapSettings);
+    state = EditorState(
+      projectName: restored.name,
+      isPlaying: false,
+      isImporting: false,
+      playheadSeconds: 0,
+      pixelsPerSecond: state.pixelsPerSecond,
+      isLoopEnabled: restored.isLoopEnabled,
+      loopRegion: restored.loopRegion,
+      masterVolumeDb: restored.masterVolumeDb,
+      tracks: restored.tracks,
+      markers: restored.markers,
+      selectedClipIds: const {},
+      clipClipboard: EditorClipClipboard.empty,
+      history: EditorHistory(),
+    );
+    return restored;
+  }
+
+  String _nextAssetId() {
+    final existingIds = {
+      for (final track in state.tracks)
+        for (final clip in track.clips) clip.audio.id,
+    };
+    do {
+      _assetCounter++;
+    } while (existingIds.contains('asset-$_assetCounter'));
+    return 'asset-$_assetCounter';
   }
 
   String addTrack() {

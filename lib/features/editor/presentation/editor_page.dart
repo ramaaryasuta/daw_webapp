@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:desktop_drop/desktop_drop.dart';
@@ -16,6 +17,9 @@ import '../domain/timeline_scale.dart';
 import '../domain/timeline_snapper.dart';
 import '../infrastructure/audio_import_service.dart';
 import '../infrastructure/audio_mixdown_service.dart';
+import '../infrastructure/project_io/fldaw_project_codec.dart';
+import '../infrastructure/project_io/fldaw_project_io_service.dart';
+import '../infrastructure/project_io/project_dto.dart';
 import '../infrastructure/web_audio_engine.dart';
 import 'controllers/audio_meter_controller.dart';
 import 'controllers/timeline_clip_drag_controller.dart';
@@ -32,6 +36,7 @@ import 'models/timeline_ruler_mode.dart';
 import 'widgets/commands_dialog.dart';
 import 'widgets/editor_menu_bar.dart';
 import 'widgets/export_dialog.dart';
+import 'widgets/project_progress_dialog.dart';
 import 'widgets/track_header.dart';
 import 'widgets/track_list.dart';
 import 'widgets/timeline_ruler.dart';
@@ -60,6 +65,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   static const _playheadFollowThresholdFraction = 0.75;
 
   bool _isDraggingOverWorkspace = false;
+  bool _isProjectOperationInProgress = false;
   bool _isSyncingVerticalScroll = false;
   bool _isProgrammaticTimelineScroll = false;
   bool _isTimelinePanning = false;
@@ -348,6 +354,202 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     );
   }
 
+  FldawProjectSnapshot _createProjectSnapshot() {
+    final editor = ref.read(editorControllerProvider);
+    return FldawProjectSnapshot(
+      name: editor.projectName,
+      bpm: ref.read(tempoControllerProvider).bpm,
+      snapSettings: ref.read(snapControllerProvider),
+      rulerMode: _rulerMode,
+      isLoopEnabled: editor.isLoopEnabled,
+      loopRegion: editor.loopRegion,
+      masterVolumeDb: editor.masterVolumeDb,
+      tracks: List<DawTrack>.unmodifiable(editor.tracks),
+      markers: List.unmodifiable(editor.markers),
+    );
+  }
+
+  Future<void> _saveProject() async {
+    if (_isProjectOperationInProgress) {
+      return;
+    }
+    final snapshot = _createProjectSnapshot();
+    final io = ref.read(fldawProjectIoServiceProvider);
+    final progress = ValueNotifier(
+      ProjectOperationProgress(
+        title: 'Saving Project',
+        status: 'Collecting audio sources...',
+        projectName: projectDownloadName(snapshot.name),
+      ),
+    );
+    var dialogVisible = false;
+    setState(() => _isProjectOperationInProgress = true);
+    try {
+      if (snapshot.retainedAudioByteCount >= 256 * 1024) {
+        dialogVisible = true;
+        unawaited(
+          showDialog<void>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => ProjectProgressDialog(progress: progress),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 32));
+      }
+      progress.value = ProjectOperationProgress(
+        title: 'Saving Project',
+        status: 'Packaging project...',
+        projectName: projectDownloadName(snapshot.name),
+        value: null,
+      );
+      if (dialogVisible) {
+        await Future<void>.delayed(const Duration(milliseconds: 16));
+      }
+      final bytes = io.packageProject(snapshot);
+      io.downloadProject(bytes, projectName: snapshot.name);
+    } catch (error, stackTrace) {
+      debugPrint('Save Project failed: $error\n$stackTrace');
+      if (dialogVisible && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        dialogVisible = false;
+      }
+      if (mounted) {
+        await _showProjectError(
+          title: 'Unable to Save Project',
+          message: error is FldawProjectException
+              ? error.userMessage
+              : 'The project could not be packaged.',
+        );
+      }
+    } finally {
+      if (dialogVisible && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      progress.dispose();
+      if (mounted) {
+        setState(() => _isProjectOperationInProgress = false);
+      }
+    }
+  }
+
+  Future<void> _openProject() async {
+    if (_isProjectOperationInProgress) {
+      return;
+    }
+    final io = ref.read(fldawProjectIoServiceProvider);
+    PickedFldawProject? picked;
+    try {
+      picked = await io.pickProjectFile();
+    } catch (error, stackTrace) {
+      debugPrint('Project picker failed: $error\n$stackTrace');
+      if (mounted) {
+        await _showProjectError(
+          title: 'Unable to Open Project',
+          message: 'The selected file could not be read.',
+        );
+      }
+      return;
+    }
+    if (picked == null || !mounted) {
+      return;
+    }
+
+    final progress = ValueNotifier(
+      ProjectOperationProgress(
+        title: 'Opening Project',
+        status: 'Reading project...',
+        projectName: picked.name,
+      ),
+    );
+    var dialogVisible = false;
+    setState(() => _isProjectOperationInProgress = true);
+    try {
+      if (picked.bytes.length >= 256 * 1024) {
+        dialogVisible = true;
+        unawaited(
+          showDialog<void>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => ProjectProgressDialog(progress: progress),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 32));
+      }
+      final document = io.readProject(picked.bytes);
+      final sourceCount = document.manifest.audioSources.length;
+      progress.value = ProjectOperationProgress(
+        title: 'Opening Project',
+        status: sourceCount == 1
+            ? 'Restoring 1 audio source...'
+            : 'Restoring $sourceCount audio sources...',
+        projectName: document.manifest.project.name,
+        value: sourceCount == 0 ? 1 : 0,
+      );
+      final restored = await ref
+          .read(editorControllerProvider.notifier)
+          .openProjectDocument(
+            document,
+            onSourceProgress: (completed, total) {
+              progress.value = ProjectOperationProgress(
+                title: 'Opening Project',
+                status: total == 1
+                    ? 'Restoring 1 audio source...'
+                    : 'Restoring $total audio sources...',
+                projectName: document.manifest.project.name,
+                value: total == 0 ? 1 : completed / total,
+              );
+            },
+          );
+      if (mounted) {
+        setState(() => _rulerMode = restored.rulerMode);
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Open Project failed: $error\n$stackTrace');
+      if (dialogVisible && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        dialogVisible = false;
+      }
+      if (mounted) {
+        await _showProjectError(
+          title: 'Unable to Open Project',
+          message: error is FldawProjectException
+              ? error.userMessage
+              : 'One or more required audio sources could not be restored.',
+        );
+      }
+    } finally {
+      if (dialogVisible && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      progress.dispose();
+      if (mounted) {
+        setState(() => _isProjectOperationInProgress = false);
+      }
+    }
+  }
+
+  Future<void> _showProjectError({
+    required String title,
+    required String message,
+  }) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: Text(message),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _splitSelectedClip() async {
     final editorState = ref.read(editorControllerProvider);
     final clipId = editorState.selectedClipId;
@@ -442,15 +644,30 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         label: 'File',
         actions: [
           EditorMenuAction(
+            label: 'Open Project...',
+            icon: Icons.folder_open_outlined,
+            onSelected: _isProjectOperationInProgress ? null : _openProject,
+          ),
+          EditorMenuAction(
+            label: 'Save Project...',
+            icon: Icons.save_outlined,
+            onSelected: _isProjectOperationInProgress ? null : _saveProject,
+          ),
+          EditorMenuAction(
             label: 'Import Audio...',
             icon: Icons.library_music_outlined,
-            onSelected: isImporting ? null : _pickAudioFiles,
+            separatorBefore: true,
+            onSelected: isImporting || _isProjectOperationInProgress
+                ? null
+                : _pickAudioFiles,
           ),
           EditorMenuAction(
             label: 'Export...',
             icon: Icons.download_outlined,
-            separatorBefore: true,
-            onSelected: isImporting || !hasTracks ? null : _openExportDialog,
+            onSelected:
+                isImporting || _isProjectOperationInProgress || !hasTracks
+                ? null
+                : _openExportDialog,
           ),
         ],
       ),
@@ -1053,7 +1270,9 @@ class _EditorPageState extends ConsumerState<EditorPage> {
 
                 Expanded(
                   child: DropTarget(
-                    enable: !editorState.isImporting,
+                    enable:
+                        !editorState.isImporting &&
+                        !_isProjectOperationInProgress,
                     onDragEntered: (_) {
                       if (!_isDraggingOverWorkspace) {
                         setState(() {

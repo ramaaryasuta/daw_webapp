@@ -44,6 +44,7 @@ class AudioImportService {
             extension: _getExtension(file.name),
             bytes: bytes,
             size: bytes.length,
+            mimeType: _mimeTypeForExtension(_getExtension(file.name)),
           ),
         );
       } catch (_) {
@@ -78,6 +79,7 @@ class AudioImportService {
             extension: _getExtension(item.name),
             bytes: bytes,
             size: bytes.length,
+            mimeType: _mimeTypeForExtension(_getExtension(item.name)),
           ),
         );
       } catch (_) {
@@ -101,6 +103,12 @@ class AudioImportService {
 
     return fileName.substring(index + 1).toLowerCase();
   }
+
+  String? _mimeTypeForExtension(String extension) => switch (extension) {
+    'wav' => 'audio/wav',
+    'mp3' => 'audio/mpeg',
+    _ => null,
+  };
 }
 
 final audioImportServiceProvider = Provider<AudioImportService>(

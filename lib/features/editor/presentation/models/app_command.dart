@@ -1,4 +1,5 @@
 enum AppCommandCategory {
+  file('File'),
   editing('Editing'),
   timeline('Timeline');
 
@@ -24,6 +25,21 @@ class AppCommand {
 }
 
 abstract final class EditorCommands {
+  static const saveProject = AppCommand(
+    title: 'Save Project',
+    description:
+        'Save the project and its audio sources as a portable .fldawproj file.',
+    shortcutParts: ['File', 'Save Project...'],
+    category: AppCommandCategory.file,
+  );
+
+  static const openProject = AppCommand(
+    title: 'Open Project',
+    description: 'Open a portable .fldawproj project file.',
+    shortcutParts: ['File', 'Open Project...'],
+    category: AppCommandCategory.file,
+  );
+
   static const undo = AppCommand(
     title: 'Undo',
     description: 'Undo the most recent editing action.',
@@ -250,6 +266,8 @@ abstract final class EditorCommands {
   static const all = <AppCommand>[
     undo,
     redo,
+    openProject,
+    saveProject,
     copyAudioClip,
     pasteAudioClip,
     duplicateAudioClip,

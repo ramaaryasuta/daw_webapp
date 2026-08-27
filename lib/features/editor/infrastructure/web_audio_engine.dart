@@ -27,6 +27,18 @@ class DecodedAudioInfo {
   final List<double> waveformPeaks;
 }
 
+/// A fully decoded, not-yet-committed set of project audio sources.
+///
+/// Browser AudioBuffers remain infrastructure-owned and never enter Riverpod
+/// state. Building this staging object lets Open validate and decode every
+/// source before replacing the active project.
+class PreparedAudioSources {
+  PreparedAudioSources._(this._buffers, this.infoByAssetId);
+
+  final Map<String, web.AudioBuffer> _buffers;
+  final Map<String, DecodedAudioInfo> infoByAssetId;
+}
+
 class WebAudioEngine implements AudioMeterPeakSource {
   WebAudioEngine() : _audioContext = web.AudioContext() {
     _masterMix = _audioContext.createGain();
@@ -125,21 +137,62 @@ class WebAudioEngine implements AudioMeterPeakSource {
     required String assetId,
     required Uint8List bytes,
   }) async {
+    final decoded = await _decodeSource(bytes);
+    _buffers[assetId] = decoded.buffer;
+    return decoded.info;
+  }
+
+  Future<PreparedAudioSources> prepareAudioSources(
+    Map<String, Uint8List> bytesByAssetId, {
+    void Function(int completed, int total)? onProgress,
+  }) async {
+    final buffers = <String, web.AudioBuffer>{};
+    final info = <String, DecodedAudioInfo>{};
+    var completed = 0;
+    for (final entry in bytesByAssetId.entries) {
+      final decoded = await _decodeSource(entry.value);
+      buffers[entry.key] = decoded.buffer;
+      info[entry.key] = decoded.info;
+      completed++;
+      onProgress?.call(completed, bytesByAssetId.length);
+    }
+    return PreparedAudioSources._(
+      Map.unmodifiable(buffers),
+      Map.unmodifiable(info),
+    );
+  }
+
+  void commitPreparedAudioSources(PreparedAudioSources prepared) {
+    _playRequestId++;
+    stopSources();
+    _timelineStartSeconds = 0;
+    _projectDurationSeconds = 0;
+    _activeLoopRegion = null;
+    _isPlaying = false;
+    _buffers
+      ..clear()
+      ..addAll(prepared._buffers);
+  }
+
+  Future<({web.AudioBuffer buffer, DecodedAudioInfo info})> _decodeSource(
+    Uint8List bytes,
+  ) async {
     final byteBuffer = Uint8List.fromList(bytes).buffer;
 
     final audioBuffer = await _audioContext
         .decodeAudioData(byteBuffer.toJS)
         .toDart;
 
-    _buffers[assetId] = audioBuffer;
-
     final waveformPeaks = _extractWaveformPeaks(audioBuffer);
 
-    return DecodedAudioInfo(
-      durationSeconds: audioBuffer.duration,
-      sampleRate: audioBuffer.sampleRate,
-      numberOfChannels: audioBuffer.numberOfChannels,
-      waveformPeaks: waveformPeaks,
+    return (
+      buffer: audioBuffer,
+      info: DecodedAudioInfo(
+        durationSeconds: audioBuffer.duration,
+        sampleRate: audioBuffer.sampleRate,
+        numberOfChannels: audioBuffer.numberOfChannels,
+        waveformPeaks: waveformPeaks,
+      ),
     );
   }
 

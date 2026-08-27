@@ -2,6 +2,23 @@ import 'package:daw_webapp/features/editor/presentation/models/app_command.dart'
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('Help commands define portable project Save and Open', () {
+    final save = EditorCommands.all.singleWhere(
+      (command) => command.title == 'Save Project',
+    );
+    final open = EditorCommands.all.singleWhere(
+      (command) => command.title == 'Open Project',
+    );
+
+    expect(save.shortcutParts, ['File', 'Save Project...']);
+    expect(
+      save.description,
+      'Save the project and its audio sources as a portable .fldawproj file.',
+    );
+    expect(open.shortcutParts, ['File', 'Open Project...']);
+    expect(open.description, 'Open a portable .fldawproj project file.');
+  });
+
   test('Help commands define marker gestures once', () {
     final markerCommands = EditorCommands.all.where(
       (command) => command.title.contains('Marker'),

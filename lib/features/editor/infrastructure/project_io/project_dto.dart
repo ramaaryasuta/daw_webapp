@@ -1,0 +1,585 @@
+import 'dart:convert';
+
+const String fldawProjectFormat = 'fldawproj';
+const int fldawProjectFormatVersion = 1;
+
+class FldawProjectException implements Exception {
+  const FldawProjectException(this.message, {required this.userMessage});
+
+  final String message;
+  final String userMessage;
+
+  @override
+  String toString() => 'FldawProjectException: $message';
+}
+
+class FldawProjectManifest {
+  const FldawProjectManifest({
+    required this.project,
+    required this.tracks,
+    required this.clips,
+    required this.markers,
+    required this.audioSources,
+  });
+
+  final ProjectSettingsDto project;
+  final List<ProjectTrackDto> tracks;
+  final List<ProjectClipDto> clips;
+  final List<ProjectMarkerDto> markers;
+  final List<ProjectAudioSourceDto> audioSources;
+
+  Map<String, Object?> toJson() => {
+    'format': fldawProjectFormat,
+    'formatVersion': fldawProjectFormatVersion,
+    'project': project.toJson(),
+    'tracks': [for (final track in tracks) track.toJson()],
+    'clips': [for (final clip in clips) clip.toJson()],
+    'markers': [for (final marker in markers) marker.toJson()],
+    'audioSources': [for (final source in audioSources) source.toJson()],
+  };
+
+  String encodeJson() => jsonEncode(toJson());
+
+  factory FldawProjectManifest.decodeJson(String source) {
+    Object? decoded;
+    try {
+      decoded = jsonDecode(source);
+    } on FormatException catch (error) {
+      throw FldawProjectException(
+        'project.json is not valid JSON: $error',
+        userMessage: 'The project metadata is invalid or corrupt.',
+      );
+    }
+    if (decoded is! Map<String, Object?>) {
+      throw const FldawProjectException(
+        'project.json root must be an object.',
+        userMessage: 'The project metadata is invalid or corrupt.',
+      );
+    }
+    return FldawProjectManifest.fromJson(decoded);
+  }
+
+  factory FldawProjectManifest.fromJson(Map<String, Object?> json) {
+    final format = _requiredString(json, 'format');
+    if (format != fldawProjectFormat) {
+      throw const FldawProjectException(
+        'Manifest format is not fldawproj.',
+        userMessage: 'The selected file is not an FLDAW project.',
+      );
+    }
+    final version = _requiredInt(json, 'formatVersion');
+    if (version > fldawProjectFormatVersion) {
+      throw const FldawProjectException(
+        'Manifest uses a newer format version.',
+        userMessage:
+            'This project was created with a newer FLDAW project format.',
+      );
+    }
+    if (version != fldawProjectFormatVersion) {
+      throw FldawProjectException(
+        'Unsupported format version: $version.',
+        userMessage: 'This FLDAW project format is not supported.',
+      );
+    }
+
+    final manifest = FldawProjectManifest(
+      project: ProjectSettingsDto.fromJson(_requiredMap(json, 'project')),
+      tracks: _objectList(json, 'tracks', ProjectTrackDto.fromJson),
+      clips: _objectList(json, 'clips', ProjectClipDto.fromJson),
+      markers: _objectList(json, 'markers', ProjectMarkerDto.fromJson),
+      audioSources: _objectList(
+        json,
+        'audioSources',
+        ProjectAudioSourceDto.fromJson,
+      ),
+    );
+    manifest._validateRelationships();
+    return manifest;
+  }
+
+  void _validateRelationships() {
+    _requireUnique(tracks.map((track) => track.id), 'track ID');
+    _requireUnique(clips.map((clip) => clip.id), 'clip ID');
+    _requireUnique(markers.map((marker) => marker.id), 'marker ID');
+    _requireUnique(audioSources.map((source) => source.sourceId), 'source ID');
+    _requireUnique(
+      audioSources.map((source) => source.archivePath),
+      'audio archive path',
+    );
+    _requireContiguousOrder(tracks.map((track) => track.order), 'track');
+
+    final trackIds = tracks.map((track) => track.id).toSet();
+    final sourceIds = audioSources.map((source) => source.sourceId).toSet();
+    final clipOrdersByTrack = <String, List<int>>{};
+    for (final clip in clips) {
+      if (!trackIds.contains(clip.trackId)) {
+        _invalid('Clip ${clip.id} references an unknown track.');
+      }
+      if (!sourceIds.contains(clip.sourceId)) {
+        _invalid('Clip ${clip.id} references an unknown audio source.');
+      }
+      clipOrdersByTrack.putIfAbsent(clip.trackId, () => []).add(clip.order);
+    }
+    for (final entry in clipOrdersByTrack.entries) {
+      _requireContiguousOrder(entry.value, 'clip in track ${entry.key}');
+    }
+
+    final usedSourceIds = clips.map((clip) => clip.sourceId).toSet();
+    if (!sourceIds.containsAll(usedSourceIds)) {
+      _invalid('One or more used audio sources are missing.');
+    }
+  }
+}
+
+class ProjectSettingsDto {
+  const ProjectSettingsDto({
+    required this.name,
+    required this.bpm,
+    required this.snapEnabled,
+    required this.snapSubdivision,
+    required this.rulerDisplayMode,
+    required this.loopEnabled,
+    required this.loopStartSeconds,
+    required this.loopEndSeconds,
+    required this.masterVolumeDb,
+  });
+
+  final String name;
+  final double bpm;
+  final bool snapEnabled;
+  final String snapSubdivision;
+  final String rulerDisplayMode;
+  final bool loopEnabled;
+  final double? loopStartSeconds;
+  final double? loopEndSeconds;
+  final double masterVolumeDb;
+
+  Map<String, Object?> toJson() => {
+    'name': name,
+    'bpm': bpm,
+    'snap': {'enabled': snapEnabled, 'subdivision': snapSubdivision},
+    'rulerDisplayMode': rulerDisplayMode,
+    'loop': {
+      'enabled': loopEnabled,
+      if (loopStartSeconds != null && loopEndSeconds != null) ...{
+        'startSeconds': loopStartSeconds,
+        'endSeconds': loopEndSeconds,
+      },
+    },
+    'masterVolumeDb': masterVolumeDb,
+  };
+
+  factory ProjectSettingsDto.fromJson(Map<String, Object?> json) {
+    final name = _requiredString(json, 'name');
+    final bpm = _finiteNumber(json, 'bpm');
+    final snap = _requiredMap(json, 'snap');
+    final subdivision = _requiredString(snap, 'subdivision');
+    if (!const {
+      'bar',
+      'beat',
+      'halfBeat',
+      'quarterBeat',
+      'eighthBeat',
+    }.contains(subdivision)) {
+      _invalid('Unknown snap subdivision: $subdivision.');
+    }
+    final rulerMode = _requiredString(json, 'rulerDisplayMode');
+    if (!const {'barsBeats', 'time'}.contains(rulerMode)) {
+      _invalid('Unknown ruler display mode: $rulerMode.');
+    }
+    final loop = _requiredMap(json, 'loop');
+    final loopEnabled = _requiredBool(loop, 'enabled');
+    final hasLoopStart = loop.containsKey('startSeconds');
+    final hasLoopEnd = loop.containsKey('endSeconds');
+    if (hasLoopStart != hasLoopEnd) {
+      _invalid('Loop region must contain both boundaries.');
+    }
+    final loopStart = hasLoopStart ? _finiteNumber(loop, 'startSeconds') : null;
+    final loopEnd = hasLoopEnd ? _finiteNumber(loop, 'endSeconds') : null;
+    if (loopStart != null && (loopStart < 0 || loopEnd! <= loopStart)) {
+      _invalid('Loop region is invalid.');
+    }
+    if (loopEnabled && loopStart == null) {
+      _invalid('An enabled loop requires a region.');
+    }
+    if (bpm < 20 || bpm > 300) {
+      _invalid('BPM is outside the supported range.');
+    }
+    return ProjectSettingsDto(
+      name: name,
+      bpm: bpm,
+      snapEnabled: _requiredBool(snap, 'enabled'),
+      snapSubdivision: subdivision,
+      rulerDisplayMode: rulerMode,
+      loopEnabled: loopEnabled,
+      loopStartSeconds: loopStart,
+      loopEndSeconds: loopEnd,
+      masterVolumeDb: _boundedNumber(json, 'masterVolumeDb', -60, 6),
+    );
+  }
+}
+
+class ProjectTrackDto {
+  const ProjectTrackDto({
+    required this.id,
+    required this.order,
+    required this.name,
+    required this.colorArgb,
+    required this.volumeDb,
+    required this.muted,
+    required this.solo,
+    required this.pan,
+  });
+
+  final String id;
+  final int order;
+  final String name;
+  final int colorArgb;
+  final double volumeDb;
+  final bool muted;
+  final bool solo;
+  final double pan;
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'order': order,
+    'name': name,
+    'colorArgb': colorArgb,
+    'volumeDb': volumeDb,
+    'mute': muted,
+    'solo': solo,
+    'pan': pan,
+  };
+
+  factory ProjectTrackDto.fromJson(Map<String, Object?> json) =>
+      ProjectTrackDto(
+        id: _nonEmptyId(json, 'id'),
+        order: _nonNegativeInt(json, 'order'),
+        name: _requiredString(json, 'name'),
+        colorArgb: _argb(json, 'colorArgb'),
+        volumeDb: _boundedNumber(json, 'volumeDb', -60, 6),
+        muted: _requiredBool(json, 'mute'),
+        solo: _requiredBool(json, 'solo'),
+        pan: _boundedNumber(json, 'pan', -1, 1),
+      );
+}
+
+class ProjectClipDto {
+  const ProjectClipDto({
+    required this.id,
+    required this.trackId,
+    required this.order,
+    required this.sourceId,
+    required this.timelineStartSeconds,
+    required this.sourceStartSeconds,
+    required this.clipDurationSeconds,
+    required this.gainDb,
+    required this.fadeInDurationSeconds,
+    required this.fadeOutDurationSeconds,
+  });
+
+  final String id;
+  final String trackId;
+  final int order;
+  final String sourceId;
+  final double timelineStartSeconds;
+  final double sourceStartSeconds;
+  final double clipDurationSeconds;
+  final double gainDb;
+  final double fadeInDurationSeconds;
+  final double fadeOutDurationSeconds;
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'trackId': trackId,
+    'order': order,
+    'sourceId': sourceId,
+    'timelineStartSeconds': timelineStartSeconds,
+    'sourceStartSeconds': sourceStartSeconds,
+    'clipDurationSeconds': clipDurationSeconds,
+    'gainDb': gainDb,
+    'fadeInDurationSeconds': fadeInDurationSeconds,
+    'fadeOutDurationSeconds': fadeOutDurationSeconds,
+  };
+
+  factory ProjectClipDto.fromJson(Map<String, Object?> json) {
+    final timelineStart = _nonNegativeNumber(json, 'timelineStartSeconds');
+    final sourceStart = _nonNegativeNumber(json, 'sourceStartSeconds');
+    final duration = _positiveNumber(json, 'clipDurationSeconds');
+    final fadeIn = _nonNegativeNumber(json, 'fadeInDurationSeconds');
+    final fadeOut = _nonNegativeNumber(json, 'fadeOutDurationSeconds');
+    if (fadeIn + fadeOut > duration + 0.0000001) {
+      _invalid('Clip fades exceed clip duration.');
+    }
+    return ProjectClipDto(
+      id: _nonEmptyId(json, 'id'),
+      trackId: _nonEmptyId(json, 'trackId'),
+      order: _nonNegativeInt(json, 'order'),
+      sourceId: _nonEmptyId(json, 'sourceId'),
+      timelineStartSeconds: timelineStart,
+      sourceStartSeconds: sourceStart,
+      clipDurationSeconds: duration,
+      gainDb: _boundedNumber(json, 'gainDb', -24, 12),
+      fadeInDurationSeconds: fadeIn,
+      fadeOutDurationSeconds: fadeOut,
+    );
+  }
+}
+
+class ProjectMarkerDto {
+  const ProjectMarkerDto({
+    required this.id,
+    required this.timeSeconds,
+    required this.name,
+    required this.colorArgb,
+  });
+
+  final String id;
+  final double timeSeconds;
+  final String name;
+  final int colorArgb;
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'timeSeconds': timeSeconds,
+    'name': name,
+    'colorArgb': colorArgb,
+  };
+
+  factory ProjectMarkerDto.fromJson(Map<String, Object?> json) =>
+      ProjectMarkerDto(
+        id: _nonEmptyId(json, 'id'),
+        timeSeconds: _nonNegativeNumber(json, 'timeSeconds'),
+        name: _requiredString(json, 'name'),
+        colorArgb: _argb(json, 'colorArgb'),
+      );
+}
+
+class ProjectAudioSourceDto {
+  const ProjectAudioSourceDto({
+    required this.sourceId,
+    required this.archivePath,
+    required this.originalFilename,
+    required this.extension,
+    required this.mimeType,
+    required this.size,
+    required this.durationSeconds,
+    required this.sampleRate,
+    required this.numberOfChannels,
+  });
+
+  final String sourceId;
+  final String archivePath;
+  final String originalFilename;
+  final String extension;
+  final String? mimeType;
+  final int size;
+  final double durationSeconds;
+  final double sampleRate;
+  final int numberOfChannels;
+
+  String get displayFilename {
+    final normalized = originalFilename
+        .replaceAll('\\', '/')
+        .split('/')
+        .last
+        .trim();
+    return normalized.isEmpty ? 'audio.$extension' : normalized;
+  }
+
+  Map<String, Object?> toJson() => {
+    'sourceId': sourceId,
+    'archivePath': archivePath,
+    'originalFilename': originalFilename,
+    'extension': extension,
+    if (mimeType != null) 'mimeType': mimeType,
+    'size': size,
+    'durationSeconds': durationSeconds,
+    'sampleRate': sampleRate,
+    'numberOfChannels': numberOfChannels,
+  };
+
+  factory ProjectAudioSourceDto.fromJson(Map<String, Object?> json) {
+    final extension = _requiredString(json, 'extension').toLowerCase();
+    if (!const {'wav', 'mp3'}.contains(extension)) {
+      _invalid('Unsupported audio source extension: $extension.');
+    }
+    final archivePath = _requiredString(json, 'archivePath');
+    if (!_isSafeAudioPath(archivePath) ||
+        !archivePath.toLowerCase().endsWith('.$extension')) {
+      _invalid('Unsafe or inconsistent audio archive path: $archivePath.');
+    }
+    final mime = json['mimeType'];
+    if (mime != null && mime is! String) {
+      _invalid('mimeType must be a string when present.');
+    }
+    return ProjectAudioSourceDto(
+      sourceId: _nonEmptyId(json, 'sourceId'),
+      archivePath: archivePath,
+      originalFilename: _requiredString(json, 'originalFilename'),
+      extension: extension,
+      mimeType: mime as String?,
+      size: _positiveInt(json, 'size'),
+      durationSeconds: _positiveNumber(json, 'durationSeconds'),
+      sampleRate: _positiveNumber(json, 'sampleRate'),
+      numberOfChannels: _positiveInt(json, 'numberOfChannels'),
+    );
+  }
+}
+
+bool _isSafeAudioPath(String path) {
+  if (!path.startsWith('audio/') ||
+      path.contains('\\') ||
+      path.contains('..') ||
+      path.startsWith('/') ||
+      path.contains(':')) {
+    return false;
+  }
+  final segments = path.split('/');
+  return segments.length == 2 && segments.every((part) => part.isNotEmpty);
+}
+
+void _requireUnique(Iterable<String> values, String label) {
+  final seen = <String>{};
+  for (final value in values) {
+    if (!seen.add(value)) {
+      _invalid('Duplicate $label: $value.');
+    }
+  }
+}
+
+void _requireContiguousOrder(Iterable<int> values, String label) {
+  final sorted = values.toList()..sort();
+  for (var index = 0; index < sorted.length; index++) {
+    if (sorted[index] != index) {
+      _invalid('Invalid $label ordering.');
+    }
+  }
+}
+
+List<T> _objectList<T>(
+  Map<String, Object?> json,
+  String key,
+  T Function(Map<String, Object?>) decode,
+) {
+  final value = json[key];
+  if (value is! List<Object?>) {
+    _invalid('$key must be a list.');
+  }
+  return [
+    for (final item in value)
+      if (item is Map<String, Object?>)
+        decode(item)
+      else
+        throw FldawProjectException(
+          '$key contains a non-object value.',
+          userMessage: 'The project metadata is invalid or corrupt.',
+        ),
+  ];
+}
+
+Map<String, Object?> _requiredMap(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value is! Map<String, Object?>) {
+    _invalid('$key must be an object.');
+  }
+  return value;
+}
+
+String _requiredString(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value is! String || value.trim().isEmpty || value.length > 1024) {
+    _invalid('$key must be a non-empty string.');
+  }
+  return value;
+}
+
+String _nonEmptyId(Map<String, Object?> json, String key) {
+  final value = _requiredString(json, key);
+  if (value.length > 200) {
+    _invalid('$key is too long.');
+  }
+  return value;
+}
+
+bool _requiredBool(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value is! bool) {
+    _invalid('$key must be a boolean.');
+  }
+  return value;
+}
+
+int _requiredInt(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value is! int) {
+    _invalid('$key must be an integer.');
+  }
+  return value;
+}
+
+int _nonNegativeInt(Map<String, Object?> json, String key) {
+  final value = _requiredInt(json, key);
+  if (value < 0) {
+    _invalid('$key must not be negative.');
+  }
+  return value;
+}
+
+int _positiveInt(Map<String, Object?> json, String key) {
+  final value = _requiredInt(json, key);
+  if (value <= 0) {
+    _invalid('$key must be positive.');
+  }
+  return value;
+}
+
+int _argb(Map<String, Object?> json, String key) {
+  final value = _requiredInt(json, key);
+  if (value < 0 || value > 0xffffffff) {
+    _invalid('$key must be a 32-bit ARGB value.');
+  }
+  return value;
+}
+
+double _finiteNumber(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value is! num || !value.isFinite) {
+    _invalid('$key must be a finite number.');
+  }
+  return value.toDouble();
+}
+
+double _nonNegativeNumber(Map<String, Object?> json, String key) {
+  final value = _finiteNumber(json, key);
+  if (value < 0) {
+    _invalid('$key must not be negative.');
+  }
+  return value;
+}
+
+double _positiveNumber(Map<String, Object?> json, String key) {
+  final value = _finiteNumber(json, key);
+  if (value <= 0) {
+    _invalid('$key must be positive.');
+  }
+  return value;
+}
+
+double _boundedNumber(
+  Map<String, Object?> json,
+  String key,
+  double minimum,
+  double maximum,
+) {
+  final value = _finiteNumber(json, key);
+  if (value < minimum || value > maximum) {
+    _invalid('$key is outside the supported range.');
+  }
+  return value;
+}
+
+Never _invalid(String message) => throw FldawProjectException(
+  message,
+  userMessage: 'The project metadata is invalid or corrupt.',
+);

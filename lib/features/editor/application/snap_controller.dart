@@ -23,6 +23,10 @@ class SnapController extends Notifier<SnapSettings> {
     }
     state = state.copyWith(subdivision: subdivision);
   }
+
+  void replaceSettings(SnapSettings settings) {
+    state = settings;
+  }
 }
 
 final snapControllerProvider = NotifierProvider<SnapController, SnapSettings>(
