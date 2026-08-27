@@ -325,10 +325,10 @@ class EditorController extends Notifier<EditorState> {
       return false;
     }
 
-    for (var trackIndex = 0; trackIndex < left.length; trackIndex++) {
-      final leftTrack = left[trackIndex];
-      final rightTrack = right[trackIndex];
-      if (leftTrack.id != rightTrack.id ||
+    final rightById = {for (final track in right) track.id: track};
+    for (final leftTrack in left) {
+      final rightTrack = rightById[leftTrack.id];
+      if (rightTrack == null ||
           leftTrack.clips.length != rightTrack.clips.length) {
         return false;
       }
@@ -357,10 +357,10 @@ class EditorController extends Notifier<EditorState> {
       return false;
     }
 
-    for (var index = 0; index < left.length; index++) {
-      final leftTrack = left[index];
-      final rightTrack = right[index];
-      if (leftTrack.id != rightTrack.id ||
+    final rightById = {for (final track in right) track.id: track};
+    for (final leftTrack in left) {
+      final rightTrack = rightById[leftTrack.id];
+      if (rightTrack == null ||
           leftTrack.volumeDb != rightTrack.volumeDb ||
           leftTrack.pan != rightTrack.pan ||
           leftTrack.isMuted != rightTrack.isMuted ||
@@ -376,9 +376,14 @@ class EditorController extends Notifier<EditorState> {
     if (left.length != right.length) {
       return false;
     }
-    for (var trackIndex = 0; trackIndex < left.length; trackIndex++) {
-      final leftClips = left[trackIndex].clips;
-      final rightClips = right[trackIndex].clips;
+    final rightById = {for (final track in right) track.id: track};
+    for (final leftTrack in left) {
+      final rightTrack = rightById[leftTrack.id];
+      if (rightTrack == null) {
+        return false;
+      }
+      final leftClips = leftTrack.clips;
+      final rightClips = rightTrack.clips;
       if (leftClips.length != rightClips.length) {
         return false;
       }
@@ -511,6 +516,39 @@ class EditorController extends Notifier<EditorState> {
     );
     _recordEdit('Add Track', before);
     return track.id;
+  }
+
+  void reorderTracks(List<String> orderedTrackIds) {
+    if (orderedTrackIds.length != state.tracks.length) {
+      return;
+    }
+
+    final tracksById = {for (final track in state.tracks) track.id: track};
+    if (orderedTrackIds.toSet().length != tracksById.length ||
+        !orderedTrackIds.every(tracksById.containsKey)) {
+      return;
+    }
+    if (_hasSameTrackOrder(state.tracks, orderedTrackIds)) {
+      return;
+    }
+
+    final before = _captureProjectSnapshot();
+    state = state.copyWith(
+      tracks: [for (final trackId in orderedTrackIds) tracksById[trackId]!],
+    );
+    _recordEdit('Reorder Tracks', before);
+  }
+
+  static bool _hasSameTrackOrder(
+    List<DawTrack> tracks,
+    List<String> orderedTrackIds,
+  ) {
+    for (var index = 0; index < tracks.length; index++) {
+      if (tracks[index].id != orderedTrackIds[index]) {
+        return false;
+      }
+    }
+    return true;
   }
 
   String _nextTrackId() {

@@ -19,6 +19,7 @@ import '../infrastructure/audio_mixdown_service.dart';
 import '../infrastructure/web_audio_engine.dart';
 import 'controllers/audio_meter_controller.dart';
 import 'controllers/timeline_clip_drag_controller.dart';
+import 'controllers/track_reorder_drag_controller.dart';
 import 'editor_shortcut_policy.dart';
 import 'intents/clip_clipboard_intents.dart';
 import 'intents/delete_clip_intent.dart';
@@ -77,6 +78,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   late final ScrollController _trackHeaderScrollController;
   late final ScrollController _trackLaneScrollController;
   late final TimelineClipDragController _clipDragController;
+  late final TrackReorderDragController _trackReorderController;
   late final ValueNotifier<LoopRegion?> _loopPreviewRegion;
   late final AudioMeterController _audioMeterController;
 
@@ -98,6 +100,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       verticalScrollController: _trackLaneScrollController,
       trackViewportKey: _trackLaneViewportKey,
     );
+    _trackReorderController = TrackReorderDragController();
 
     _trackHeaderScrollController.addListener(_syncLanesToHeaders);
     _trackLaneScrollController.addListener(_syncHeadersToLanes);
@@ -118,6 +121,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     _trackHeaderScrollController.removeListener(_syncLanesToHeaders);
     _trackLaneScrollController.removeListener(_syncHeadersToLanes);
     _clipDragController.dispose();
+    _trackReorderController.dispose();
     _horizontalTimelineController.dispose();
     _trackHeaderScrollController.dispose();
     _trackLaneScrollController.dispose();
@@ -1013,6 +1017,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                                                 _trackHeaderScrollController,
                                             meterController:
                                                 _audioMeterController,
+                                            reorderController:
+                                                _trackReorderController,
                                           ),
                                         ),
                                       ],
@@ -1095,6 +1101,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                                                             gridMetrics,
                                                         clipDragController:
                                                             _clipDragController,
+                                                        reorderController:
+                                                            _trackReorderController,
                                                         scrollPhysics:
                                                             const _ControlReservedScrollPhysics(),
                                                         onSeek:

@@ -39,6 +39,10 @@ class TrackHeader extends StatefulWidget {
     required this.onPanChanged,
     required this.onPanChangeEnd,
     required this.onPanReset,
+    required this.onReorderStarted,
+    required this.onReorderUpdated,
+    required this.onReorderEnded,
+    this.isReorderDragging = false,
     this.meterController,
     this.trackId,
   });
@@ -73,6 +77,10 @@ class TrackHeader extends StatefulWidget {
   final ValueChanged<double> onPanChangeStart;
   final ValueChanged<double> onPanChangeEnd;
   final VoidCallback onPanReset;
+  final VoidCallback onReorderStarted;
+  final ValueChanged<DragUpdateDetails> onReorderUpdated;
+  final VoidCallback onReorderEnded;
+  final bool isReorderDragging;
 
   @override
   State<TrackHeader> createState() => _TrackHeaderState();
@@ -216,15 +224,34 @@ class _TrackHeaderState extends State<TrackHeader> {
         child: Container(
           width: trackHeaderWidth,
           height: trackHeight,
-          padding: const EdgeInsets.fromLTRB(12, 12, 5, 12),
+          padding: const EdgeInsets.fromLTRB(5, 12, 5, 12),
           decoration: BoxDecoration(
+            color: widget.isReorderDragging
+                ? colorScheme.primary.withValues(alpha: 0.08)
+                : null,
             border: Border(
+              left: BorderSide(
+                color: widget.isReorderDragging
+                    ? colorScheme.primary.withValues(alpha: 0.9)
+                    : Colors.transparent,
+                width: widget.isReorderDragging ? 2 : 0,
+              ),
               right: BorderSide(color: colorScheme.outlineVariant),
               bottom: BorderSide(color: colorScheme.outlineVariant),
             ),
           ),
           child: Row(
             children: [
+              _TrackReorderHandle(
+                trackId: widget.trackId ?? widget.name,
+                trackName: widget.name,
+                trackColor: Color(widget.colorValue),
+                isDragging: widget.isReorderDragging,
+                onDragStarted: widget.onReorderStarted,
+                onDragUpdate: widget.onReorderUpdated,
+                onDragEnd: widget.onReorderEnded,
+              ),
+              const SizedBox(width: 3),
               Expanded(
                 child: Column(
                   children: [
@@ -456,6 +483,95 @@ class _TrackHeaderState extends State<TrackHeader> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
+  }
+}
+
+class _TrackReorderHandle extends StatelessWidget {
+  const _TrackReorderHandle({
+    required this.trackId,
+    required this.trackName,
+    required this.trackColor,
+    required this.isDragging,
+    required this.onDragStarted,
+    required this.onDragUpdate,
+    required this.onDragEnd,
+  });
+
+  final String trackId;
+  final String trackName;
+  final Color trackColor;
+  final bool isDragging;
+  final VoidCallback onDragStarted;
+  final ValueChanged<DragUpdateDetails> onDragUpdate;
+  final VoidCallback onDragEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final grip = MouseRegion(
+      cursor: isDragging
+          ? SystemMouseCursors.grabbing
+          : SystemMouseCursors.grab,
+      child: SizedBox(
+        width: 18,
+        height: 38,
+        child: Icon(
+          Icons.drag_indicator,
+          size: 17,
+          color: colorScheme.onSurfaceVariant.withValues(
+            alpha: isDragging ? 1 : 0.72,
+          ),
+        ),
+      ),
+    );
+
+    return Tooltip(
+      message: 'Drag to reorder track',
+      child: Semantics(
+        label: 'Drag $trackName to reorder track',
+        child: Draggable<String>(
+          key: ValueKey('track-reorder-handle-$trackId'),
+          data: trackId,
+          dragAnchorStrategy: pointerDragAnchorStrategy,
+          feedbackOffset: const Offset(12, 12),
+          onDragStarted: onDragStarted,
+          onDragUpdate: onDragUpdate,
+          onDragEnd: (_) => onDragEnd(),
+          feedback: Material(
+            color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.94),
+            elevation: 7,
+            borderRadius: BorderRadius.circular(7),
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 180),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(7),
+                border: Border.all(
+                  color: colorScheme.primary.withValues(alpha: 0.7),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.drag_indicator, size: 16, color: trackColor),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      trackName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          childWhenDragging: Opacity(opacity: 0.38, child: grip),
+          child: grip,
         ),
       ),
     );

@@ -24,6 +24,9 @@ void main() {
     VoidCallback? onDeletePressed,
     VoidCallback? onVolumeReset,
     VoidCallback? onPanReset,
+    VoidCallback? onReorderStarted,
+    ValueChanged<DragUpdateDetails>? onReorderUpdated,
+    VoidCallback? onReorderEnded,
   }) {
     return tester.pumpWidget(
       MaterialApp(
@@ -57,6 +60,9 @@ void main() {
               onPanChanged: (_) {},
               onPanChangeEnd: (_) {},
               onPanReset: onPanReset ?? () {},
+              onReorderStarted: onReorderStarted ?? () {},
+              onReorderUpdated: onReorderUpdated ?? (_) {},
+              onReorderEnded: onReorderEnded ?? () {},
             ),
           ),
         ),
@@ -357,5 +363,44 @@ void main() {
     await tester.pump(const Duration(milliseconds: 350));
 
     expect(resets, 1);
+  });
+
+  testWidgets('only the compact reorder handle starts a track drag', (
+    tester,
+  ) async {
+    var starts = 0;
+    var updates = 0;
+    var ends = 0;
+    await pumpHeader(
+      tester,
+      onRename: (_) {},
+      onReorderStarted: () => starts++,
+      onReorderUpdated: (_) => updates++,
+      onReorderEnded: () => ends++,
+    );
+
+    expect(find.byTooltip('Drag to reorder track'), findsOneWidget);
+    final volumeGesture = await tester.startGesture(
+      tester.getCenter(find.byKey(const ValueKey('track-volume-slider'))),
+    );
+    await volumeGesture.moveBy(const Offset(20, 0));
+    await volumeGesture.up();
+    await tester.pump();
+    expect(starts, 0);
+
+    final reorderGesture = await tester.startGesture(
+      tester.getCenter(
+        find.byKey(const ValueKey('track-reorder-handle-Track 1')),
+      ),
+    );
+    await reorderGesture.moveBy(const Offset(0, 30));
+    await tester.pump();
+    await reorderGesture.up();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(starts, 1);
+    expect(updates, greaterThan(0));
+    expect(ends, 1);
+    expect(tester.takeException(), isNull);
   });
 }

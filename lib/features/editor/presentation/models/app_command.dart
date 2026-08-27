@@ -179,6 +179,13 @@ abstract final class EditorCommands {
     category: AppCommandCategory.editing,
   );
 
+  static const reorderTrack = AppCommand(
+    title: 'Reorder Track',
+    description: 'Change the vertical order of an audio track.',
+    shortcutParts: ['Drag Track Handle'],
+    category: AppCommandCategory.editing,
+  );
+
   static const snapToGrid = AppCommand(
     title: 'Snap to Grid',
     description:
@@ -208,6 +215,7 @@ abstract final class EditorCommands {
     changeTrackColor,
     addAudioTrack,
     deleteTrack,
+    reorderTrack,
     playPause,
     toggleLoop,
     setLoopRegion,

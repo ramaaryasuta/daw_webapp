@@ -113,4 +113,17 @@ void main() {
     expect(delete.shortcutParts, ['Track Actions', 'Delete Track']);
     expect(delete.description, contains('clips'));
   });
+
+  test('Help commands define the track reorder handle gesture once', () {
+    final matches = EditorCommands.all.where(
+      (command) => command.title == 'Reorder Track',
+    );
+
+    expect(matches, hasLength(1));
+    expect(matches.single.shortcutParts, ['Drag Track Handle']);
+    expect(
+      matches.single.description,
+      'Change the vertical order of an audio track.',
+    );
+  });
 }

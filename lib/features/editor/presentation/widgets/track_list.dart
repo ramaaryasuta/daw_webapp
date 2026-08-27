@@ -13,116 +13,211 @@ import '../../domain/daw_track.dart';
 import '../../domain/timeline_scale.dart';
 import '../controllers/timeline_clip_drag_controller.dart';
 import '../controllers/audio_meter_controller.dart';
+import '../controllers/track_reorder_drag_controller.dart';
 import 'delete_track_dialog.dart';
 import 'track_header.dart';
 import 'track_lane_background_painter.dart';
 import 'timeline_view.dart';
 
-class TrackHeaderList extends ConsumerWidget {
+class TrackHeaderList extends ConsumerStatefulWidget {
   const TrackHeaderList({
     super.key,
     required this.scrollController,
     required this.meterController,
+    required this.reorderController,
   });
 
   final ScrollController scrollController;
   final AudioMeterController meterController;
+  final TrackReorderDragController reorderController;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<TrackHeaderList> createState() => _TrackHeaderListState();
+}
+
+class _TrackHeaderListState extends ConsumerState<TrackHeaderList> {
+  static const double _autoScrollEdge = 46;
+  static const double _maximumAutoScrollStep = 14;
+
+  @override
+  Widget build(BuildContext context) {
     final editorState = ref.watch(editorControllerProvider);
     final controller = ref.read(editorControllerProvider.notifier);
     final colorScheme = Theme.of(context).colorScheme;
     final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
 
-    final trackList = ListView.builder(
-      controller: scrollController,
-      padding: EdgeInsets.zero,
-      itemCount: editorState.tracks.length,
-      itemExtent: trackHeight,
-      itemBuilder: (context, index) {
-        final track = editorState.tracks[index];
-
-        return TrackHeader(
-          key: ValueKey(track.id),
-          name: track.name,
-          colorValue: track.colorValue,
-          volumeDb: track.volumeDb,
-          pan: track.pan,
-          isMuted: track.isMuted,
-          isSolo: track.isSolo,
-          isSelected: editorState.selectedTrackId == track.id,
-          meterController: meterController,
-          trackId: track.id,
-          onTap: () => controller.selectTrack(track.id),
-          onRename: (name) => controller.renameTrack(track.id, name),
-          onColorEditStarted: () => controller.beginTrackColorChange(track.id),
-          onColorPreviewed: (colorValue) =>
-              controller.previewTrackColor(track.id, colorValue),
-          onColorEditCommitted: () =>
-              controller.commitTrackColorChange(track.id),
-          onColorEditCancelled: () =>
-              controller.cancelTrackColorChange(track.id),
-          onColorSelected: (colorValue) =>
-              controller.setTrackColor(track.id, colorValue),
-          onMutePressed: () => controller.toggleMute(track.id),
-          onSoloPressed: () => controller.toggleSolo(track.id),
-          onDeletePressed: () async {
-            if (track.clips.isNotEmpty) {
-              final confirmed = await showDeleteTrackConfirmation(
-                context,
-                clipCount: track.clips.length,
-              );
-              if (!confirmed || !context.mounted) {
-                return;
-              }
+    return ValueListenableBuilder<TrackReorderDragState?>(
+      valueListenable: widget.reorderController,
+      builder: (context, dragState, _) {
+        final tracks = _tracksForReorderPreview(editorState.tracks, dragState);
+        final trackList = ListView.builder(
+          controller: widget.scrollController,
+          padding: EdgeInsets.zero,
+          itemCount: tracks.length,
+          itemExtent: trackHeight,
+          findChildIndexCallback: (key) {
+            if (key is! ValueKey<String>) {
+              return null;
             }
-            await controller.removeTrack(track.id);
+            final index = tracks.indexWhere((track) => track.id == key.value);
+            return index < 0 ? null : index;
           },
-          onVolumeChangeStart: (_) => controller.beginVolumeChange(track.id),
-          onVolumeChanged: (value) => controller.previewVolume(track.id, value),
-          onVolumeChangeEnd: (_) => controller.commitVolumeChange(track.id),
-          onVolumeReset: () => controller.resetVolume(track.id),
-          onPanChangeStart: (_) => controller.beginPanChange(track.id),
-          onPanChanged: (value) => controller.previewPan(track.id, value),
-          onPanChangeEnd: (_) => controller.commitPanChange(track.id),
-          onPanReset: () => controller.resetPan(track.id),
-        );
-      },
-    );
+          itemBuilder: (context, index) {
+            final track = tracks[index];
 
-    return AnimatedBuilder(
-      animation: scrollController,
-      child: trackList,
-      builder: (context, child) {
-        final baseColor = colorScheme.surface;
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            IgnorePointer(
-              child: CustomPaint(
-                painter: TrackLaneBackgroundPainter(
-                  baseColor: baseColor,
-                  alternateColor: Color.alphaBlend(
-                    colorScheme.onSurface.withValues(alpha: 0.018),
-                    baseColor,
-                  ),
-                  separatorColor: colorScheme.outlineVariant.withValues(
-                    alpha: 0.72,
-                  ),
-                  rowHeight: trackHeight,
-                  scrollOffset: scrollController.hasClients
-                      ? scrollController.offset
-                      : 0,
-                  devicePixelRatio: devicePixelRatio,
-                ),
+            return TrackHeader(
+              key: ValueKey(track.id),
+              name: track.name,
+              colorValue: track.colorValue,
+              volumeDb: track.volumeDb,
+              pan: track.pan,
+              isMuted: track.isMuted,
+              isSolo: track.isSolo,
+              isSelected: editorState.selectedTrackId == track.id,
+              isReorderDragging: dragState?.draggedTrackId == track.id,
+              meterController: widget.meterController,
+              trackId: track.id,
+              onReorderStarted: () => widget.reorderController.start(
+                trackId: track.id,
+                trackIds: editorState.tracks.map((track) => track.id),
               ),
-            ),
-            child!,
-          ],
+              onReorderUpdated: (details) =>
+                  _updateReorder(details, editorState.tracks.length),
+              onReorderEnded: () {
+                final orderedTrackIds = widget.reorderController.finish();
+                if (orderedTrackIds != null) {
+                  controller.reorderTracks(orderedTrackIds);
+                }
+              },
+              onTap: () => controller.selectTrack(track.id),
+              onRename: (name) => controller.renameTrack(track.id, name),
+              onColorEditStarted: () =>
+                  controller.beginTrackColorChange(track.id),
+              onColorPreviewed: (colorValue) =>
+                  controller.previewTrackColor(track.id, colorValue),
+              onColorEditCommitted: () =>
+                  controller.commitTrackColorChange(track.id),
+              onColorEditCancelled: () =>
+                  controller.cancelTrackColorChange(track.id),
+              onColorSelected: (colorValue) =>
+                  controller.setTrackColor(track.id, colorValue),
+              onMutePressed: () => controller.toggleMute(track.id),
+              onSoloPressed: () => controller.toggleSolo(track.id),
+              onDeletePressed: () async {
+                if (track.clips.isNotEmpty) {
+                  final confirmed = await showDeleteTrackConfirmation(
+                    context,
+                    clipCount: track.clips.length,
+                  );
+                  if (!confirmed || !context.mounted) {
+                    return;
+                  }
+                }
+                await controller.removeTrack(track.id);
+              },
+              onVolumeChangeStart: (_) =>
+                  controller.beginVolumeChange(track.id),
+              onVolumeChanged: (value) =>
+                  controller.previewVolume(track.id, value),
+              onVolumeChangeEnd: (_) => controller.commitVolumeChange(track.id),
+              onVolumeReset: () => controller.resetVolume(track.id),
+              onPanChangeStart: (_) => controller.beginPanChange(track.id),
+              onPanChanged: (value) => controller.previewPan(track.id, value),
+              onPanChangeEnd: (_) => controller.commitPanChange(track.id),
+              onPanReset: () => controller.resetPan(track.id),
+            );
+          },
+        );
+
+        return AnimatedBuilder(
+          animation: widget.scrollController,
+          child: trackList,
+          builder: (context, child) {
+            final baseColor = colorScheme.surface;
+            final scrollOffset = widget.scrollController.hasClients
+                ? widget.scrollController.offset
+                : 0.0;
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                IgnorePointer(
+                  child: CustomPaint(
+                    painter: TrackLaneBackgroundPainter(
+                      baseColor: baseColor,
+                      alternateColor: Color.alphaBlend(
+                        colorScheme.onSurface.withValues(alpha: 0.018),
+                        baseColor,
+                      ),
+                      separatorColor: colorScheme.outlineVariant.withValues(
+                        alpha: 0.72,
+                      ),
+                      rowHeight: trackHeight,
+                      scrollOffset: scrollOffset,
+                      devicePixelRatio: devicePixelRatio,
+                    ),
+                  ),
+                ),
+                child!,
+                if (dragState != null)
+                  _TrackReorderOverlay(
+                    dragState: dragState,
+                    scrollOffset: scrollOffset,
+                    highlightDraggedRow: false,
+                  ),
+              ],
+            );
+          },
         );
       },
     );
+  }
+
+  void _updateReorder(DragUpdateDetails details, int trackCount) {
+    if (trackCount == 0) {
+      return;
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox) {
+      return;
+    }
+    final localPosition = renderObject.globalToLocal(details.globalPosition);
+    _autoScroll(localPosition.dy, renderObject.size.height);
+    final scrollOffset = widget.scrollController.hasClients
+        ? widget.scrollController.offset
+        : 0.0;
+    final destinationIndex = ((localPosition.dy + scrollOffset) / trackHeight)
+        .floor()
+        .clamp(0, trackCount - 1);
+    widget.reorderController.updateDestinationIndex(destinationIndex);
+  }
+
+  void _autoScroll(double localY, double viewportHeight) {
+    if (!widget.scrollController.hasClients) {
+      return;
+    }
+    var delta = 0.0;
+    if (localY < _autoScrollEdge) {
+      final intensity = ((_autoScrollEdge - localY) / _autoScrollEdge).clamp(
+        0.0,
+        1.0,
+      );
+      delta = -_maximumAutoScrollStep * intensity;
+    } else if (localY > viewportHeight - _autoScrollEdge) {
+      final intensity =
+          ((localY - (viewportHeight - _autoScrollEdge)) / _autoScrollEdge)
+              .clamp(0.0, 1.0);
+      delta = _maximumAutoScrollStep * intensity;
+    }
+    if (delta == 0) {
+      return;
+    }
+    final position = widget.scrollController.position;
+    final target = (widget.scrollController.offset + delta)
+        .clamp(position.minScrollExtent, position.maxScrollExtent)
+        .toDouble();
+    if (target != widget.scrollController.offset) {
+      widget.scrollController.jumpTo(target);
+    }
   }
 }
 
@@ -133,6 +228,7 @@ class TimelineTrackList extends ConsumerStatefulWidget {
     required this.scrollController,
     required this.gridMetrics,
     required this.clipDragController,
+    required this.reorderController,
     required this.scrollPhysics,
     required this.onSeek,
   });
@@ -141,6 +237,7 @@ class TimelineTrackList extends ConsumerStatefulWidget {
   final ScrollController scrollController;
   final TimelineGridMetrics gridMetrics;
   final TimelineClipDragController clipDragController;
+  final TrackReorderDragController reorderController;
   final ScrollPhysics scrollPhysics;
   final ValueChanged<double> onSeek;
 
@@ -161,7 +258,7 @@ class _TimelineTrackListState extends ConsumerState<TimelineTrackList> {
 
   @override
   Widget build(BuildContext context) {
-    final tracks = ref.watch(
+    final authoritativeTracks = ref.watch(
       editorControllerProvider.select(
         (state) => _TimelineTracksSnapshot(state.tracks),
       ),
@@ -172,153 +269,185 @@ class _TimelineTrackListState extends ConsumerState<TimelineTrackList> {
     final bpm = ref.watch(tempoControllerProvider.select((state) => state.bpm));
     final snapSettings = ref.watch(snapControllerProvider);
     final controller = ref.read(editorControllerProvider.notifier);
-    final effectiveSelection = _marqueePointer == null
-        ? selectedClipIds
-        : _marqueePreviewSelection;
-    final selectedStarts = [
-      for (final track in tracks.values)
-        for (final clip in track.clips)
-          if (effectiveSelection.contains(clip.id)) clip.timelineStartSeconds,
-    ];
-    final groupMinimumStartSeconds = selectedStarts.isEmpty
-        ? 0.0
-        : selectedStarts.reduce(math.min);
-    final selectedTrackIndices = [
-      for (var index = 0; index < tracks.values.length; index++)
-        if (tracks.values[index].clips.any(
-          (clip) => effectiveSelection.contains(clip.id),
-        ))
-          index,
-    ];
-    final minimumSelectedTrackIndex = selectedTrackIndices.isEmpty
-        ? 0
-        : selectedTrackIndices.reduce(math.min);
-    final maximumSelectedTrackIndex = selectedTrackIndices.isEmpty
-        ? 0
-        : selectedTrackIndices.reduce(math.max);
-    final orderedTrackColorValues = [
-      for (final track in tracks.values) track.colorValue,
-    ];
+    return ValueListenableBuilder<TrackReorderDragState?>(
+      valueListenable: widget.reorderController,
+      builder: (context, reorderState, _) {
+        final tracks = _TimelineTracksSnapshot(
+          _tracksForReorderPreview(authoritativeTracks.values, reorderState),
+        );
+        final effectiveSelection = _marqueePointer == null
+            ? selectedClipIds
+            : _marqueePreviewSelection;
+        final selectedStarts = [
+          for (final track in tracks.values)
+            for (final clip in track.clips)
+              if (effectiveSelection.contains(clip.id))
+                clip.timelineStartSeconds,
+        ];
+        final groupMinimumStartSeconds = selectedStarts.isEmpty
+            ? 0.0
+            : selectedStarts.reduce(math.min);
+        final selectedTrackIndices = [
+          for (var index = 0; index < tracks.values.length; index++)
+            if (tracks.values[index].clips.any(
+              (clip) => effectiveSelection.contains(clip.id),
+            ))
+              index,
+        ];
+        final minimumSelectedTrackIndex = selectedTrackIndices.isEmpty
+            ? 0
+            : selectedTrackIndices.reduce(math.min);
+        final maximumSelectedTrackIndex = selectedTrackIndices.isEmpty
+            ? 0
+            : selectedTrackIndices.reduce(math.max);
+        final orderedTrackColorValues = [
+          for (final track in tracks.values) track.colorValue,
+        ];
 
-    return Listener(
-      key: widget.viewportKey,
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: (event) => _beginMarquee(event, tracks, selectedClipIds),
-      onPointerMove: (event) => _updateMarquee(event, tracks),
-      onPointerUp: _commitMarquee,
-      onPointerCancel: _cancelMarquee,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          ListView.builder(
-            controller: widget.scrollController,
-            physics: widget.scrollPhysics,
-            padding: EdgeInsets.zero,
-            itemCount: tracks.values.length,
-            itemExtent: trackHeight,
-            itemBuilder: (context, index) {
-              final track = tracks.values[index];
+        return Listener(
+          key: widget.viewportKey,
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (event) =>
+              _beginMarquee(event, tracks, selectedClipIds),
+          onPointerMove: (event) => _updateMarquee(event, tracks),
+          onPointerUp: _commitMarquee,
+          onPointerCancel: _cancelMarquee,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ListView.builder(
+                controller: widget.scrollController,
+                physics: widget.scrollPhysics,
+                padding: EdgeInsets.zero,
+                itemCount: tracks.values.length,
+                itemExtent: trackHeight,
+                findChildIndexCallback: (key) {
+                  if (key is! ValueKey<String>) {
+                    return null;
+                  }
+                  final index = tracks.values.indexWhere(
+                    (track) => track.id == key.value,
+                  );
+                  return index < 0 ? null : index;
+                },
+                itemBuilder: (context, index) {
+                  final track = tracks.values[index];
 
-              return TimelineTrackLane(
-                key: ValueKey(track.id),
-                clips: track.clips,
-                trackColorValue: track.colorValue,
-                gridMetrics: widget.gridMetrics,
-                selectedClipIds: effectiveSelection,
-                groupMinimumStartSeconds: groupMinimumStartSeconds,
-                trackIndex: index,
-                orderedTrackColorValues: orderedTrackColorValues,
-                minimumSelectedTrackIndex: minimumSelectedTrackIndex,
-                maximumSelectedTrackIndex: maximumSelectedTrackIndex,
-                clipDragController: widget.clipDragController,
-                bpm: bpm,
-                snapSettings: snapSettings,
-                onSeek: widget.onSeek,
-                onSelect: (clipId, toggle, preserveExistingIfSelected) {
-                  Focus.of(context).requestFocus();
-                  controller.selectClip(
-                    trackId: track.id,
-                    clipId: clipId,
-                    toggle: toggle,
-                    preserveExistingIfSelected: preserveExistingIfSelected,
+                  return TimelineTrackLane(
+                    key: ValueKey(track.id),
+                    clips: track.clips,
+                    trackColorValue: track.colorValue,
+                    gridMetrics: widget.gridMetrics,
+                    selectedClipIds: effectiveSelection,
+                    groupMinimumStartSeconds: groupMinimumStartSeconds,
+                    trackIndex: index,
+                    orderedTrackColorValues: orderedTrackColorValues,
+                    minimumSelectedTrackIndex: minimumSelectedTrackIndex,
+                    maximumSelectedTrackIndex: maximumSelectedTrackIndex,
+                    clipDragController: widget.clipDragController,
+                    bpm: bpm,
+                    snapSettings: snapSettings,
+                    onSeek: widget.onSeek,
+                    onSelect: (clipId, toggle, preserveExistingIfSelected) {
+                      Focus.of(context).requestFocus();
+                      controller.selectClip(
+                        trackId: track.id,
+                        clipId: clipId,
+                        toggle: toggle,
+                        preserveExistingIfSelected: preserveExistingIfSelected,
+                      );
+                    },
+                    onMoveCommitted: (clipId, result) {
+                      controller.moveClip(
+                        clipId,
+                        result.startSeconds,
+                        trackDelta: result.trackDelta,
+                      );
+                    },
+                    onTrimCommitted: (clipId, result) {
+                      controller.updateClipTrim(
+                        clipId: clipId,
+                        timelineStartSeconds: result.startSeconds,
+                        sourceStartSeconds: result.sourceStartSeconds,
+                        clipDurationSeconds: result.clipDurationSeconds,
+                      );
+                    },
+                    onGainChangeStart: controller.beginClipGainChange,
+                    onGainChanged: controller.previewClipGain,
+                    onGainChangeEnd: controller.commitClipGainChange,
+                    onGainReset: controller.resetClipGain,
+                    onFadeInChangeStart: controller.beginFadeInChange,
+                    onFadeInChanged: controller.previewFadeIn,
+                    onFadeInChangeEnd: controller.commitFadeInChange,
+                    onFadeInReset: controller.resetFadeIn,
+                    onFadeOutChangeStart: controller.beginFadeOutChange,
+                    onFadeOutChanged: controller.previewFadeOut,
+                    onFadeOutChangeEnd: controller.commitFadeOutChange,
+                    onFadeOutReset: controller.resetFadeOut,
                   );
                 },
-                onMoveCommitted: (clipId, result) {
-                  controller.moveClip(
-                    clipId,
-                    result.startSeconds,
-                    trackDelta: result.trackDelta,
+              ),
+              ValueListenableBuilder<TimelineClipDragState?>(
+                valueListenable: widget.clipDragController,
+                builder: (context, dragState, _) {
+                  final destinationIndex =
+                      dragState?.mode == TimelineClipDragMode.move
+                      ? dragState?.destinationTrackIndex
+                      : null;
+                  if (destinationIndex == null ||
+                      destinationIndex < 0 ||
+                      destinationIndex >= tracks.values.length) {
+                    return const SizedBox.shrink();
+                  }
+                  final scrollOffset = widget.scrollController.hasClients
+                      ? widget.scrollController.offset
+                      : 0.0;
+                  final color = Theme.of(context).colorScheme.primary;
+                  return Positioned(
+                    left: 0,
+                    right: 0,
+                    top: destinationIndex * trackHeight - scrollOffset,
+                    height: trackHeight,
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.055),
+                          border: Border.all(
+                            color: color.withValues(alpha: 0.5),
+                          ),
+                        ),
+                      ),
+                    ),
                   );
                 },
-                onTrimCommitted: (clipId, result) {
-                  controller.updateClipTrim(
-                    clipId: clipId,
-                    timelineStartSeconds: result.startSeconds,
-                    sourceStartSeconds: result.sourceStartSeconds,
-                    clipDurationSeconds: result.clipDurationSeconds,
-                  );
-                },
-                onGainChangeStart: controller.beginClipGainChange,
-                onGainChanged: controller.previewClipGain,
-                onGainChangeEnd: controller.commitClipGainChange,
-                onGainReset: controller.resetClipGain,
-                onFadeInChangeStart: controller.beginFadeInChange,
-                onFadeInChanged: controller.previewFadeIn,
-                onFadeInChangeEnd: controller.commitFadeInChange,
-                onFadeInReset: controller.resetFadeIn,
-                onFadeOutChangeStart: controller.beginFadeOutChange,
-                onFadeOutChanged: controller.previewFadeOut,
-                onFadeOutChangeEnd: controller.commitFadeOutChange,
-                onFadeOutReset: controller.resetFadeOut,
-              );
-            },
-          ),
-          ValueListenableBuilder<TimelineClipDragState?>(
-            valueListenable: widget.clipDragController,
-            builder: (context, dragState, _) {
-              final destinationIndex =
-                  dragState?.mode == TimelineClipDragMode.move
-                  ? dragState?.destinationTrackIndex
-                  : null;
-              if (destinationIndex == null ||
-                  destinationIndex < 0 ||
-                  destinationIndex >= tracks.values.length) {
-                return const SizedBox.shrink();
-              }
-              final scrollOffset = widget.scrollController.hasClients
-                  ? widget.scrollController.offset
-                  : 0.0;
-              final color = Theme.of(context).colorScheme.primary;
-              return Positioned(
-                left: 0,
-                right: 0,
-                top: destinationIndex * trackHeight - scrollOffset,
-                height: trackHeight,
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.055),
-                      border: Border.all(color: color.withValues(alpha: 0.5)),
+              ),
+              if (reorderState != null)
+                AnimatedBuilder(
+                  animation: widget.scrollController,
+                  builder: (context, _) => _TrackReorderOverlay(
+                    dragState: reorderState,
+                    scrollOffset: widget.scrollController.hasClients
+                        ? widget.scrollController.offset
+                        : 0.0,
+                    highlightDraggedRow: true,
+                  ),
+                ),
+              if (tracks.values.isEmpty) const _EmptyArrangementHint(),
+              if (_marqueeHasDragged && _marqueeRectInViewport != null)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      painter: _MarqueeSelectionPainter(
+                        rect: _marqueeRectInViewport!,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
                   ),
                 ),
-              );
-            },
+            ],
           ),
-          if (tracks.values.isEmpty) const _EmptyArrangementHint(),
-          if (_marqueeHasDragged && _marqueeRectInViewport != null)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: CustomPaint(
-                  painter: _MarqueeSelectionPainter(
-                    rect: _marqueeRectInViewport!,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -505,6 +634,102 @@ class _MarqueeSelectionPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _MarqueeSelectionPainter oldDelegate) =>
       oldDelegate.rect != rect || oldDelegate.color != color;
+}
+
+List<DawTrack> _tracksForReorderPreview(
+  List<DawTrack> authoritativeTracks,
+  TrackReorderDragState? dragState,
+) {
+  if (dragState == null ||
+      dragState.originalTrackIds.length != authoritativeTracks.length) {
+    return authoritativeTracks;
+  }
+  final tracksById = {for (final track in authoritativeTracks) track.id: track};
+  final previewTrackIds = dragState.previewTrackIds;
+  if (previewTrackIds.length != tracksById.length ||
+      !previewTrackIds.every(tracksById.containsKey)) {
+    return authoritativeTracks;
+  }
+  return [for (final trackId in previewTrackIds) tracksById[trackId]!];
+}
+
+class _TrackReorderOverlay extends StatelessWidget {
+  const _TrackReorderOverlay({
+    required this.dragState,
+    required this.scrollOffset,
+    required this.highlightDraggedRow,
+  });
+
+  final TrackReorderDragState dragState;
+  final double scrollOffset;
+  final bool highlightDraggedRow;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: CustomPaint(
+          key: ValueKey(
+            highlightDraggedRow
+                ? 'track-reorder-timeline-overlay'
+                : 'track-reorder-header-overlay',
+          ),
+          painter: _TrackReorderOverlayPainter(
+            destinationIndex: dragState.destinationIndex,
+            scrollOffset: scrollOffset,
+            color: Theme.of(context).colorScheme.primary,
+            highlightDraggedRow: highlightDraggedRow,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TrackReorderOverlayPainter extends CustomPainter {
+  const _TrackReorderOverlayPainter({
+    required this.destinationIndex,
+    required this.scrollOffset,
+    required this.color,
+    required this.highlightDraggedRow,
+  });
+
+  final int destinationIndex;
+  final double scrollOffset;
+  final Color color;
+  final bool highlightDraggedRow;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rowTop = destinationIndex * trackHeight - scrollOffset;
+    if (highlightDraggedRow) {
+      canvas.drawRect(
+        Rect.fromLTWH(0, rowTop, size.width, trackHeight),
+        Paint()..color = color.withValues(alpha: 0.055),
+      );
+    }
+
+    final indicatorY = rowTop.clamp(1.5, size.height - 1.5).toDouble();
+    canvas.drawRect(
+      Rect.fromLTWH(0, indicatorY - 4, size.width, 8),
+      Paint()..color = color.withValues(alpha: 0.09),
+    );
+    canvas.drawLine(
+      Offset(0, indicatorY),
+      Offset(size.width, indicatorY),
+      Paint()
+        ..color = color
+        ..strokeWidth = 2.5,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _TrackReorderOverlayPainter oldDelegate) {
+    return oldDelegate.destinationIndex != destinationIndex ||
+        oldDelegate.scrollOffset != scrollOffset ||
+        oldDelegate.color != color ||
+        oldDelegate.highlightDraggedRow != highlightDraggedRow;
+  }
 }
 
 /// Ignores mixer-only track copies so fader drags do not rebuild waveforms.

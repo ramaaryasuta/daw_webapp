@@ -454,4 +454,90 @@ void main() {
     expect(redo.snapshot.hasSameProjectState(after), isTrue);
     expect(redo.history.past.last.label, 'Delete Track');
   });
+
+  test('track reorder is one undoable order-only edit with stable objects', () {
+    const first = DawTrack(id: 'track-a', name: 'First', clips: []);
+    final middle = snapshot(
+      start: 6.25,
+      sourceStart: 1.5,
+      duration: 7,
+      trackName: 'Vocals',
+      volumeDb: -4,
+      pan: -0.3,
+      isMuted: true,
+      fadeIn: 0.4,
+      fadeOut: 0.6,
+    ).tracks.single;
+    const last = DawTrack(id: 'track-c', name: 'Last', clips: []);
+    final before = ProjectSnapshot(
+      tracks: [first, middle, last],
+      bpm: 120,
+      selectedTrackId: middle.id,
+      selectedClipIds: {middle.clips.single.id},
+    );
+    final after = ProjectSnapshot(
+      tracks: [last, first, middle],
+      bpm: 120,
+      selectedTrackId: middle.id,
+      selectedClipIds: {middle.clips.single.id},
+    );
+
+    final history = EditorHistory().record(
+      label: 'Reorder Tracks',
+      before: before,
+      after: after,
+    );
+
+    expect(history.past, hasLength(1));
+    expect(history.past.single.label, 'Reorder Tracks');
+    expect(identical(after.tracks[2], middle), isTrue);
+    expect(after.tracks[2].clips.single.timelineStartSeconds, 6.25);
+    expect(after.tracks[2].volumeDb, -4);
+    expect(after.tracks[2].isMuted, isTrue);
+
+    final undo = history.undo(after)!;
+    expect(undo.snapshot.tracks.map((track) => track.id), [
+      first.id,
+      middle.id,
+      last.id,
+    ]);
+    expect(identical(undo.snapshot.tracks[1], middle), isTrue);
+
+    final redo = undo.history.redo(undo.snapshot)!;
+    expect(redo.snapshot.tracks.map((track) => track.id), [
+      last.id,
+      first.id,
+      middle.id,
+    ]);
+    expect(
+      identical(redo.snapshot.tracks[2].clips.single.audio, asset),
+      isTrue,
+    );
+  });
+
+  test('recording an unchanged track order is a history no-op', () {
+    const tracks = [
+      DawTrack(id: 'track-a', name: 'First', clips: []),
+      DawTrack(id: 'track-b', name: 'Second', clips: []),
+    ];
+    final before = ProjectSnapshot(
+      tracks: tracks,
+      bpm: 120,
+      selectedTrackId: tracks.first.id,
+    );
+    final after = ProjectSnapshot(
+      tracks: tracks,
+      bpm: 120,
+      selectedTrackId: tracks.first.id,
+    );
+    final history = EditorHistory();
+
+    expect(
+      identical(
+        history.record(label: 'Reorder Tracks', before: before, after: after),
+        history,
+      ),
+      isTrue,
+    );
+  });
 }
