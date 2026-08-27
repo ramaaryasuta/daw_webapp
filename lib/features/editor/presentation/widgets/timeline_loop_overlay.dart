@@ -45,77 +45,80 @@ class TimelineLoopOverlay extends StatelessWidget {
       baseLaneColor,
     );
 
-    return AnimatedBuilder(
-      animation: verticalScrollController,
-      child: child,
-      builder: (context, child) => ColoredBox(
-        color: baseLaneColor,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            IgnorePointer(
-              child: CustomPaint(
-                painter: TrackLaneBackgroundPainter(
-                  baseColor: baseLaneColor,
-                  alternateColor: alternateLaneColor,
-                  separatorColor: colorScheme.outlineVariant.withValues(
-                    alpha: 0.72,
-                  ),
-                  rowHeight: trackHeight,
-                  scrollOffset: verticalScrollController.hasClients
-                      ? verticalScrollController.offset
-                      : 0,
-                  devicePixelRatio: devicePixelRatio,
-                ),
-              ),
-            ),
-            if (rulerMode == TimelineRulerMode.time)
+    return ClipRect(
+      key: const ValueKey('timeline-track-viewport-clip'),
+      child: AnimatedBuilder(
+        animation: verticalScrollController,
+        child: child,
+        builder: (context, child) => ColoredBox(
+          color: baseLaneColor,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
               IgnorePointer(
                 child: CustomPaint(
-                  painter: TimelineGridPainter(
-                    color: colorScheme.outlineVariant,
-                    gridMetrics: gridMetrics,
-                    devicePixelRatio: devicePixelRatio,
-                  ),
-                ),
-              )
-            else
-              IgnorePointer(
-                child: CustomPaint(
-                  painter: MusicalGridPainter(
-                    color: colorScheme.outlineVariant,
-                    gridMetrics: gridMetrics,
-                    bpm: bpm,
-                    settings: snapSettings,
+                  painter: TrackLaneBackgroundPainter(
+                    baseColor: baseLaneColor,
+                    alternateColor: alternateLaneColor,
+                    separatorColor: colorScheme.outlineVariant.withValues(
+                      alpha: 0.72,
+                    ),
+                    rowHeight: trackHeight,
+                    scrollOffset: verticalScrollController.hasClients
+                        ? verticalScrollController.offset
+                        : 0,
                     devicePixelRatio: devicePixelRatio,
                   ),
                 ),
               ),
-            IgnorePointer(
-              child: CustomPaint(
-                painter: TimelineLoopFillPainter(
-                  color: colorScheme.primary,
-                  gridMetrics: gridMetrics,
-                  loopRegion: loopRegion,
-                  isLoopEnabled: isLoopEnabled,
+              if (rulerMode == TimelineRulerMode.time)
+                IgnorePointer(
+                  child: CustomPaint(
+                    painter: TimelineGridPainter(
+                      color: colorScheme.outlineVariant,
+                      gridMetrics: gridMetrics,
+                      devicePixelRatio: devicePixelRatio,
+                    ),
+                  ),
+                )
+              else
+                IgnorePointer(
+                  child: CustomPaint(
+                    painter: MusicalGridPainter(
+                      color: colorScheme.outlineVariant,
+                      gridMetrics: gridMetrics,
+                      bpm: bpm,
+                      settings: snapSettings,
+                      devicePixelRatio: devicePixelRatio,
+                    ),
+                  ),
+                ),
+              IgnorePointer(
+                child: CustomPaint(
+                  painter: TimelineLoopFillPainter(
+                    color: colorScheme.primary,
+                    gridMetrics: gridMetrics,
+                    loopRegion: loopRegion,
+                    isLoopEnabled: isLoopEnabled,
+                  ),
                 ),
               ),
-            ),
-            child!,
-            IgnorePointer(
-              child: CustomPaint(
-                painter: TimelineLoopLinesPainter(
-                  loopColor: colorScheme.primary,
-                  playheadColor: colorScheme.tertiary,
-                  gridMetrics: gridMetrics,
-                  loopRegion: loopRegion,
-                  isLoopEnabled: isLoopEnabled,
-                  playheadSeconds: playheadSeconds,
-                  devicePixelRatio: devicePixelRatio,
+              child!,
+              IgnorePointer(
+                child: CustomPaint(
+                  painter: TimelineLoopLinesPainter(
+                    loopColor: colorScheme.primary,
+                    playheadColor: colorScheme.tertiary,
+                    gridMetrics: gridMetrics,
+                    loopRegion: loopRegion,
+                    isLoopEnabled: isLoopEnabled,
+                    playheadSeconds: playheadSeconds,
+                    devicePixelRatio: devicePixelRatio,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

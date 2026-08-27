@@ -129,44 +129,53 @@ class _TrackHeaderListState extends ConsumerState<TrackHeaderList> {
           },
         );
 
-        return AnimatedBuilder(
-          animation: widget.scrollController,
-          child: trackList,
-          builder: (context, child) {
-            final baseColor = colorScheme.surface;
-            final scrollOffset = widget.scrollController.hasClients
-                ? widget.scrollController.offset
-                : 0.0;
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                IgnorePointer(
-                  child: CustomPaint(
-                    painter: TrackLaneBackgroundPainter(
-                      baseColor: baseColor,
-                      alternateColor: Color.alphaBlend(
-                        colorScheme.onSurface.withValues(alpha: 0.018),
-                        baseColor,
+        return ClipRect(
+          key: const ValueKey('track-header-viewport-clip'),
+          child: AnimatedBuilder(
+            animation: widget.scrollController,
+            child: ScrollConfiguration(
+              key: const ValueKey('track-header-scrollbar-suppression'),
+              behavior: ScrollConfiguration.of(
+                context,
+              ).copyWith(scrollbars: false),
+              child: trackList,
+            ),
+            builder: (context, child) {
+              final baseColor = colorScheme.surface;
+              final scrollOffset = widget.scrollController.hasClients
+                  ? widget.scrollController.offset
+                  : 0.0;
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  IgnorePointer(
+                    child: CustomPaint(
+                      painter: TrackLaneBackgroundPainter(
+                        baseColor: baseColor,
+                        alternateColor: Color.alphaBlend(
+                          colorScheme.onSurface.withValues(alpha: 0.018),
+                          baseColor,
+                        ),
+                        separatorColor: colorScheme.outlineVariant.withValues(
+                          alpha: 0.72,
+                        ),
+                        rowHeight: trackHeight,
+                        scrollOffset: scrollOffset,
+                        devicePixelRatio: devicePixelRatio,
                       ),
-                      separatorColor: colorScheme.outlineVariant.withValues(
-                        alpha: 0.72,
-                      ),
-                      rowHeight: trackHeight,
-                      scrollOffset: scrollOffset,
-                      devicePixelRatio: devicePixelRatio,
                     ),
                   ),
-                ),
-                child!,
-                if (dragState != null)
-                  _TrackReorderOverlay(
-                    dragState: dragState,
-                    scrollOffset: scrollOffset,
-                    highlightDraggedRow: false,
-                  ),
-              ],
-            );
-          },
+                  child!,
+                  if (dragState != null)
+                    _TrackReorderOverlay(
+                      dragState: dragState,
+                      scrollOffset: scrollOffset,
+                      highlightDraggedRow: false,
+                    ),
+                ],
+              );
+            },
+          ),
         );
       },
     );
