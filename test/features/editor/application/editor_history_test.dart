@@ -30,6 +30,8 @@ void main() {
     double pan = 0,
     bool isMuted = false,
     bool isSolo = false,
+    double fadeIn = 0,
+    double fadeOut = 0,
   }) {
     final original = AudioClip(
       id: 'clip-1',
@@ -37,6 +39,8 @@ void main() {
       timelineStartSeconds: start,
       sourceStartSeconds: sourceStart,
       clipDurationSeconds: duration,
+      fadeInDurationSeconds: fadeIn,
+      fadeOutDurationSeconds: fadeOut,
     );
     return ProjectSnapshot(
       tracks: [
@@ -264,6 +268,30 @@ void main() {
       after: snapshot(start: 0, pan: 0),
     );
     expect(history.canUndo, isFalse);
+  });
+
+  test('clip fades are exact undoable arrangement state', () {
+    final initial = snapshot(start: 0);
+    final faded = snapshot(start: 0, fadeIn: 0.35, fadeOut: 0.5);
+    final history = EditorHistory().record(
+      label: 'Change Fade In',
+      before: initial,
+      after: faded,
+    );
+
+    expect(history.past.single.label, 'Change Fade In');
+    final undo = history.undo(faded)!;
+    expect(undo.snapshot.tracks.single.clips.single.fadeInDurationSeconds, 0);
+    expect(undo.snapshot.tracks.single.clips.single.fadeOutDurationSeconds, 0);
+    final redo = undo.history.redo(undo.snapshot)!;
+    expect(
+      redo.snapshot.tracks.single.clips.single.fadeInDurationSeconds,
+      0.35,
+    );
+    expect(
+      redo.snapshot.tracks.single.clips.single.fadeOutDurationSeconds,
+      0.5,
+    );
   });
 
   test('delete undo and redo preserve an exact trimmed split clip', () {

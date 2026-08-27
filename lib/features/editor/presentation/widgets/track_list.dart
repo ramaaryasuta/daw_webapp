@@ -49,6 +49,8 @@ class TrackHeaderList extends ConsumerWidget {
               controller.commitTrackColorChange(track.id),
           onColorEditCancelled: () =>
               controller.cancelTrackColorChange(track.id),
+          onColorSelected: (colorValue) =>
+              controller.setTrackColor(track.id, colorValue),
           onMutePressed: () => controller.toggleMute(track.id),
           onSoloPressed: () => controller.toggleSolo(track.id),
           onDeletePressed: () => controller.removeTrack(track.id),
@@ -166,6 +168,14 @@ class TimelineTrackList extends ConsumerWidget {
                   clipDurationSeconds: result.clipDurationSeconds,
                 );
               },
+              onFadeInChangeStart: controller.beginFadeInChange,
+              onFadeInChanged: controller.previewFadeIn,
+              onFadeInChangeEnd: controller.commitFadeInChange,
+              onFadeInReset: controller.resetFadeIn,
+              onFadeOutChangeStart: controller.beginFadeOutChange,
+              onFadeOutChanged: controller.previewFadeOut,
+              onFadeOutChangeEnd: controller.commitFadeOutChange,
+              onFadeOutReset: controller.resetFadeOut,
             );
           },
         ),

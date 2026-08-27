@@ -44,6 +44,7 @@ void main() {
               onColorPreviewed: onColorPreviewed ?? (_) {},
               onColorEditCommitted: onColorEditCommitted ?? () {},
               onColorEditCancelled: onColorEditCancelled ?? () {},
+              onColorSelected: (_) {},
               onMutePressed: onMutePressed ?? () {},
               onSoloPressed: onSoloPressed ?? () {},
               onDeletePressed: () {},
@@ -201,25 +202,26 @@ void main() {
     expect(find.byKey(const ValueKey('track-color-popover')), findsNothing);
   });
 
-  testWidgets('track actions repeatedly opens and Rename remains functional', (
-    tester,
-  ) async {
-    await pumpHeader(tester, onRename: (_) {});
+  testWidgets(
+    'track properties repeatedly opens and Rename remains functional',
+    (tester) async {
+      await pumpHeader(tester, onRename: (_) {});
 
-    for (var index = 0; index < 3; index++) {
-      await tester.tap(find.byTooltip('Track actions'));
-      await tester.pumpAndSettle();
-      expect(find.text('Rename'), findsOneWidget);
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pumpAndSettle();
-    }
+      for (var index = 0; index < 3; index++) {
+        await tester.tap(find.byTooltip('Track properties'));
+        await tester.pumpAndSettle();
+        expect(find.text('Track Properties'), findsOneWidget);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+      }
 
-    await tester.tap(find.byTooltip('Track actions'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Rename'));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('track-name-editor')), findsOneWidget);
-  });
+      await tester.tap(find.byTooltip('Track properties'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('track-properties-rename')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('track-name-editor')), findsOneWidget);
+    },
+  );
 
   testWidgets('mixer row exposes symmetrical M/S controls and dB fader', (
     tester,
@@ -281,6 +283,10 @@ void main() {
   ) async {
     await pumpHeader(tester, onRename: (_) {}, pan: -0.42);
 
+    expect(find.byKey(const ValueKey('track-pan-slider')), findsNothing);
+    await tester.tap(find.byTooltip('Track properties'));
+    await tester.pumpAndSettle();
+
     final slider = tester.widget<Slider>(
       find.byKey(const ValueKey('track-pan-slider')),
     );
@@ -289,10 +295,18 @@ void main() {
     expect(find.text('L 42'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
     await pumpHeader(tester, onRename: (_) {}, pan: 0);
+    await tester.tap(find.byTooltip('Track properties'));
+    await tester.pumpAndSettle();
     expect(find.text('C'), findsOneWidget);
 
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
     await pumpHeader(tester, onRename: (_) {}, pan: 0.75);
+    await tester.tap(find.byTooltip('Track properties'));
+    await tester.pumpAndSettle();
     expect(find.text('R 75'), findsOneWidget);
   });
 
@@ -306,6 +320,9 @@ void main() {
       pan: 0.6,
       onPanReset: () => resets++,
     );
+
+    await tester.tap(find.byTooltip('Track properties'));
+    await tester.pumpAndSettle();
 
     final slider = find.byKey(const ValueKey('track-pan-slider'));
     await tester.tap(slider);

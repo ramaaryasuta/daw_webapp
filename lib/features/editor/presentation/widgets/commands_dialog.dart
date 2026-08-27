@@ -12,17 +12,32 @@ Future<void> showCommandsDialog(
   );
 }
 
-class CommandsDialog extends StatelessWidget {
+class CommandsDialog extends StatefulWidget {
   const CommandsDialog({super.key, required this.commands});
 
   final List<AppCommand> commands;
+
+  @override
+  State<CommandsDialog> createState() => _CommandsDialogState();
+}
+
+class _CommandsDialogState extends State<CommandsDialog> {
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final screenSize = MediaQuery.sizeOf(context);
     final maxDialogHeight = screenSize.height * 0.75;
-    final groupedCommands = _groupCommands(commands);
+    final filteredCommands = _filterCommands(widget.commands, _query);
+    final groupedCommands = _groupCommands(filteredCommands);
 
     return Dialog(
       clipBehavior: Clip.antiAlias,
@@ -61,35 +76,89 @@ class CommandsDialog extends StatelessWidget {
                 ],
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              child: TextField(
+                key: const ValueKey('commands-search-field'),
+                controller: _searchController,
+                autofocus: true,
+                maxLines: 1,
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  hintText: 'Search commands...',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          key: const ValueKey('commands-search-clear'),
+                          tooltip: 'Clear search',
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _query = '');
+                          },
+                          icon: const Icon(Icons.close, size: 18),
+                        ),
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: (value) => setState(() => _query = value),
+              ),
+            ),
             Divider(height: 1, color: colorScheme.outlineVariant),
             Flexible(
-              child: ListView(
-                shrinkWrap: true,
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-                children: [
-                  for (final group in groupedCommands.entries) ...[
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-                      child: Text(
-                        group.key.label.toUpperCase(),
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: colorScheme.primary,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.1,
-                        ),
+              child: filteredCommands.isEmpty
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Text('No commands found'),
                       ),
+                    )
+                  : ListView(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                      children: [
+                        for (final group in groupedCommands.entries) ...[
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                            child: Text(
+                              group.key.label.toUpperCase(),
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: colorScheme.primary,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 1.1,
+                                  ),
+                            ),
+                          ),
+                          for (final command in group.value)
+                            _CommandRow(command: command),
+                          const SizedBox(height: 8),
+                        ],
+                      ],
                     ),
-                    for (final command in group.value)
-                      _CommandRow(command: command),
-                    const SizedBox(height: 8),
-                  ],
-                ],
-              ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  List<AppCommand> _filterCommands(List<AppCommand> commands, String query) {
+    final normalizedQuery = query.trim().toLowerCase();
+    if (normalizedQuery.isEmpty) {
+      return commands;
+    }
+
+    return [
+      for (final command in commands)
+        if ([
+          command.title,
+          command.description,
+          command.shortcutParts.join(' '),
+          command.category.label,
+        ].join(' ').toLowerCase().contains(normalizedQuery))
+          command,
+    ];
   }
 
   Map<AppCommandCategory, List<AppCommand>> _groupCommands(

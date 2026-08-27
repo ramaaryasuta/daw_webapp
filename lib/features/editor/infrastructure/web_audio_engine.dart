@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:web/web.dart' as web;
 
+import '../domain/audio_clip.dart';
 import '../domain/daw_track.dart';
 import '../domain/loop_region.dart';
 import '../domain/track_mixer.dart';
@@ -245,11 +246,23 @@ class WebAudioEngine {
         }
 
         final source = _audioContext.createBufferSource();
+        final clipGain = _audioContext.createGain();
         source.buffer = buffer;
-        source.connect(gain);
+        source.connect(clipGain);
+        clipGain.connect(gain);
         final sourceStartTime = contextStartTime + playbackTiming.delaySeconds;
+        final clipLocalStartSeconds =
+            scheduledTimelineStart - clip.timelineStartSeconds;
+        _scheduleClipFadeEnvelope(
+          clipGain.gain,
+          clip: clip,
+          clipLocalStartSeconds: clipLocalStartSeconds,
+          playbackDurationSeconds: playbackDuration,
+          sourceStartTime: sourceStartTime,
+        );
         final scheduledSource = _ScheduledSource(
           node: source,
+          clipGain: clipGain,
           endTime: sourceStartTime + playbackDuration,
         );
         _activeSources.putIfAbsent(track.id, () => []).add(scheduledSource);
@@ -295,6 +308,9 @@ class WebAudioEngine {
         }
         try {
           source.node.disconnect();
+        } catch (_) {}
+        try {
+          source.clipGain.disconnect();
         } catch (_) {}
         sources.removeAt(index);
       }
@@ -370,6 +386,9 @@ class WebAudioEngine {
         try {
           source.node.disconnect();
         } catch (_) {}
+        try {
+          source.clipGain.disconnect();
+        } catch (_) {}
       }
     }
 
@@ -441,6 +460,7 @@ class WebAudioEngine {
         try {
           source.node.stop();
           source.node.disconnect();
+          source.clipGain.disconnect();
         } catch (_) {}
       }
     }
@@ -510,6 +530,27 @@ class WebAudioEngine {
     return peaks;
   }
 
+  void _scheduleClipFadeEnvelope(
+    web.AudioParam gain, {
+    required AudioClip clip,
+    required double clipLocalStartSeconds,
+    required double playbackDurationSeconds,
+    required double sourceStartTime,
+  }) {
+    final points = clipFadeEnvelopeForSegment(
+      clip: clip,
+      clipLocalStartSeconds: clipLocalStartSeconds,
+      playbackDurationSeconds: playbackDurationSeconds,
+    );
+    gain.setValueAtTime(points.first.gain, sourceStartTime);
+    for (final point in points.skip(1)) {
+      gain.linearRampToValueAtTime(
+        point.gain,
+        sourceStartTime + point.offsetSeconds,
+      );
+    }
+  }
+
   Future<void> dispose() async {
     _playRequestId++;
     stopSources();
@@ -521,9 +562,14 @@ class WebAudioEngine {
 }
 
 class _ScheduledSource {
-  const _ScheduledSource({required this.node, required this.endTime});
+  const _ScheduledSource({
+    required this.node,
+    required this.clipGain,
+    required this.endTime,
+  });
 
   final web.AudioBufferSourceNode node;
+  final web.GainNode clipGain;
   final double endTime;
 }
 

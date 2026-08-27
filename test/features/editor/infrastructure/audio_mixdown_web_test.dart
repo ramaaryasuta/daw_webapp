@@ -51,6 +51,8 @@ void main() {
     double pan = 0,
     bool isMuted = false,
     bool isSolo = false,
+    double fadeIn = 0,
+    double fadeOut = 0,
   }) {
     return DawTrack(
       id: id,
@@ -64,6 +66,8 @@ void main() {
           id: 'clip-$id',
           audio: asset,
           clipDurationSeconds: asset.durationSeconds,
+          fadeInDurationSeconds: fadeIn,
+          fadeOutDurationSeconds: fadeOut,
         ),
       ],
     );
@@ -129,6 +133,23 @@ void main() {
     expect(leftRms.right, lessThan(0.0001));
     expect(rightRms.left, lessThan(0.0001));
     expect(rightRms.right, greaterThan(0.05));
+  });
+
+  test('offline WAV applies clip fade envelopes', () async {
+    final unity = _leftChannelRms(
+      (await mixdown.generateWavExport([track('unity')])).wavBytes,
+    );
+    final fullyFaded = _leftChannelRms(
+      (await mixdown.generateWavExport([
+        track(
+          'faded',
+          fadeIn: asset.durationSeconds / 2,
+          fadeOut: asset.durationSeconds / 2,
+        ),
+      ])).wavBytes,
+    );
+
+    expect(fullyFaded / unity, closeTo(math.sqrt(1 / 3), 0.035));
   });
 }
 

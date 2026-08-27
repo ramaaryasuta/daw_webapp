@@ -39,4 +39,16 @@ void main() {
       'Remove the selected audio clip from the arrangement.',
     );
   });
+
+  test('Help commands define the Clip Properties gesture', () {
+    final command = EditorCommands.all.singleWhere(
+      (command) => command.title == 'Clip Properties',
+    );
+
+    expect(command.shortcutParts, ['Double-click Audio Clip']);
+    expect(
+      command.description,
+      'Open Fade In / Fade Out properties for the audio clip.',
+    );
+  });
 }

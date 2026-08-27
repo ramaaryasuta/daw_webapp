@@ -1,16 +1,13 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../domain/daw_track.dart';
 import '../../domain/track_mixer.dart';
 import 'track_color_popover.dart';
+import 'track_properties_popover.dart';
 
 const double trackHeaderWidth = 280;
 const double trackHeight = 110;
-
-enum _TrackAction { rename }
 
 class TrackHeader extends StatefulWidget {
   const TrackHeader({
@@ -28,6 +25,7 @@ class TrackHeader extends StatefulWidget {
     required this.onColorPreviewed,
     required this.onColorEditCommitted,
     required this.onColorEditCancelled,
+    required this.onColorSelected,
     required this.onMutePressed,
     required this.onSoloPressed,
     required this.onDeletePressed,
@@ -56,6 +54,7 @@ class TrackHeader extends StatefulWidget {
   final ValueChanged<int> onColorPreviewed;
   final VoidCallback onColorEditCommitted;
   final VoidCallback onColorEditCancelled;
+  final ValueChanged<int> onColorSelected;
   final VoidCallback onMutePressed;
   final VoidCallback onSoloPressed;
   final VoidCallback onDeletePressed;
@@ -77,6 +76,7 @@ class _TrackHeaderState extends State<TrackHeader> {
   final TextEditingController _nameController = TextEditingController();
   final FocusNode _nameFocusNode = FocusNode();
   final MenuController _colorMenuController = MenuController();
+  final MenuController _propertiesMenuController = MenuController();
 
   bool _isRenaming = false;
   bool _colorEditActive = false;
@@ -183,6 +183,11 @@ class _TrackHeaderState extends State<TrackHeader> {
     _colorMenuController.close();
   }
 
+  void _renameFromProperties() {
+    _propertiesMenuController.close();
+    _beginRename();
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -261,31 +266,51 @@ class _TrackHeaderState extends State<TrackHeader> {
                     const SizedBox(width: 4),
                     Expanded(child: _buildTrackName(context)),
 
-                    SizedBox(
-                      width: 32,
-                      height: 32,
-                      child: PopupMenuButton<_TrackAction>(
-                        tooltip: 'Track actions',
-                        iconSize: 18,
-                        padding: EdgeInsets.zero,
-                        position: PopupMenuPosition.under,
-                        onSelected: (action) {
-                          switch (action) {
-                            case _TrackAction.rename:
-                              _beginRename();
-                          }
-                        },
-                        itemBuilder: (context) => const [
-                          PopupMenuItem(
-                            value: _TrackAction.rename,
-                            child: ListTile(
-                              dense: true,
-                              contentPadding: EdgeInsets.zero,
-                              leading: Icon(Icons.edit_outlined, size: 19),
-                              title: Text('Rename'),
-                            ),
+                    MenuAnchor(
+                      controller: _propertiesMenuController,
+                      useRootOverlay: true,
+                      consumeOutsideTap: true,
+                      style: MenuStyle(
+                        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+                        backgroundColor: WidgetStatePropertyAll(
+                          colorScheme.surfaceContainerHigh,
+                        ),
+                        elevation: const WidgetStatePropertyAll(8),
+                        shape: WidgetStatePropertyAll(
+                          RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: BorderSide(color: colorScheme.outlineVariant),
                           ),
-                        ],
+                        ),
+                      ),
+                      menuChildren: [
+                        TrackPropertiesPopover(
+                          key: const ValueKey('track-properties-popover'),
+                          trackName: widget.name,
+                          colorValue: widget.colorValue,
+                          pan: widget.pan,
+                          onRename: _renameFromProperties,
+                          onColorSelected: widget.onColorSelected,
+                          onPanChangeStart: widget.onPanChangeStart,
+                          onPanChanged: widget.onPanChanged,
+                          onPanChangeEnd: widget.onPanChangeEnd,
+                          onPanReset: widget.onPanReset,
+                        ),
+                      ],
+                      builder: (context, controller, child) => IconButton(
+                        key: const ValueKey('track-properties-button'),
+                        tooltip: 'Track properties',
+                        iconSize: 18,
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 32,
+                          height: 32,
+                        ),
+                        onPressed: () => controller.isOpen
+                            ? controller.close()
+                            : controller.open(),
+                        icon: const Icon(Icons.more_horiz),
                       ),
                     ),
 
@@ -308,78 +333,46 @@ class _TrackHeaderState extends State<TrackHeader> {
               const SizedBox(height: 2),
 
               SizedBox(
-                height: 51,
-                child: Column(
+                height: 24,
+                child: Row(
                   children: [
-                    SizedBox(
-                      height: 24,
-                      child: Row(
-                        children: [
-                          _MixerStateButton(
-                            label: 'M',
-                            tooltip: 'Mute track',
-                            semanticLabel: widget.isMuted
-                                ? 'Unmute ${widget.name}'
-                                : 'Mute ${widget.name}',
-                            active: widget.isMuted,
-                            activeColor: colorScheme.error,
-                            onPressed: widget.onMutePressed,
-                          ),
-                          const SizedBox(width: 5),
-                          _MixerStateButton(
-                            label: 'S',
-                            tooltip: 'Solo track',
-                            semanticLabel: widget.isSolo
-                                ? 'Unsolo ${widget.name}'
-                                : 'Solo ${widget.name}',
-                            active: widget.isSolo,
-                            activeColor: colorScheme.tertiary,
-                            onPressed: widget.onSoloPressed,
-                          ),
-                          const SizedBox(width: 7),
-                          const _MixerParameterLabel('VOL'),
-                          const SizedBox(width: 2),
-                          Expanded(
-                            child: _TrackVolumeSlider(
-                              valueDb: widget.volumeDb,
-                              onChangeStart: widget.onVolumeChangeStart,
-                              onChanged: widget.onVolumeChanged,
-                              onChangeEnd: widget.onVolumeChangeEnd,
-                              onReset: widget.onVolumeReset,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          _MixerValueLabel(
-                            valueKey: const ValueKey('track-volume-value'),
-                            text: formatTrackVolumeDb(widget.volumeDb),
-                          ),
-                        ],
+                    _MixerStateButton(
+                      label: 'M',
+                      tooltip: 'Mute track',
+                      semanticLabel: widget.isMuted
+                          ? 'Unmute ${widget.name}'
+                          : 'Mute ${widget.name}',
+                      active: widget.isMuted,
+                      activeColor: colorScheme.error,
+                      onPressed: widget.onMutePressed,
+                    ),
+                    const SizedBox(width: 5),
+                    _MixerStateButton(
+                      label: 'S',
+                      tooltip: 'Solo track',
+                      semanticLabel: widget.isSolo
+                          ? 'Unsolo ${widget.name}'
+                          : 'Solo ${widget.name}',
+                      active: widget.isSolo,
+                      activeColor: colorScheme.tertiary,
+                      onPressed: widget.onSoloPressed,
+                    ),
+                    const SizedBox(width: 7),
+                    const _MixerParameterLabel('VOL'),
+                    const SizedBox(width: 2),
+                    Expanded(
+                      child: _TrackVolumeSlider(
+                        valueDb: widget.volumeDb,
+                        onChangeStart: widget.onVolumeChangeStart,
+                        onChanged: widget.onVolumeChanged,
+                        onChangeEnd: widget.onVolumeChangeEnd,
+                        onReset: widget.onVolumeReset,
                       ),
                     ),
-                    const SizedBox(height: 3),
-                    SizedBox(
-                      height: 24,
-                      child: Row(
-                        children: [
-                          const SizedBox(width: 60),
-                          const _MixerParameterLabel('PAN'),
-                          const SizedBox(width: 2),
-                          Expanded(
-                            child: _TrackPanSlider(
-                              pan: widget.pan,
-                              onChangeStart: widget.onPanChangeStart,
-                              onChanged: widget.onPanChanged,
-                              onChangeEnd: widget.onPanChangeEnd,
-                              onReset: widget.onPanReset,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          _MixerValueLabel(
-                            valueKey: const ValueKey('track-pan-value'),
-                            text: formatTrackPan(widget.pan),
-                          ),
-                        ],
-                      ),
+                    const SizedBox(width: 4),
+                    _MixerValueLabel(
+                      valueKey: const ValueKey('track-volume-value'),
+                      text: formatTrackVolumeDb(widget.volumeDb),
                     ),
                   ],
                 ),
@@ -716,159 +709,6 @@ class _UnityMarkedTrackShape extends RoundedRectSliderTrackShape {
       Offset(x, trackRect.top - 3),
       Offset(x, trackRect.bottom + 3),
       markerPaint,
-    );
-  }
-}
-
-class _TrackPanSlider extends StatefulWidget {
-  const _TrackPanSlider({
-    required this.pan,
-    required this.onChangeStart,
-    required this.onChanged,
-    required this.onChangeEnd,
-    required this.onReset,
-  });
-
-  final double pan;
-  final ValueChanged<double> onChangeStart;
-  final ValueChanged<double> onChanged;
-  final ValueChanged<double> onChangeEnd;
-  final VoidCallback onReset;
-
-  @override
-  State<_TrackPanSlider> createState() => _TrackPanSliderState();
-}
-
-class _TrackPanSliderState extends State<_TrackPanSlider> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final semanticValue = formatTrackPanSemantics(widget.pan);
-
-    return Tooltip(
-      waitDuration: const Duration(milliseconds: 350),
-      message: 'Track pan: $semanticValue\nDouble-click to center',
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onDoubleTap: widget.onReset,
-          child: SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 5,
-              trackShape: const _BipolarPanTrackShape(),
-              activeTrackColor: _hovered
-                  ? colorScheme.primary
-                  : colorScheme.primary.withValues(alpha: 0.86),
-              inactiveTrackColor: colorScheme.onSurface.withValues(alpha: 0.22),
-              thumbColor: colorScheme.onSurface,
-              overlayColor: colorScheme.primary.withValues(alpha: 0.14),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
-              thumbShape: const RoundSliderThumbShape(
-                enabledThumbRadius: 6,
-                pressedElevation: 5,
-              ),
-              thumbSize: WidgetStateProperty.resolveWith((states) {
-                final emphasized =
-                    states.contains(WidgetState.hovered) ||
-                    states.contains(WidgetState.dragged);
-                return Size.square(emphasized ? 14 : 12);
-              }),
-              showValueIndicator: ShowValueIndicator.never,
-            ),
-            child: Semantics(
-              label: 'Track pan',
-              child: Slider(
-                key: const ValueKey('track-pan-slider'),
-                value: clampTrackPan(widget.pan),
-                min: minimumTrackPan,
-                max: maximumTrackPan,
-                semanticFormatterCallback: formatTrackPanSemantics,
-                onChangeStart: widget.onChangeStart,
-                onChanged: widget.onChanged,
-                onChangeEnd: widget.onChangeEnd,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _BipolarPanTrackShape extends SliderTrackShape {
-  const _BipolarPanTrackShape();
-
-  @override
-  Rect getPreferredRect({
-    required RenderBox parentBox,
-    Offset offset = Offset.zero,
-    required SliderThemeData sliderTheme,
-    bool isEnabled = false,
-    bool isDiscrete = false,
-  }) {
-    final trackHeight = sliderTheme.trackHeight ?? 0;
-    final thumbWidth =
-        sliderTheme.thumbShape?.getPreferredSize(isEnabled, isDiscrete).width ??
-        0;
-    return Rect.fromLTWH(
-      offset.dx + thumbWidth / 2,
-      offset.dy + (parentBox.size.height - trackHeight) / 2,
-      parentBox.size.width - thumbWidth,
-      trackHeight,
-    );
-  }
-
-  @override
-  void paint(
-    PaintingContext context,
-    Offset offset, {
-    required RenderBox parentBox,
-    required SliderThemeData sliderTheme,
-    required Animation<double> enableAnimation,
-    required Offset thumbCenter,
-    Offset? secondaryOffset,
-    bool isEnabled = false,
-    bool isDiscrete = false,
-    required TextDirection textDirection,
-  }) {
-    final trackRect = getPreferredRect(
-      parentBox: parentBox,
-      offset: offset,
-      sliderTheme: sliderTheme,
-      isEnabled: isEnabled,
-      isDiscrete: isDiscrete,
-    );
-    final radius = Radius.circular(trackRect.height / 2);
-    context.canvas.drawRRect(
-      RRect.fromRectAndRadius(trackRect, radius),
-      Paint()..color = sliderTheme.inactiveTrackColor!,
-    );
-
-    final centerX = trackRect.center.dx;
-    final activeRect = Rect.fromLTRB(
-      math.min(centerX, thumbCenter.dx),
-      trackRect.top,
-      math.max(centerX, thumbCenter.dx),
-      trackRect.bottom,
-    );
-    if (activeRect.width > 0) {
-      context.canvas.drawRRect(
-        RRect.fromRectAndRadius(activeRect, radius),
-        Paint()..color = sliderTheme.activeTrackColor!,
-      );
-    }
-
-    context.canvas.drawLine(
-      Offset(centerX, trackRect.top - 3),
-      Offset(centerX, trackRect.bottom + 3),
-      Paint()
-        ..color = sliderTheme.thumbColor!.withValues(alpha: 0.75)
-        ..strokeWidth = 1.5,
     );
   }
 }

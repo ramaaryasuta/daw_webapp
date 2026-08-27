@@ -124,6 +124,9 @@ class EditorController extends Notifier<EditorState> {
   ProjectSnapshot? _trackColorEditStartSnapshot;
   String? _trackColorEditTrackId;
   int? _trackColorEditOriginalValue;
+  ProjectSnapshot? _clipFadeEditStartSnapshot;
+  String? _clipFadeEditClipId;
+  _ClipFadeEdge? _clipFadeEditEdge;
 
   Timer? _playheadTimer;
 
@@ -167,6 +170,9 @@ class EditorController extends Notifier<EditorState> {
     _trackColorEditStartSnapshot = null;
     _trackColorEditTrackId = null;
     _trackColorEditOriginalValue = null;
+    _clipFadeEditStartSnapshot = null;
+    _clipFadeEditClipId = null;
+    _clipFadeEditEdge = null;
   }
 
   Future<void> undo() async {
@@ -265,7 +271,10 @@ class EditorController extends Notifier<EditorState> {
             leftClip.audio.id != rightClip.audio.id ||
             leftClip.timelineStartSeconds != rightClip.timelineStartSeconds ||
             leftClip.sourceStartSeconds != rightClip.sourceStartSeconds ||
-            leftClip.clipDurationSeconds != rightClip.clipDurationSeconds) {
+            leftClip.clipDurationSeconds != rightClip.clipDurationSeconds ||
+            leftClip.fadeInDurationSeconds != rightClip.fadeInDurationSeconds ||
+            leftClip.fadeOutDurationSeconds !=
+                rightClip.fadeOutDurationSeconds) {
           return false;
         }
       }
@@ -895,6 +904,163 @@ class EditorController extends Notifier<EditorState> {
     );
   }
 
+  void beginFadeInChange(String clipId) {
+    _beginClipFadeChange(clipId, _ClipFadeEdge.fadeIn);
+  }
+
+  void beginFadeOutChange(String clipId) {
+    _beginClipFadeChange(clipId, _ClipFadeEdge.fadeOut);
+  }
+
+  void _beginClipFadeChange(String clipId, _ClipFadeEdge edge) {
+    if (_clipFadeEditStartSnapshot != null || !_containsClip(clipId)) {
+      return;
+    }
+    _clipFadeEditStartSnapshot = _captureProjectSnapshot();
+    _clipFadeEditClipId = clipId;
+    _clipFadeEditEdge = edge;
+  }
+
+  void previewFadeIn(String clipId, double durationSeconds) {
+    _previewClipFade(clipId, _ClipFadeEdge.fadeIn, durationSeconds);
+  }
+
+  void previewFadeOut(String clipId, double durationSeconds) {
+    _previewClipFade(clipId, _ClipFadeEdge.fadeOut, durationSeconds);
+  }
+
+  void _previewClipFade(
+    String clipId,
+    _ClipFadeEdge edge,
+    double durationSeconds,
+  ) {
+    if (_clipFadeEditClipId != clipId ||
+        _clipFadeEditEdge != edge ||
+        !durationSeconds.isFinite) {
+      return;
+    }
+    _setClipFade(clipId, edge, durationSeconds);
+  }
+
+  Future<void> commitFadeInChange(String clipId) {
+    return _commitClipFadeChange(clipId, _ClipFadeEdge.fadeIn);
+  }
+
+  Future<void> commitFadeOutChange(String clipId) {
+    return _commitClipFadeChange(clipId, _ClipFadeEdge.fadeOut);
+  }
+
+  Future<void> _commitClipFadeChange(String clipId, _ClipFadeEdge edge) async {
+    if (_clipFadeEditClipId != clipId || _clipFadeEditEdge != edge) {
+      return;
+    }
+    final before = _clipFadeEditStartSnapshot;
+    _clipFadeEditStartSnapshot = null;
+    _clipFadeEditClipId = null;
+    _clipFadeEditEdge = null;
+    if (before == null ||
+        before.hasSameProjectState(_captureProjectSnapshot())) {
+      return;
+    }
+    _recordEdit(
+      edge == _ClipFadeEdge.fadeIn ? 'Change Fade In' : 'Change Fade Out',
+      before,
+    );
+    await _resynchronizeFadePlayback();
+  }
+
+  Future<void> resetFadeIn(String clipId) {
+    return _resetClipFade(clipId, _ClipFadeEdge.fadeIn);
+  }
+
+  Future<void> resetFadeOut(String clipId) {
+    return _resetClipFade(clipId, _ClipFadeEdge.fadeOut);
+  }
+
+  Future<void> _resetClipFade(String clipId, _ClipFadeEdge edge) async {
+    final clip = _findClip(clipId);
+    if (clip == null ||
+        (edge == _ClipFadeEdge.fadeIn
+                ? clip.fadeInDurationSeconds
+                : clip.fadeOutDurationSeconds) ==
+            0) {
+      return;
+    }
+    final pendingBefore =
+        _clipFadeEditClipId == clipId && _clipFadeEditEdge == edge
+        ? _clipFadeEditStartSnapshot
+        : null;
+    _clipFadeEditStartSnapshot = null;
+    _clipFadeEditClipId = null;
+    _clipFadeEditEdge = null;
+    final before = pendingBefore ?? _captureProjectSnapshot();
+    _setClipFade(clipId, edge, 0);
+    _recordEdit(
+      edge == _ClipFadeEdge.fadeIn ? 'Change Fade In' : 'Change Fade Out',
+      before,
+    );
+    await _resynchronizeFadePlayback();
+  }
+
+  void _setClipFade(String clipId, _ClipFadeEdge edge, double durationSeconds) {
+    state = state.copyWith(
+      tracks: [
+        for (final track in state.tracks)
+          track.copyWith(
+            clips: [
+              for (final clip in track.clips)
+                if (clip.id == clipId)
+                  edge == _ClipFadeEdge.fadeIn
+                      ? clip.copyWith(
+                          fadeInDurationSeconds: durationSeconds
+                              .clamp(
+                                0.0,
+                                clip.clipDurationSeconds -
+                                    clip.fadeOutDurationSeconds,
+                              )
+                              .toDouble(),
+                        )
+                      : clip.copyWith(
+                          fadeOutDurationSeconds: durationSeconds
+                              .clamp(
+                                0.0,
+                                clip.clipDurationSeconds -
+                                    clip.fadeInDurationSeconds,
+                              )
+                              .toDouble(),
+                        )
+                else
+                  clip,
+            ],
+          ),
+      ],
+    );
+  }
+
+  Future<void> _resynchronizeFadePlayback() async {
+    if (!state.isPlaying) {
+      return;
+    }
+    final requestId = ++_clipEditRequestId;
+    await _resynchronizeArrangement(
+      requestId: requestId,
+      positionSeconds: _audioEngine.currentPositionSeconds,
+    );
+  }
+
+  bool _containsClip(String clipId) => _findClip(clipId) != null;
+
+  AudioClip? _findClip(String clipId) {
+    for (final track in state.tracks) {
+      for (final clip in track.clips) {
+        if (clip.id == clipId) {
+          return clip;
+        }
+      }
+    }
+    return null;
+  }
+
   Future<void> deleteSelectedClip() async {
     final clipId = state.selectedClipId;
     if (clipId == null) {
@@ -1205,6 +1371,8 @@ class EditorController extends Notifier<EditorState> {
     }
   }
 }
+
+enum _ClipFadeEdge { fadeIn, fadeOut }
 
 final editorControllerProvider =
     NotifierProvider<EditorController, EditorState>(EditorController.new);

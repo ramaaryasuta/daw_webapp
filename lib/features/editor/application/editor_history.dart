@@ -49,7 +49,10 @@ class ProjectSnapshot {
             leftClip.audio.id != rightClip.audio.id ||
             leftClip.timelineStartSeconds != rightClip.timelineStartSeconds ||
             leftClip.sourceStartSeconds != rightClip.sourceStartSeconds ||
-            leftClip.clipDurationSeconds != rightClip.clipDurationSeconds) {
+            leftClip.clipDurationSeconds != rightClip.clipDurationSeconds ||
+            leftClip.fadeInDurationSeconds != rightClip.fadeInDurationSeconds ||
+            leftClip.fadeOutDurationSeconds !=
+                rightClip.fadeOutDurationSeconds) {
           return false;
         }
       }

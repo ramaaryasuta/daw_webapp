@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:web/web.dart' as web;
 
+import '../domain/audio_clip.dart';
 import '../domain/daw_track.dart';
 import '../domain/track_mixer.dart';
 import 'audio_render_duration.dart';
@@ -95,8 +96,25 @@ class AudioMixdownService implements AudioExportGenerator {
         }
 
         final source = offlineContext.createBufferSource();
+        final clipGain = offlineContext.createGain();
         source.buffer = buffer;
-        source.connect(gain);
+        source.connect(clipGain);
+        clipGain.connect(gain);
+        final fadePoints = clipFadeEnvelopeForSegment(
+          clip: clip,
+          clipLocalStartSeconds: 0,
+          playbackDurationSeconds: clip.clipDurationSeconds,
+        );
+        clipGain.gain.setValueAtTime(
+          fadePoints.first.gain,
+          clip.timelineStartSeconds,
+        );
+        for (final point in fadePoints.skip(1)) {
+          clipGain.gain.linearRampToValueAtTime(
+            point.gain,
+            clip.timelineStartSeconds + point.offsetSeconds,
+          );
+        }
         source.start(
           clip.timelineStartSeconds,
           clip.sourceStartSeconds,

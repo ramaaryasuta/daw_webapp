@@ -16,6 +16,56 @@ void main() {
     waveformPeaks: [0.25, 0.75],
   );
 
+  test('fade envelope starts correctly when seeking into either fade', () {
+    const clip = AudioClip(
+      id: 'clip-fades',
+      audio: asset,
+      clipDurationSeconds: 6,
+      fadeInDurationSeconds: 2,
+      fadeOutDurationSeconds: 2,
+    );
+
+    expect(clipFadeGainAt(clip, 1), closeTo(0.5, 0.000001));
+    expect(clipFadeGainAt(clip, 3), 1);
+    expect(clipFadeGainAt(clip, 5), closeTo(0.5, 0.000001));
+
+    final seekIntoFadeIn = clipFadeEnvelopeForSegment(
+      clip: clip,
+      clipLocalStartSeconds: 1,
+      playbackDurationSeconds: 3,
+    );
+    expect(seekIntoFadeIn.first.gain, closeTo(0.5, 0.000001));
+    expect(seekIntoFadeIn[1].offsetSeconds, 1);
+    expect(seekIntoFadeIn[1].gain, 1);
+
+    final seekIntoFadeOut = clipFadeEnvelopeForSegment(
+      clip: clip,
+      clipLocalStartSeconds: 5,
+      playbackDurationSeconds: 1,
+    );
+    expect(seekIntoFadeOut.first.gain, closeTo(0.5, 0.000001));
+    expect(seekIntoFadeOut.last.gain, 0);
+  });
+
+  test('shortening a clip clamps combined fades safely', () {
+    const clip = AudioClip(
+      id: 'clip-fades',
+      audio: asset,
+      clipDurationSeconds: 6,
+      fadeInDurationSeconds: 2,
+      fadeOutDurationSeconds: 2,
+    );
+
+    final shortened = clip.copyWith(clipDurationSeconds: 2);
+
+    expect(shortened.fadeInDurationSeconds, 1);
+    expect(shortened.fadeOutDurationSeconds, 1);
+    expect(
+      shortened.fadeInDurationSeconds + shortened.fadeOutDurationSeconds,
+      shortened.clipDurationSeconds,
+    );
+  });
+
   test('stores timeline position in seconds and derives its end', () {
     const clip = AudioClip(
       id: 'clip-1',
@@ -146,6 +196,8 @@ void main() {
       timelineStartSeconds: 10,
       sourceStartSeconds: 1,
       clipDurationSeconds: 3,
+      fadeInDurationSeconds: 0.75,
+      fadeOutDurationSeconds: 1,
     );
 
     final split = splitAudioClip(
@@ -168,6 +220,10 @@ void main() {
     expect(split.left.sourceEndSeconds, split.right.sourceStartSeconds);
     expect(split.right.timelineEndSeconds, clip.timelineEndSeconds);
     expect(split.right.sourceEndSeconds, clip.sourceEndSeconds);
+    expect(split.left.fadeInDurationSeconds, 0.75);
+    expect(split.left.fadeOutDurationSeconds, 0);
+    expect(split.right.fadeInDurationSeconds, 0);
+    expect(split.right.fadeOutDurationSeconds, 1);
   });
 
   test('rejects splits at or within the minimum duration from an edge', () {

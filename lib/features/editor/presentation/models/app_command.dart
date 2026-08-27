@@ -108,6 +108,13 @@ abstract final class EditorCommands {
     category: AppCommandCategory.editing,
   );
 
+  static const clipProperties = AppCommand(
+    title: 'Clip Properties',
+    description: 'Open Fade In / Fade Out properties for the audio clip.',
+    shortcutParts: ['Double-click Audio Clip'],
+    category: AppCommandCategory.editing,
+  );
+
   static const renameTrack = AppCommand(
     title: 'Rename Track',
     description: 'Rename a track directly in its header.',
@@ -142,6 +149,7 @@ abstract final class EditorCommands {
     redo,
     splitAudioClip,
     deleteAudioClip,
+    clipProperties,
     renameTrack,
     changeTrackColor,
     playPause,
