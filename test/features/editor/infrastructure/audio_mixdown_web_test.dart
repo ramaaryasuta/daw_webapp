@@ -51,6 +51,7 @@ void main() {
     double pan = 0,
     bool isMuted = false,
     bool isSolo = false,
+    double gainDb = 0,
     double fadeIn = 0,
     double fadeOut = 0,
   }) {
@@ -66,6 +67,7 @@ void main() {
           id: 'clip-$id',
           audio: asset,
           clipDurationSeconds: asset.durationSeconds,
+          gainDb: gainDb,
           fadeInDurationSeconds: fadeIn,
           fadeOutDurationSeconds: fadeOut,
         ),
@@ -150,6 +152,27 @@ void main() {
     );
 
     expect(fullyFaded / unity, closeTo(math.sqrt(1 / 3), 0.035));
+  });
+
+  test('offline WAV applies clip gain independently of fades', () async {
+    final unity = _leftChannelRms(
+      (await mixdown.generateWavExport([track('unity')])).wavBytes,
+    );
+    final gainedAndFaded = _leftChannelRms(
+      (await mixdown.generateWavExport([
+        track(
+          'gained',
+          gainDb: -6,
+          fadeIn: asset.durationSeconds / 2,
+          fadeOut: asset.durationSeconds / 2,
+        ),
+      ])).wavBytes,
+    );
+
+    expect(
+      gainedAndFaded / unity,
+      closeTo(clipGainDbToLinear(-6) * math.sqrt(1 / 3), 0.025),
+    );
   });
 }
 

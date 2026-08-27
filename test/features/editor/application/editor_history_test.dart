@@ -30,6 +30,7 @@ void main() {
     double pan = 0,
     bool isMuted = false,
     bool isSolo = false,
+    double gainDb = 0,
     double fadeIn = 0,
     double fadeOut = 0,
   }) {
@@ -39,6 +40,7 @@ void main() {
       timelineStartSeconds: start,
       sourceStartSeconds: sourceStart,
       clipDurationSeconds: duration,
+      gainDb: gainDb,
       fadeInDurationSeconds: fadeIn,
       fadeOutDurationSeconds: fadeOut,
     );
@@ -292,6 +294,22 @@ void main() {
       redo.snapshot.tracks.single.clips.single.fadeOutDurationSeconds,
       0.5,
     );
+  });
+
+  test('one committed clip gain change is one undo and redo step', () {
+    final before = snapshot(start: 0);
+    final gained = snapshot(start: 0, gainDb: -7.5);
+    final history = EditorHistory().record(
+      label: 'Change Clip Gain',
+      before: before,
+      after: gained,
+    );
+
+    expect(history.past.single.label, 'Change Clip Gain');
+    final undo = history.undo(gained)!;
+    expect(undo.snapshot.tracks.single.clips.single.gainDb, 0);
+    final redo = undo.history.redo(undo.snapshot)!;
+    expect(redo.snapshot.tracks.single.clips.single.gainDb, -7.5);
   });
 
   test('delete undo and redo preserve an exact trimmed split clip', () {

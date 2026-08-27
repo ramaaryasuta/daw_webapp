@@ -20,6 +20,7 @@ void main() {
     timelineStartSeconds: 10,
     sourceStartSeconds: 3,
     clipDurationSeconds: 5,
+    gainDb: -5,
     fadeInDurationSeconds: 0.5,
     fadeOutDurationSeconds: 1,
   );
@@ -33,6 +34,7 @@ void main() {
     expect(pasted.timelineStartSeconds, 30);
     expect(pasted.sourceStartSeconds, 3);
     expect(pasted.clipDurationSeconds, 5);
+    expect(pasted.gainDb, -5);
     expect(pasted.fadeInDurationSeconds, 0.5);
     expect(pasted.fadeOutDurationSeconds, 1);
     expect(identical(pasted.audio, original.audio), isTrue);

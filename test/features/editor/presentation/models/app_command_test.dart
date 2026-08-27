@@ -84,7 +84,7 @@ void main() {
     expect(command.shortcutParts, ['Double-click Audio Clip']);
     expect(
       command.description,
-      'Open Fade In / Fade Out properties for the audio clip.',
+      'Open Gain and Fade In / Fade Out properties for the audio clip.',
     );
   });
 

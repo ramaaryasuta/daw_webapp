@@ -96,21 +96,24 @@ class AudioMixdownService implements AudioExportGenerator {
         }
 
         final source = offlineContext.createBufferSource();
+        final fadeGain = offlineContext.createGain();
         final clipGain = offlineContext.createGain();
         source.buffer = buffer;
-        source.connect(clipGain);
+        source.connect(fadeGain);
+        fadeGain.connect(clipGain);
         clipGain.connect(gain);
+        clipGain.gain.value = clipGainDbToLinear(clip.gainDb);
         final fadePoints = clipFadeEnvelopeForSegment(
           clip: clip,
           clipLocalStartSeconds: 0,
           playbackDurationSeconds: clip.clipDurationSeconds,
         );
-        clipGain.gain.setValueAtTime(
+        fadeGain.gain.setValueAtTime(
           fadePoints.first.gain,
           clip.timelineStartSeconds,
         );
         for (final point in fadePoints.skip(1)) {
-          clipGain.gain.linearRampToValueAtTime(
+          fadeGain.gain.linearRampToValueAtTime(
             point.gain,
             clip.timelineStartSeconds + point.offsetSeconds,
           );

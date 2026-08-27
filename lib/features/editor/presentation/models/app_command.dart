@@ -131,7 +131,8 @@ abstract final class EditorCommands {
 
   static const clipProperties = AppCommand(
     title: 'Clip Properties',
-    description: 'Open Fade In / Fade Out properties for the audio clip.',
+    description:
+        'Open Gain and Fade In / Fade Out properties for the audio clip.',
     shortcutParts: ['Double-click Audio Clip'],
     category: AppCommandCategory.editing,
   );

@@ -16,6 +16,21 @@ void main() {
     waveformPeaks: [0.25, 0.75],
   );
 
+  test('clip gain defaults to unity and converts dB to linear gain', () {
+    const clip = AudioClip(
+      id: 'clip-gain',
+      audio: asset,
+      clipDurationSeconds: 1,
+    );
+
+    expect(clip.gainDb, defaultClipGainDb);
+    expect(clipGainDbToLinear(clip.gainDb), 1);
+    expect(clipGainDbToLinear(-6), closeTo(0.501187, 0.000001));
+    expect(clipGainDbToLinear(6), closeTo(1.995262, 0.000001));
+    expect(clip.copyWith(gainDb: -100).gainDb, minimumClipGainDb);
+    expect(clip.copyWith(gainDb: 100).gainDb, maximumClipGainDb);
+  });
+
   test('fade envelope starts correctly when seeking into either fade', () {
     const clip = AudioClip(
       id: 'clip-fades',
@@ -196,6 +211,7 @@ void main() {
       timelineStartSeconds: 10,
       sourceStartSeconds: 1,
       clipDurationSeconds: 3,
+      gainDb: 3,
       fadeInDurationSeconds: 0.75,
       fadeOutDurationSeconds: 1,
     );
@@ -220,6 +236,8 @@ void main() {
     expect(split.left.sourceEndSeconds, split.right.sourceStartSeconds);
     expect(split.right.timelineEndSeconds, clip.timelineEndSeconds);
     expect(split.right.sourceEndSeconds, clip.sourceEndSeconds);
+    expect(split.left.gainDb, 3);
+    expect(split.right.gainDb, 3);
     expect(split.left.fadeInDurationSeconds, 0.75);
     expect(split.left.fadeOutDurationSeconds, 0);
     expect(split.right.fadeInDurationSeconds, 0);

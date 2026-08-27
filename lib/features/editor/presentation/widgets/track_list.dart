@@ -258,6 +258,10 @@ class _TimelineTrackListState extends ConsumerState<TimelineTrackList> {
                     clipDurationSeconds: result.clipDurationSeconds,
                   );
                 },
+                onGainChangeStart: controller.beginClipGainChange,
+                onGainChanged: controller.previewClipGain,
+                onGainChangeEnd: controller.commitClipGainChange,
+                onGainReset: controller.resetClipGain,
                 onFadeInChangeStart: controller.beginFadeInChange,
                 onFadeInChanged: controller.previewFadeIn,
                 onFadeInChangeEnd: controller.commitFadeInChange,

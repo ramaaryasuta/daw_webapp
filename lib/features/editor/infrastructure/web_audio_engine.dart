@@ -265,15 +265,18 @@ class WebAudioEngine implements AudioMeterPeakSource {
         }
 
         final source = _audioContext.createBufferSource();
+        final fadeGain = _audioContext.createGain();
         final clipGain = _audioContext.createGain();
         source.buffer = buffer;
-        source.connect(clipGain);
+        source.connect(fadeGain);
+        fadeGain.connect(clipGain);
         clipGain.connect(gain);
+        clipGain.gain.value = clipGainDbToLinear(clip.gainDb);
         final sourceStartTime = contextStartTime + playbackTiming.delaySeconds;
         final clipLocalStartSeconds =
             scheduledTimelineStart - clip.timelineStartSeconds;
         _scheduleClipFadeEnvelope(
-          clipGain.gain,
+          fadeGain.gain,
           clip: clip,
           clipLocalStartSeconds: clipLocalStartSeconds,
           playbackDurationSeconds: playbackDuration,
@@ -281,6 +284,8 @@ class WebAudioEngine implements AudioMeterPeakSource {
         );
         final scheduledSource = _ScheduledSource(
           node: source,
+          clipId: clip.id,
+          fadeGain: fadeGain,
           clipGain: clipGain,
           endTime: sourceStartTime + playbackDuration,
         );
@@ -329,6 +334,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
           source.node.disconnect();
         } catch (_) {}
         try {
+          source.fadeGain.disconnect();
           source.clipGain.disconnect();
         } catch (_) {}
         sources.removeAt(index);
@@ -406,6 +412,9 @@ class WebAudioEngine implements AudioMeterPeakSource {
           source.node.disconnect();
         } catch (_) {}
         try {
+          source.fadeGain.disconnect();
+        } catch (_) {}
+        try {
           source.clipGain.disconnect();
         } catch (_) {}
       }
@@ -461,6 +470,45 @@ class WebAudioEngine implements AudioMeterPeakSource {
     }
   }
 
+  void setClipGain(String clipId, double gainDb) {
+    final clampedGainDb = clampClipGainDb(gainDb);
+    final linearGain = clipGainDbToLinear(clampedGainDb);
+    for (final sources in _activeSources.values) {
+      for (final source in sources) {
+        if (source.clipId == clipId) {
+          _smoothGainTo(source.clipGain, linearGain);
+        }
+      }
+    }
+    _scheduledTracks = [
+      for (final track in _scheduledTracks)
+        track.copyWith(
+          clips: [
+            for (final clip in track.clips)
+              clip.id == clipId ? clip.copyWith(gainDb: clampedGainDb) : clip,
+          ],
+        ),
+    ];
+  }
+
+  void syncClipGains(List<DawTrack> tracks) {
+    final gainByClipId = {
+      for (final track in tracks)
+        for (final clip in track.clips) clip.id: clip.gainDb,
+    };
+    for (final entry in gainByClipId.entries) {
+      final linearGain = clipGainDbToLinear(entry.value);
+      for (final sources in _activeSources.values) {
+        for (final source in sources) {
+          if (source.clipId == entry.key) {
+            _smoothGainTo(source.clipGain, linearGain);
+          }
+        }
+      }
+    }
+    _scheduledTracks = List<DawTrack>.unmodifiable(tracks);
+  }
+
   void _smoothGainTo(web.GainNode gainNode, double targetGain) {
     _smoothAudioParamTo(gainNode.gain, targetGain);
   }
@@ -484,6 +532,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
         try {
           source.node.stop();
           source.node.disconnect();
+          source.fadeGain.disconnect();
           source.clipGain.disconnect();
         } catch (_) {}
       }
@@ -663,11 +712,15 @@ class _StereoMeterTap {
 class _ScheduledSource {
   const _ScheduledSource({
     required this.node,
+    required this.clipId,
+    required this.fadeGain,
     required this.clipGain,
     required this.endTime,
   });
 
   final web.AudioBufferSourceNode node;
+  final String clipId;
+  final web.GainNode fadeGain;
   final web.GainNode clipGain;
   final double endTime;
 }

@@ -30,6 +30,10 @@ class TimelineTrackLane extends StatelessWidget {
     required this.onSelect,
     required this.onMoveCommitted,
     required this.onTrimCommitted,
+    required this.onGainChangeStart,
+    required this.onGainChanged,
+    required this.onGainChangeEnd,
+    required this.onGainReset,
     required this.onFadeInChangeStart,
     required this.onFadeInChanged,
     required this.onFadeInChangeEnd,
@@ -63,6 +67,10 @@ class TimelineTrackLane extends StatelessWidget {
   onMoveCommitted;
   final void Function(String clipId, TimelineClipDragResult result)
   onTrimCommitted;
+  final ValueChanged<String> onGainChangeStart;
+  final void Function(String clipId, double value) onGainChanged;
+  final ValueChanged<String> onGainChangeEnd;
+  final ValueChanged<String> onGainReset;
   final ValueChanged<String> onFadeInChangeStart;
   final void Function(String clipId, double value) onFadeInChanged;
   final ValueChanged<String> onFadeInChangeEnd;
@@ -113,6 +121,10 @@ class TimelineTrackLane extends StatelessWidget {
                   onSelect(clip.id, toggle, preserveExistingIfSelected),
               onMoveCommitted: (result) => onMoveCommitted(clip.id, result),
               onTrimCommitted: (result) => onTrimCommitted(clip.id, result),
+              onGainChangeStart: () => onGainChangeStart(clip.id),
+              onGainChanged: (value) => onGainChanged(clip.id, value),
+              onGainChangeEnd: () => onGainChangeEnd(clip.id),
+              onGainReset: () => onGainReset(clip.id),
               onFadeInChangeStart: () => onFadeInChangeStart(clip.id),
               onFadeInChanged: (value) => onFadeInChanged(clip.id, value),
               onFadeInChangeEnd: () => onFadeInChangeEnd(clip.id),
@@ -146,6 +158,10 @@ class _TimelineAudioClip extends StatefulWidget {
     required this.onSelect,
     required this.onMoveCommitted,
     required this.onTrimCommitted,
+    required this.onGainChangeStart,
+    required this.onGainChanged,
+    required this.onGainChangeEnd,
+    required this.onGainReset,
     required this.onFadeInChangeStart,
     required this.onFadeInChanged,
     required this.onFadeInChangeEnd,
@@ -171,6 +187,10 @@ class _TimelineAudioClip extends StatefulWidget {
   final void Function(bool toggle, bool preserveExistingIfSelected) onSelect;
   final ValueChanged<TimelineClipDragResult> onMoveCommitted;
   final ValueChanged<TimelineClipDragResult> onTrimCommitted;
+  final VoidCallback onGainChangeStart;
+  final ValueChanged<double> onGainChanged;
+  final VoidCallback onGainChangeEnd;
+  final VoidCallback onGainReset;
   final VoidCallback onFadeInChangeStart;
   final ValueChanged<double> onFadeInChanged;
   final VoidCallback onFadeInChangeEnd;
@@ -206,6 +226,10 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
       widget.onMoveCommitted;
   ValueChanged<TimelineClipDragResult> get onTrimCommitted =>
       widget.onTrimCommitted;
+  VoidCallback get onGainChangeStart => widget.onGainChangeStart;
+  ValueChanged<double> get onGainChanged => widget.onGainChanged;
+  VoidCallback get onGainChangeEnd => widget.onGainChangeEnd;
+  VoidCallback get onGainReset => widget.onGainReset;
   VoidCallback get onFadeInChangeStart => widget.onFadeInChangeStart;
   ValueChanged<double> get onFadeInChanged => widget.onFadeInChanged;
   VoidCallback get onFadeInChangeEnd => widget.onFadeInChangeEnd;
@@ -355,6 +379,10 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
                 ClipPropertiesPopover(
                   key: const ValueKey('clip-properties-popover'),
                   clip: clip,
+                  onGainChangeStart: (_) => onGainChangeStart(),
+                  onGainChanged: onGainChanged,
+                  onGainChangeEnd: (_) => onGainChangeEnd(),
+                  onGainReset: onGainReset,
                   onFadeInChangeStart: (_) => onFadeInChangeStart(),
                   onFadeInChanged: onFadeInChanged,
                   onFadeInChangeEnd: (_) => onFadeInChangeEnd(),
@@ -423,6 +451,8 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
                             sourceAudioDurationSeconds:
                                 clip.sourceAudioDurationSeconds,
                             waveformPeaks: clip.audio.waveformPeaks,
+                            gainDb: clip.gainDb,
+                            showGainIndicator: renderedClipWidth >= 135,
                             fadeInDurationSeconds: clip.fadeInDurationSeconds,
                             fadeOutDurationSeconds: clip.fadeOutDurationSeconds,
                             trackColor: visualTrackColor,
@@ -591,6 +621,8 @@ class _AudioClipSurface extends StatelessWidget {
     required this.sourceStartSeconds,
     required this.sourceAudioDurationSeconds,
     required this.waveformPeaks,
+    required this.gainDb,
+    required this.showGainIndicator,
     required this.fadeInDurationSeconds,
     required this.fadeOutDurationSeconds,
     required this.trackColor,
@@ -603,6 +635,8 @@ class _AudioClipSurface extends StatelessWidget {
   final double sourceStartSeconds;
   final double sourceAudioDurationSeconds;
   final List<double> waveformPeaks;
+  final double gainDb;
+  final bool showGainIndicator;
   final double fadeInDurationSeconds;
   final double fadeOutDurationSeconds;
   final Color trackColor;
@@ -699,6 +733,7 @@ class _AudioClipSurface extends StatelessWidget {
               ),
             Positioned(
               left: 8,
+              right: showGainIndicator ? 62 : null,
               top: 5,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
@@ -709,13 +744,30 @@ class _AudioClipSurface extends StatelessWidget {
                   ),
                   borderRadius: BorderRadius.circular(3),
                 ),
-                child: Text(
-                  fileName,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: colorScheme.onSurface,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        fileName,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onSurface,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (showGainIndicator && gainDb != defaultClipGainDb) ...[
+                      const SizedBox(width: 5),
+                      Text(
+                        '${gainDb > 0 ? '+' : ''}${gainDb.toStringAsFixed(1)} dB',
+                        key: const ValueKey('clip-gain-indicator'),
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),

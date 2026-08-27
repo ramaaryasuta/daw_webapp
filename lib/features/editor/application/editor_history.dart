@@ -62,6 +62,7 @@ class ProjectSnapshot {
             leftClip.timelineStartSeconds != rightClip.timelineStartSeconds ||
             leftClip.sourceStartSeconds != rightClip.sourceStartSeconds ||
             leftClip.clipDurationSeconds != rightClip.clipDurationSeconds ||
+            leftClip.gainDb != rightClip.gainDb ||
             leftClip.fadeInDurationSeconds != rightClip.fadeInDurationSeconds ||
             leftClip.fadeOutDurationSeconds !=
                 rightClip.fadeOutDurationSeconds) {

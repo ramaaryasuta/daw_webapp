@@ -57,6 +57,7 @@ void main() {
                       ),
                       timelineStartSeconds: 1,
                       clipDurationSeconds: 4,
+                      gainDb: -6,
                       fadeInDurationSeconds: 0.5,
                       fadeOutDurationSeconds: 0.75,
                     ),
@@ -75,6 +76,10 @@ void main() {
                   onSelect: (_, _, _) => selectCount++,
                   onMoveCommitted: (_, _) => moveCommitCount++,
                   onTrimCommitted: (_, result) => trimResult = result,
+                  onGainChangeStart: (_) {},
+                  onGainChanged: (_, _) {},
+                  onGainChangeEnd: (_) {},
+                  onGainReset: (_) {},
                   onFadeInChangeStart: (_) {},
                   onFadeInChanged: (_, _) {},
                   onFadeInChangeEnd: (_) {},
@@ -116,6 +121,8 @@ void main() {
     await tester.tapAt(laneOrigin + const Offset(250, 40));
     await tester.pumpAndSettle();
     expect(find.text('Clip Properties'), findsOneWidget);
+    expect(find.byKey(const ValueKey('clip-gain-slider')), findsOneWidget);
+    expect(find.text('-6.0 dB'), findsWidgets);
     expect(find.byKey(const ValueKey('clip-fade-in-slider')), findsOneWidget);
     expect(find.byKey(const ValueKey('clip-fade-out-slider')), findsOneWidget);
     expect(selectCount, greaterThan(1));

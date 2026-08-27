@@ -173,6 +173,8 @@ class EditorController extends Notifier<EditorState> {
   ProjectSnapshot? _clipFadeEditStartSnapshot;
   String? _clipFadeEditClipId;
   _ClipFadeEdge? _clipFadeEditEdge;
+  ProjectSnapshot? _clipGainEditStartSnapshot;
+  String? _clipGainEditClipId;
 
   Timer? _playheadTimer;
 
@@ -219,6 +221,8 @@ class EditorController extends Notifier<EditorState> {
     _clipFadeEditStartSnapshot = null;
     _clipFadeEditClipId = null;
     _clipFadeEditEdge = null;
+    _clipGainEditStartSnapshot = null;
+    _clipGainEditClipId = null;
   }
 
   Future<void> undo() async {
@@ -259,6 +263,10 @@ class EditorController extends Notifier<EditorState> {
       snapshot.tracks,
     );
     final mixerChanged = !_hasSameMixerState(previousTracks, snapshot.tracks);
+    final clipGainChanged = !_hasSameClipGainState(
+      previousTracks,
+      snapshot.tracks,
+    );
     final requestId = arrangementChanged ? ++_clipEditRequestId : null;
     final previousPosition = _audioEngine.currentPositionSeconds;
     final selectedTrackId =
@@ -293,8 +301,13 @@ class EditorController extends Notifier<EditorState> {
         requestId: requestId!,
         positionSeconds: previousPosition,
       );
-    } else if (mixerChanged) {
-      _audioEngine.syncMixer(state.tracks);
+    } else {
+      if (clipGainChanged) {
+        _audioEngine.syncClipGains(state.tracks);
+      }
+      if (mixerChanged) {
+        _audioEngine.syncMixer(state.tracks);
+      }
     }
   }
 
@@ -347,6 +360,26 @@ class EditorController extends Notifier<EditorState> {
       }
     }
 
+    return true;
+  }
+
+  bool _hasSameClipGainState(List<DawTrack> left, List<DawTrack> right) {
+    if (left.length != right.length) {
+      return false;
+    }
+    for (var trackIndex = 0; trackIndex < left.length; trackIndex++) {
+      final leftClips = left[trackIndex].clips;
+      final rightClips = right[trackIndex].clips;
+      if (leftClips.length != rightClips.length) {
+        return false;
+      }
+      for (var clipIndex = 0; clipIndex < leftClips.length; clipIndex++) {
+        if (leftClips[clipIndex].id != rightClips[clipIndex].id ||
+            leftClips[clipIndex].gainDb != rightClips[clipIndex].gainDb) {
+          return false;
+        }
+      }
+    }
     return true;
   }
 
@@ -1190,6 +1223,66 @@ class EditorController extends Notifier<EditorState> {
       requestId: requestId,
       positionSeconds: previousPosition,
     );
+  }
+
+  void beginClipGainChange(String clipId) {
+    if (_clipGainEditStartSnapshot != null || !_containsClip(clipId)) {
+      return;
+    }
+    _clipGainEditStartSnapshot = _captureProjectSnapshot();
+    _clipGainEditClipId = clipId;
+  }
+
+  void previewClipGain(String clipId, double gainDb) {
+    if (_clipGainEditClipId != clipId || !gainDb.isFinite) {
+      return;
+    }
+    _setClipGain(clipId, gainDb);
+  }
+
+  void commitClipGainChange(String clipId) {
+    if (_clipGainEditClipId != clipId) {
+      return;
+    }
+    final before = _clipGainEditStartSnapshot;
+    _clipGainEditStartSnapshot = null;
+    _clipGainEditClipId = null;
+    if (before == null ||
+        before.hasSameProjectState(_captureProjectSnapshot())) {
+      return;
+    }
+    _recordEdit('Change Clip Gain', before);
+  }
+
+  void resetClipGain(String clipId) {
+    final clip = _findClip(clipId);
+    if (clip == null || clip.gainDb == defaultClipGainDb) {
+      return;
+    }
+    final pendingBefore = _clipGainEditClipId == clipId
+        ? _clipGainEditStartSnapshot
+        : null;
+    _clipGainEditStartSnapshot = null;
+    _clipGainEditClipId = null;
+    final before = pendingBefore ?? _captureProjectSnapshot();
+    _setClipGain(clipId, defaultClipGainDb);
+    _recordEdit('Change Clip Gain', before);
+  }
+
+  void _setClipGain(String clipId, double gainDb) {
+    final clampedGainDb = clampClipGainDb(gainDb);
+    state = state.copyWith(
+      tracks: [
+        for (final track in state.tracks)
+          track.copyWith(
+            clips: [
+              for (final clip in track.clips)
+                clip.id == clipId ? clip.copyWith(gainDb: clampedGainDb) : clip,
+            ],
+          ),
+      ],
+    );
+    _audioEngine.setClipGain(clipId, clampedGainDb);
   }
 
   void beginFadeInChange(String clipId) {

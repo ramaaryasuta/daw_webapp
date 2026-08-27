@@ -1,7 +1,23 @@
+import 'dart:math' as math;
+
 import 'audio_asset.dart';
 
 /// Smallest visible clip region allowed by trim interactions.
 const double minimumClipDurationSeconds = 0.01;
+
+const double minimumClipGainDb = -24;
+const double maximumClipGainDb = 12;
+const double defaultClipGainDb = 0;
+
+double clampClipGainDb(double gainDb) {
+  return gainDb.isFinite
+      ? gainDb.clamp(minimumClipGainDb, maximumClipGainDb).toDouble()
+      : defaultClipGainDb;
+}
+
+double clipGainDbToLinear(double gainDb) {
+  return math.pow(10, clampClipGainDb(gainDb) / 20).toDouble();
+}
 
 /// A placement of an audio asset on the project timeline.
 ///
@@ -14,6 +30,7 @@ class AudioClip {
     required this.clipDurationSeconds,
     this.timelineStartSeconds = 0,
     this.sourceStartSeconds = 0,
+    this.gainDb = defaultClipGainDb,
     this.fadeInDurationSeconds = 0,
     this.fadeOutDurationSeconds = 0,
   }) : assert(
@@ -21,6 +38,7 @@ class AudioClip {
        ),
        assert(sourceStartSeconds >= 0 && sourceStartSeconds < double.infinity),
        assert(clipDurationSeconds > 0 && clipDurationSeconds < double.infinity),
+       assert(gainDb >= minimumClipGainDb && gainDb <= maximumClipGainDb),
        assert(fadeInDurationSeconds >= 0),
        assert(fadeOutDurationSeconds >= 0),
        assert(
@@ -32,6 +50,7 @@ class AudioClip {
   final double timelineStartSeconds;
   final double sourceStartSeconds;
   final double clipDurationSeconds;
+  final double gainDb;
   final double fadeInDurationSeconds;
   final double fadeOutDurationSeconds;
 
@@ -70,6 +89,7 @@ class AudioClip {
     double? timelineStartSeconds,
     double? sourceStartSeconds,
     double? clipDurationSeconds,
+    double? gainDb,
     double? fadeInDurationSeconds,
     double? fadeOutDurationSeconds,
   }) {
@@ -87,6 +107,7 @@ class AudioClip {
       timelineStartSeconds: timelineStartSeconds ?? this.timelineStartSeconds,
       sourceStartSeconds: sourceStartSeconds ?? this.sourceStartSeconds,
       clipDurationSeconds: duration,
+      gainDb: clampClipGainDb(gainDb ?? this.gainDb),
       fadeInDurationSeconds: fades.fadeInDurationSeconds,
       fadeOutDurationSeconds: fades.fadeOutDurationSeconds,
     );

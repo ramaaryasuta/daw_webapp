@@ -9,6 +9,7 @@ class CopiedClipData {
     this.timelineOffsetSeconds = 0,
     required this.sourceStartSeconds,
     required this.clipDurationSeconds,
+    required this.gainDb,
     required this.fadeInDurationSeconds,
     required this.fadeOutDurationSeconds,
   });
@@ -26,6 +27,7 @@ class CopiedClipData {
           (timelineOriginSeconds ?? clip.timelineStartSeconds),
       sourceStartSeconds: clip.sourceStartSeconds,
       clipDurationSeconds: clip.clipDurationSeconds,
+      gainDb: clip.gainDb,
       fadeInDurationSeconds: clip.fadeInDurationSeconds,
       fadeOutDurationSeconds: clip.fadeOutDurationSeconds,
     );
@@ -39,6 +41,7 @@ class CopiedClipData {
   final double timelineOffsetSeconds;
   final double sourceStartSeconds;
   final double clipDurationSeconds;
+  final double gainDb;
   final double fadeInDurationSeconds;
   final double fadeOutDurationSeconds;
 
@@ -52,6 +55,7 @@ class CopiedClipData {
       timelineStartSeconds: timelineStartSeconds,
       sourceStartSeconds: sourceStartSeconds,
       clipDurationSeconds: clipDurationSeconds,
+      gainDb: gainDb,
       fadeInDurationSeconds: fadeInDurationSeconds,
       fadeOutDurationSeconds: fadeOutDurationSeconds,
     );
