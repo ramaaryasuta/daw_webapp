@@ -338,6 +338,14 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     await ref.read(editorControllerProvider.notifier).duplicateSelectedClip();
   }
 
+  Future<void> _createCrossfade() async {
+    await ref.read(editorControllerProvider.notifier).createCrossfade();
+  }
+
+  Future<void> _removeCrossfade() async {
+    await ref.read(editorControllerProvider.notifier).removeCrossfade();
+  }
+
   void _undo() {
     ref.read(editorControllerProvider.notifier).undo();
   }
@@ -385,6 +393,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     required bool canCopyClip,
     required bool canPasteClip,
     required bool canDuplicateClip,
+    required bool canCreateCrossfade,
+    required bool canRemoveCrossfade,
     required bool canUndo,
     required bool canRedo,
   }) {
@@ -467,6 +477,17 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             icon: Icons.delete_outline,
             shortcut: const SingleActivator(LogicalKeyboardKey.delete),
             onSelected: canDeleteClip ? _deleteSelectedClip : null,
+          ),
+          EditorMenuAction(
+            label: 'Create Crossfade',
+            icon: Icons.compare_arrows,
+            separatorBefore: true,
+            onSelected: canCreateCrossfade ? _createCrossfade : null,
+          ),
+          EditorMenuAction(
+            label: 'Remove Crossfade',
+            icon: Icons.close,
+            onSelected: canRemoveCrossfade ? _removeCrossfade : null,
           ),
         ],
       ),
@@ -942,6 +963,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                     canCopyClip: editorState.canCopySelectedClip,
                     canPasteClip: editorState.canPasteClip,
                     canDuplicateClip: editorState.canDuplicateSelectedClip,
+                    canCreateCrossfade: editorState.canCreateCrossfade,
+                    canRemoveCrossfade: editorState.canRemoveCrossfade,
                     canUndo: editorState.canUndo,
                     canRedo: editorState.canRedo,
                   ),

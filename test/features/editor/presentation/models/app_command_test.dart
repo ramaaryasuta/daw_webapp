@@ -28,6 +28,26 @@ void main() {
     expect(redo.description, contains('Ctrl + Y'));
   });
 
+  test('Help commands describe creating and removing crossfades', () {
+    final create = EditorCommands.all.singleWhere(
+      (command) => command.title == 'Create Crossfade',
+    );
+    final remove = EditorCommands.all.singleWhere(
+      (command) => command.title == 'Remove Crossfade',
+    );
+
+    expect(create.shortcutParts, ['Edit', 'Create Crossfade']);
+    expect(
+      create.description,
+      'Create a fade transition between two selected overlapping clips.',
+    );
+    expect(remove.shortcutParts, ['Edit', 'Remove Crossfade']);
+    expect(
+      remove.description,
+      'Remove the crossfade between the selected clips.',
+    );
+  });
+
   test('Help commands define Delete Clip(s) keyboard shortcuts', () {
     final command = EditorCommands.all.singleWhere(
       (command) => command.title == 'Delete Clip(s)',

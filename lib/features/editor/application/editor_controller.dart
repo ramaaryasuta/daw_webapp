@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/audio_asset.dart';
 import '../domain/audio_clip.dart';
+import '../domain/clip_crossfade.dart';
 import '../domain/daw_track.dart';
 import '../domain/imported_audio_file.dart';
 import '../domain/loop_region.dart';
@@ -95,6 +96,14 @@ class EditorState {
   bool get canDeleteSelectedClip => selectedClipIds.isNotEmpty;
   bool get canCopySelectedClip => selectedClipIds.isNotEmpty;
   bool get canDuplicateSelectedClip => selectedClipIds.isNotEmpty;
+  ClipCrossfadePair? get selectedCrossfade =>
+      selectedCrossfadePair(tracks, selectedClipIds);
+  bool get canCreateCrossfade {
+    final pair = selectedCrossfade;
+    return pair != null && pair.canCreate && !pair.isCrossfade;
+  }
+
+  bool get canRemoveCrossfade => selectedCrossfade?.isCrossfade ?? false;
   bool get canPasteClip {
     if (clipClipboard.isEmpty) {
       return false;
@@ -1045,6 +1054,7 @@ class EditorController extends Notifier<EditorState> {
     String clipId,
     double timelineStartSeconds, {
     int trackDelta = 0,
+    List<CrossfadeDragSnapshot> crossfadeSnapshots = const [],
   }) async {
     if (!timelineStartSeconds.isFinite) {
       return;
@@ -1103,7 +1113,7 @@ class EditorController extends Notifier<EditorState> {
 
     final before = _captureProjectSnapshot();
     final requestId = ++_clipEditRequestId;
-    final tracks = [
+    var tracks = [
       for (final track in state.tracks)
         track.copyWith(
           clips: _orderedClips([
@@ -1113,6 +1123,7 @@ class EditorController extends Notifier<EditorState> {
           ]),
         ),
     ];
+    tracks = updateLinkedCrossfadesAfterMove(tracks, crossfadeSnapshots);
     final previousPosition = _audioEngine.currentPositionSeconds;
 
     state = state.copyWith(
@@ -1403,6 +1414,32 @@ class EditorController extends Notifier<EditorState> {
 
   Future<void> resetFadeOut(String clipId) {
     return _resetClipFade(clipId, _ClipFadeEdge.fadeOut);
+  }
+
+  Future<void> createCrossfade() async {
+    final pair = selectedCrossfadePair(state.tracks, state.selectedClipIds);
+    if (pair == null || !pair.canCreate || pair.isCrossfade) {
+      return;
+    }
+
+    final before = _captureProjectSnapshot();
+    state = state.copyWith(tracks: applyCrossfadeToTracks(state.tracks, pair));
+    _recordEdit('Create Crossfade', before);
+    await _resynchronizeFadePlayback();
+  }
+
+  Future<void> removeCrossfade() async {
+    final pair = selectedCrossfadePair(state.tracks, state.selectedClipIds);
+    if (pair == null || !pair.isCrossfade) {
+      return;
+    }
+
+    final before = _captureProjectSnapshot();
+    state = state.copyWith(
+      tracks: removeCrossfadeFromTracks(state.tracks, pair),
+    );
+    _recordEdit('Remove Crossfade', before);
+    await _resynchronizeFadePlayback();
   }
 
   Future<void> _resetClipFade(String clipId, _ClipFadeEdge edge) async {

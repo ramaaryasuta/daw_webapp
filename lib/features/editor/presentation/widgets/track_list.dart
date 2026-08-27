@@ -9,6 +9,7 @@ import '../../application/editor_controller.dart';
 import '../../application/snap_controller.dart';
 import '../../application/tempo_controller.dart';
 import '../../domain/audio_clip.dart';
+import '../../domain/clip_crossfade.dart';
 import '../../domain/daw_track.dart';
 import '../../domain/timeline_scale.dart';
 import '../controllers/timeline_clip_drag_controller.dart';
@@ -312,6 +313,9 @@ class _TimelineTrackListState extends ConsumerState<TimelineTrackList> {
         final orderedTrackColorValues = [
           for (final track in tracks.values) track.colorValue,
         ];
+        final activeCrossfades = [
+          for (final track in tracks.values) ...activeCrossfadePairs(track),
+        ];
 
         return Listener(
           key: widget.viewportKey,
@@ -345,6 +349,8 @@ class _TimelineTrackListState extends ConsumerState<TimelineTrackList> {
                   return TimelineTrackLane(
                     key: ValueKey(track.id),
                     clips: track.clips,
+                    trackId: track.id,
+                    crossfades: activeCrossfades,
                     trackColorValue: track.colorValue,
                     gridMetrics: widget.gridMetrics,
                     selectedClipIds: effectiveSelection,
@@ -371,6 +377,7 @@ class _TimelineTrackListState extends ConsumerState<TimelineTrackList> {
                         clipId,
                         result.startSeconds,
                         trackDelta: result.trackDelta,
+                        crossfadeSnapshots: result.crossfadeSnapshots,
                       );
                     },
                     onTrimCommitted: (clipId, result) {
@@ -393,6 +400,8 @@ class _TimelineTrackListState extends ConsumerState<TimelineTrackList> {
                     onFadeOutChanged: controller.previewFadeOut,
                     onFadeOutChangeEnd: controller.commitFadeOutChange,
                     onFadeOutReset: controller.resetFadeOut,
+                    onCreateCrossfade: controller.createCrossfade,
+                    onRemoveCrossfade: controller.removeCrossfade,
                   );
                 },
               ),

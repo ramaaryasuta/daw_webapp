@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../domain/audio_clip.dart';
+import '../../domain/clip_crossfade.dart';
 import '../../domain/snap_settings.dart';
 import '../../domain/timeline_snapper.dart';
 import '../widgets/track_header.dart';
@@ -21,6 +22,7 @@ class TimelineClipDragState {
     required this.clipDurationSeconds,
     this.trackDelta = 0,
     this.destinationTrackIndex,
+    this.crossfadeSnapshots = const [],
   });
 
   final String clipId;
@@ -31,12 +33,22 @@ class TimelineClipDragState {
   final double clipDurationSeconds;
   final int trackDelta;
   final int? destinationTrackIndex;
+  final List<CrossfadeDragSnapshot> crossfadeSnapshots;
 
   double get previewEndSeconds {
     return previewStartSeconds + clipDurationSeconds;
   }
 
   double get moveDeltaSeconds => previewStartSeconds - dragStartSeconds;
+
+  List<CrossfadeDragUpdate> get crossfadeUpdates => [
+    for (final snapshot in crossfadeSnapshots)
+      calculateCrossfadeDragUpdate(
+        snapshot: snapshot,
+        timelineDeltaSeconds: moveDeltaSeconds,
+        trackDelta: trackDelta,
+      ),
+  ];
 }
 
 class TimelineClipDragResult {
@@ -47,6 +59,7 @@ class TimelineClipDragResult {
     required this.mode,
     required this.didMove,
     this.trackDelta = 0,
+    this.crossfadeSnapshots = const [],
   });
 
   final double startSeconds;
@@ -55,6 +68,7 @@ class TimelineClipDragResult {
   final TimelineClipDragMode mode;
   final bool didMove;
   final int trackDelta;
+  final List<CrossfadeDragSnapshot> crossfadeSnapshots;
 
   bool get didChange => didMove;
 }
@@ -121,6 +135,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     int? minimumSelectedTrackIndex,
     int? maximumSelectedTrackIndex,
     int? trackCount,
+    List<CrossfadeDragSnapshot> crossfadeSnapshots = const [],
   }) {
     return _begin(
       pointer: pointer,
@@ -141,6 +156,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
       minimumSelectedTrackIndex: minimumSelectedTrackIndex,
       maximumSelectedTrackIndex: maximumSelectedTrackIndex,
       trackCount: trackCount,
+      crossfadeSnapshots: crossfadeSnapshots,
     );
   }
 
@@ -176,6 +192,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
       minimumSelectedTrackIndex: null,
       maximumSelectedTrackIndex: null,
       trackCount: null,
+      crossfadeSnapshots: const [],
     );
   }
 
@@ -197,6 +214,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     required int? minimumSelectedTrackIndex,
     required int? maximumSelectedTrackIndex,
     required int? trackCount,
+    required List<CrossfadeDragSnapshot> crossfadeSnapshots,
   }) {
     if (isDragging ||
         !_horizontalScrollController.hasClients ||
@@ -237,6 +255,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
       destinationTrackIndex: anchorTrackIndex == null
           ? null
           : anchorTrackIndex + initialTrackDelta,
+      crossfadeSnapshots: List.unmodifiable(crossfadeSnapshots),
     );
     _onTimelineInteraction();
     return true;
@@ -278,6 +297,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
               0.000001 ||
           value!.trackDelta != 0,
       trackDelta: value!.trackDelta,
+      crossfadeSnapshots: value!.crossfadeSnapshots,
     );
 
     _finish();
@@ -399,6 +419,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
       destinationTrackIndex: _anchorTrackIndex == null
           ? null
           : _anchorTrackIndex! + trackDelta,
+      crossfadeSnapshots: currentState.crossfadeSnapshots,
     );
   }
 

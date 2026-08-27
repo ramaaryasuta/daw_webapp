@@ -1,5 +1,6 @@
 import 'package:daw_webapp/features/editor/presentation/controllers/timeline_clip_drag_controller.dart';
 import 'package:daw_webapp/features/editor/domain/snap_settings.dart';
+import 'package:daw_webapp/features/editor/domain/clip_crossfade.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -460,5 +461,68 @@ void main() {
     expect(dragController.value!.previewSourceStartSeconds, 1);
     expect(dragController.value!.clipDurationSeconds, 4.5);
     expect(dragController.value!.previewEndSeconds, 6.5);
+  });
+
+  testWidgets('carries linked crossfade updates through one move result', (
+    tester,
+  ) async {
+    final scrollController = ScrollController();
+    final viewportKey = GlobalKey();
+    final dragController = TimelineClipDragController(
+      scrollController,
+      viewportKey,
+      () {},
+    );
+    addTearDown(() {
+      dragController.dispose();
+      scrollController.dispose();
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          key: viewportKey,
+          width: 600,
+          child: SingleChildScrollView(
+            controller: scrollController,
+            scrollDirection: Axis.horizontal,
+            child: const SizedBox(width: 1200, height: 100),
+          ),
+        ),
+      ),
+    );
+    const snapshot = CrossfadeDragSnapshot(
+      trackId: 'track',
+      outgoingClipId: 'a',
+      incomingClipId: 'b',
+      outgoingTimelineStartSeconds: 1,
+      incomingTimelineStartSeconds: 4,
+      outgoingClipDurationSeconds: 5,
+      incomingClipDurationSeconds: 4,
+      outgoingFadeInDurationSeconds: 0.5,
+      incomingFadeOutDurationSeconds: 0.75,
+      originalOutgoingFadeOutDurationSeconds: 2,
+      originalIncomingFadeInDurationSeconds: 2,
+      outgoingMoves: false,
+      incomingMoves: true,
+    );
+
+    dragController.begin(
+      pointer: 20,
+      clipId: 'b',
+      pointerGlobalX: 100,
+      clipStartSeconds: 4,
+      clipDurationSeconds: 4,
+      pixelsPerSecond: 100,
+      crossfadeSnapshots: const [snapshot],
+    );
+    dragController.update(pointer: 20, pointerGlobalX: 225);
+
+    expect(
+      dragController.value!.crossfadeUpdates.single.overlapDurationSeconds,
+      0.75,
+    );
+    final result = dragController.end(20)!;
+    expect(result.crossfadeSnapshots, const [snapshot]);
+    expect(result.didChange, isTrue);
   });
 }

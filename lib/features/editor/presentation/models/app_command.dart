@@ -129,6 +129,21 @@ abstract final class EditorCommands {
     category: AppCommandCategory.editing,
   );
 
+  static const createCrossfade = AppCommand(
+    title: 'Create Crossfade',
+    description:
+        'Create a fade transition between two selected overlapping clips.',
+    shortcutParts: ['Edit', 'Create Crossfade'],
+    category: AppCommandCategory.editing,
+  );
+
+  static const removeCrossfade = AppCommand(
+    title: 'Remove Crossfade',
+    description: 'Remove the crossfade between the selected clips.',
+    shortcutParts: ['Edit', 'Remove Crossfade'],
+    category: AppCommandCategory.editing,
+  );
+
   static const clipProperties = AppCommand(
     title: 'Clip Properties',
     description:
@@ -209,6 +224,8 @@ abstract final class EditorCommands {
     duplicateAudioClip,
     splitAudioClip,
     deleteAudioClip,
+    createCrossfade,
+    removeCrossfade,
     multiSelectClip,
     clipProperties,
     renameTrack,

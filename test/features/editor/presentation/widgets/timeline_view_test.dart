@@ -1,5 +1,6 @@
 import 'package:daw_webapp/features/editor/domain/audio_asset.dart';
 import 'package:daw_webapp/features/editor/domain/audio_clip.dart';
+import 'package:daw_webapp/features/editor/domain/clip_crossfade.dart';
 import 'package:daw_webapp/features/editor/domain/timeline_scale.dart';
 import 'package:daw_webapp/features/editor/presentation/controllers/timeline_clip_drag_controller.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/timeline_view.dart';
@@ -158,5 +159,177 @@ void main() {
     await tester.pump(kDoubleTapTimeout);
     expect(moveCommitCount, 1);
     expect(seekCount, 0);
+  });
+
+  testWidgets('selected overlap exposes create and active crossfade visuals', (
+    tester,
+  ) async {
+    final scrollController = ScrollController();
+    final viewportKey = GlobalKey();
+    final dragController = TimelineClipDragController(
+      scrollController,
+      viewportKey,
+      () {},
+    );
+    addTearDown(() {
+      dragController.dispose();
+      scrollController.dispose();
+    });
+    var createCount = 0;
+    var removeCount = 0;
+
+    Future<void> pumpLane({required bool active}) {
+      const asset = AudioAsset(
+        id: 'asset-xfade',
+        name: 'clip.wav',
+        extension: 'wav',
+        size: 1024,
+        durationSeconds: 10,
+        sampleRate: 48000,
+        numberOfChannels: 2,
+        waveformPeaks: [0.2, 0.8, 0.4, 1],
+      );
+      return tester.pumpWidget(
+        MaterialApp(
+          home: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              key: viewportKey,
+              width: 800,
+              height: 100,
+              child: SingleChildScrollView(
+                controller: scrollController,
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: 1200,
+                  height: 100,
+                  child: TimelineTrackLane(
+                    clips: [
+                      AudioClip(
+                        id: 'clip-a',
+                        audio: asset,
+                        timelineStartSeconds: 1,
+                        clipDurationSeconds: 5,
+                        fadeInDurationSeconds: 0.5,
+                        fadeOutDurationSeconds: active ? 2 : 0.25,
+                      ),
+                      AudioClip(
+                        id: 'clip-b',
+                        audio: asset,
+                        timelineStartSeconds: 4,
+                        clipDurationSeconds: 4,
+                        fadeInDurationSeconds: active ? 2 : 0.25,
+                        fadeOutDurationSeconds: 0.5,
+                      ),
+                    ],
+                    gridMetrics: const TimelineGridMetrics(
+                      transform: TimelineTransform(scale: TimelineScale(100)),
+                    ),
+                    selectedClipIds: const {'clip-a', 'clip-b'},
+                    groupMinimumStartSeconds: 1,
+                    trackIndex: 0,
+                    orderedTrackColorValues: const [0xFF8468C8],
+                    minimumSelectedTrackIndex: 0,
+                    maximumSelectedTrackIndex: 0,
+                    clipDragController: dragController,
+                    onSeek: (_) {},
+                    onSelect: (_, _, _) {},
+                    onMoveCommitted: (_, _) {},
+                    onTrimCommitted: (_, _) {},
+                    onGainChangeStart: (_) {},
+                    onGainChanged: (_, _) {},
+                    onGainChangeEnd: (_) {},
+                    onGainReset: (_) {},
+                    onFadeInChangeStart: (_) {},
+                    onFadeInChanged: (_, _) {},
+                    onFadeInChangeEnd: (_) {},
+                    onFadeInReset: (_) {},
+                    onFadeOutChangeStart: (_) {},
+                    onFadeOutChanged: (_, _) {},
+                    onFadeOutChangeEnd: (_) {},
+                    onFadeOutReset: (_) {},
+                    onCreateCrossfade: () => createCount++,
+                    onRemoveCrossfade: () => removeCount++,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    await pumpLane(active: false);
+    expect(find.byKey(const ValueKey('create-crossfade-button')), findsOne);
+    expect(find.text('XFADE'), findsOne);
+    expect(
+      find.byKey(const ValueKey('crossfade-region-clip-a-clip-b')),
+      findsNothing,
+    );
+    await tester.tap(find.byKey(const ValueKey('create-crossfade-button')));
+    expect(createCount, 1);
+
+    await pumpLane(active: true);
+    expect(
+      find.byKey(const ValueKey('crossfade-region-clip-a-clip-b')),
+      findsOne,
+    );
+    expect(find.byKey(const ValueKey('remove-crossfade-button')), findsOne);
+    expect(find.text('REMOVE XFADE'), findsOne);
+
+    const snapshot = CrossfadeDragSnapshot(
+      trackId: 'timeline-lane',
+      outgoingClipId: 'clip-a',
+      incomingClipId: 'clip-b',
+      outgoingTimelineStartSeconds: 1,
+      incomingTimelineStartSeconds: 4,
+      outgoingClipDurationSeconds: 5,
+      incomingClipDurationSeconds: 4,
+      outgoingFadeInDurationSeconds: 0.5,
+      incomingFadeOutDurationSeconds: 0.5,
+      originalOutgoingFadeOutDurationSeconds: 2,
+      originalIncomingFadeInDurationSeconds: 2,
+      outgoingMoves: false,
+      incomingMoves: true,
+    );
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('crossfade-region-clip-a-clip-b')))
+          .width,
+      200,
+    );
+    dragController.begin(
+      pointer: 30,
+      clipId: 'clip-b',
+      pointerGlobalX: 500,
+      clipStartSeconds: 4,
+      clipDurationSeconds: 4,
+      pixelsPerSecond: 100,
+      crossfadeSnapshots: const [snapshot],
+    );
+    dragController.update(pointer: 30, pointerGlobalX: 625);
+    await tester.pump();
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('crossfade-region-clip-a-clip-b')))
+          .width,
+      75,
+    );
+    expect(find.byKey(const ValueKey('remove-crossfade-button')), findsNothing);
+
+    dragController.update(pointer: 30, pointerGlobalX: 700);
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('crossfade-region-clip-a-clip-b')),
+      findsNothing,
+    );
+    dragController.cancel(30);
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('crossfade-region-clip-a-clip-b')),
+      findsOne,
+    );
+    await tester.tap(find.byKey(const ValueKey('remove-crossfade-button')));
+    expect(removeCount, 1);
   });
 }

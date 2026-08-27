@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../domain/audio_clip.dart';
+import '../../domain/clip_crossfade.dart';
+import '../../domain/daw_track.dart';
 import '../../domain/snap_settings.dart';
 import '../../domain/timeline_scale.dart';
 import '../controllers/timeline_clip_drag_controller.dart';
@@ -15,6 +17,8 @@ class TimelineTrackLane extends StatelessWidget {
   const TimelineTrackLane({
     super.key,
     required this.clips,
+    this.trackId,
+    this.crossfades,
     this.trackColorValue = 0xFF8468C8,
     required this.gridMetrics,
     required this.selectedClipIds,
@@ -42,9 +46,13 @@ class TimelineTrackLane extends StatelessWidget {
     required this.onFadeOutChanged,
     required this.onFadeOutChangeEnd,
     required this.onFadeOutReset,
+    this.onCreateCrossfade,
+    this.onRemoveCrossfade,
   });
 
   final List<AudioClip> clips;
+  final String? trackId;
+  final List<ClipCrossfadePair>? crossfades;
   final int trackColorValue;
   final TimelineGridMetrics gridMetrics;
   final Set<String> selectedClipIds;
@@ -79,11 +87,23 @@ class TimelineTrackLane extends StatelessWidget {
   final void Function(String clipId, double value) onFadeOutChanged;
   final ValueChanged<String> onFadeOutChangeEnd;
   final ValueChanged<String> onFadeOutReset;
+  final VoidCallback? onCreateCrossfade;
+  final VoidCallback? onRemoveCrossfade;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final transform = gridMetrics.transform;
+    final track = DawTrack(
+      id: trackId ?? 'timeline-lane',
+      name: '',
+      clips: clips,
+    );
+    final allCrossfades = crossfades ?? activeCrossfadePairs(track);
+    final activeCrossfades = allCrossfades
+        .where((pair) => pair.trackId == track.id)
+        .toList();
+    final selectedPair = selectedCrossfadePair([track], selectedClipIds);
 
     return Container(
       height: trackHeight,
@@ -117,6 +137,7 @@ class TimelineTrackLane extends StatelessWidget {
               clipDragController: clipDragController,
               bpm: bpm,
               snapSettings: snapSettings,
+              crossfades: allCrossfades,
               onSelect: (toggle, preserveExistingIfSelected) =>
                   onSelect(clip.id, toggle, preserveExistingIfSelected),
               onMoveCommitted: (result) => onMoveCommitted(clip.id, result),
@@ -134,10 +155,263 @@ class TimelineTrackLane extends StatelessWidget {
               onFadeOutChangeEnd: () => onFadeOutChangeEnd(clip.id),
               onFadeOutReset: () => onFadeOutReset(clip.id),
             ),
+          ValueListenableBuilder<TimelineClipDragState?>(
+            valueListenable: clipDragController,
+            builder: (context, dragState, _) {
+              final dragUpdates = dragState?.crossfadeUpdates ?? const [];
+              return Positioned.fill(
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    for (final pair in activeCrossfades)
+                      ..._crossfadePreviewRegions(
+                        pair: pair,
+                        dragState: dragState,
+                        dragUpdates: dragUpdates,
+                        selectedClipIds: selectedClipIds,
+                        transform: transform,
+                        color: colorScheme.tertiary,
+                      ),
+                    if (dragState == null &&
+                        selectedPair != null &&
+                        selectedPair.canCreate)
+                      _CrossfadeAction(
+                        pair: selectedPair,
+                        transform: transform,
+                        isActive: selectedPair.isCrossfade,
+                        onPressed: selectedPair.isCrossfade
+                            ? onRemoveCrossfade
+                            : onCreateCrossfade,
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
         ],
       ),
     );
   }
+}
+
+class _CrossfadeRegion extends StatelessWidget {
+  const _CrossfadeRegion({
+    required this.outgoingClipId,
+    required this.incomingClipId,
+    required this.overlapStartSeconds,
+    required this.overlapDurationSeconds,
+    required this.transform,
+    required this.color,
+    this.verticalOffset = 0,
+  });
+
+  final String outgoingClipId;
+  final String incomingClipId;
+  final double overlapStartSeconds;
+  final double overlapDurationSeconds;
+  final TimelineTransform transform;
+  final Color color;
+  final double verticalOffset;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      key: ValueKey('crossfade-region-$outgoingClipId-$incomingClipId'),
+      left: transform.timeToContentX(overlapStartSeconds),
+      top: 8,
+      bottom: 8,
+      width: math.max(transform.timeToContentX(overlapDurationSeconds), 1),
+      child: Transform.translate(
+        offset: Offset(0, verticalOffset),
+        child: IgnorePointer(
+          child: CustomPaint(
+            painter: _CrossfadeRegionPainter(
+              color: color,
+              surfaceColor: Theme.of(context).colorScheme.surface,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+List<Widget> _crossfadePreviewRegions({
+  required ClipCrossfadePair pair,
+  required TimelineClipDragState? dragState,
+  required List<CrossfadeDragUpdate> dragUpdates,
+  required Set<String> selectedClipIds,
+  required TimelineTransform transform,
+  required Color color,
+}) {
+  CrossfadeDragUpdate? linkedUpdate;
+  for (final update in dragUpdates) {
+    if (update.snapshot.outgoingClipId == pair.outgoingClip.id &&
+        update.snapshot.incomingClipId == pair.incomingClip.id) {
+      linkedUpdate = update;
+      break;
+    }
+  }
+  if (linkedUpdate != null) {
+    if (!linkedUpdate.isActive) {
+      return const [];
+    }
+    final bothMove =
+        linkedUpdate.snapshot.outgoingMoves &&
+        linkedUpdate.snapshot.incomingMoves;
+    return [
+      _CrossfadeRegion(
+        outgoingClipId: pair.outgoingClip.id,
+        incomingClipId: pair.incomingClip.id,
+        overlapStartSeconds: linkedUpdate.overlapStartSeconds,
+        overlapDurationSeconds: linkedUpdate.overlapDurationSeconds,
+        transform: transform,
+        color: color,
+        verticalOffset: bothMove && dragState != null
+            ? dragState.trackDelta * trackHeight
+            : 0,
+      ),
+    ];
+  }
+
+  final groupMoves =
+      dragState?.mode == TimelineClipDragMode.move &&
+      selectedClipIds.contains(dragState!.clipId);
+  final bothSelected =
+      selectedClipIds.contains(pair.outgoingClip.id) &&
+      selectedClipIds.contains(pair.incomingClip.id);
+  final translateWithGroup = groupMoves && bothSelected;
+  return [
+    _CrossfadeRegion(
+      outgoingClipId: pair.outgoingClip.id,
+      incomingClipId: pair.incomingClip.id,
+      overlapStartSeconds:
+          pair.overlapStartSeconds +
+          (translateWithGroup ? dragState.moveDeltaSeconds : 0),
+      overlapDurationSeconds: pair.overlapDurationSeconds,
+      transform: transform,
+      color: color,
+      verticalOffset: translateWithGroup
+          ? dragState.trackDelta * trackHeight
+          : 0,
+    ),
+  ];
+}
+
+class _CrossfadeAction extends StatelessWidget {
+  const _CrossfadeAction({
+    required this.pair,
+    required this.transform,
+    required this.isActive,
+    required this.onPressed,
+  });
+
+  final ClipCrossfadePair pair;
+  final TimelineTransform transform;
+  final bool isActive;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final overlapLeft = transform.timeToContentX(pair.overlapStartSeconds);
+    final overlapWidth = math.max(
+      transform.timeToContentX(pair.overlapDurationSeconds),
+      1,
+    );
+    final buttonWidth = isActive ? 92.0 : 66.0;
+    final colorScheme = Theme.of(context).colorScheme;
+    return Positioned(
+      key: ValueKey(
+        'crossfade-action-${pair.outgoingClip.id}-${pair.incomingClip.id}',
+      ),
+      left: overlapLeft + overlapWidth / 2 - buttonWidth / 2,
+      top: 12,
+      width: buttonWidth,
+      height: 24,
+      child: Material(
+        color: Color.alphaBlend(
+          colorScheme.primary.withValues(alpha: 0.18),
+          colorScheme.surfaceContainerHighest,
+        ),
+        elevation: 3,
+        shadowColor: colorScheme.shadow.withValues(alpha: 0.3),
+        shape: StadiumBorder(
+          side: BorderSide(color: colorScheme.primary.withValues(alpha: 0.72)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          key: ValueKey(
+            isActive ? 'remove-crossfade-button' : 'create-crossfade-button',
+          ),
+          onTap: onPressed,
+          child: Center(
+            child: Text(
+              isActive ? 'REMOVE XFADE' : 'XFADE',
+              maxLines: 1,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: colorScheme.onSurface,
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.55,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CrossfadeRegionPainter extends CustomPainter {
+  const _CrossfadeRegionPainter({
+    required this.color,
+    required this.surfaceColor,
+  });
+
+  final Color color;
+  final Color surfaceColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0) {
+      return;
+    }
+    final rect = Offset.zero & size;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(4)),
+      Paint()..color = color.withValues(alpha: 0.13),
+    );
+
+    const inset = 4.0;
+    final top = math.min(inset, size.height / 2);
+    final bottom = math.max(top, size.height - inset);
+    final halo = Paint()
+      ..color = surfaceColor.withValues(alpha: 0.8)
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round;
+    final line = Paint()
+      ..color = color.withValues(alpha: 0.9)
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    final downStart = Offset(0, top);
+    final downEnd = Offset(size.width, bottom);
+    final upStart = Offset(0, bottom);
+    final upEnd = Offset(size.width, top);
+    canvas
+      ..drawLine(downStart, downEnd, halo)
+      ..drawLine(upStart, upEnd, halo)
+      ..drawLine(downStart, downEnd, line)
+      ..drawLine(upStart, upEnd, line);
+
+    final marker = Paint()..color = color;
+    for (final point in [downStart, downEnd, upStart, upEnd]) {
+      canvas.drawCircle(point, 2.4, marker);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CrossfadeRegionPainter oldDelegate) =>
+      oldDelegate.color != color || oldDelegate.surfaceColor != surfaceColor;
 }
 
 class _TimelineAudioClip extends StatefulWidget {
@@ -155,6 +429,7 @@ class _TimelineAudioClip extends StatefulWidget {
     required this.clipDragController,
     required this.bpm,
     required this.snapSettings,
+    required this.crossfades,
     required this.onSelect,
     required this.onMoveCommitted,
     required this.onTrimCommitted,
@@ -184,6 +459,7 @@ class _TimelineAudioClip extends StatefulWidget {
   final TimelineClipDragController clipDragController;
   final double bpm;
   final SnapSettings snapSettings;
+  final List<ClipCrossfadePair> crossfades;
   final void Function(bool toggle, bool preserveExistingIfSelected) onSelect;
   final ValueChanged<TimelineClipDragResult> onMoveCommitted;
   final ValueChanged<TimelineClipDragResult> onTrimCommitted;
@@ -307,6 +583,7 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
           snapSettings: snapSettings,
           minimumMoveAnchorStartSeconds:
               clip.timelineStartSeconds - widget.groupMinimumStartSeconds,
+          crossfadeSnapshots: _crossfadeSnapshotsForMove(),
         );
       }
       updateDrag(event);
@@ -346,6 +623,20 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
                 destinationTrackIndex < widget.orderedTrackColorValues.length
             ? Color(widget.orderedTrackColorValues[destinationTrackIndex])
             : trackColor;
+        var visualFadeInDurationSeconds = clip.fadeInDurationSeconds;
+        var visualFadeOutDurationSeconds = clip.fadeOutDurationSeconds;
+        for (final update in dragState?.crossfadeUpdates ?? const []) {
+          if (update.snapshot.outgoingClipId == clip.id) {
+            visualFadeOutDurationSeconds = update.isActive
+                ? update.overlapDurationSeconds
+                : 0;
+          }
+          if (update.snapshot.incomingClipId == clip.id) {
+            visualFadeInDurationSeconds = update.isActive
+                ? update.overlapDurationSeconds
+                : 0;
+          }
+        }
 
         return Positioned(
           left: transform.timeToContentX(visualStartSeconds),
@@ -453,8 +744,9 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
                             waveformPeaks: clip.audio.waveformPeaks,
                             gainDb: clip.gainDb,
                             showGainIndicator: renderedClipWidth >= 135,
-                            fadeInDurationSeconds: clip.fadeInDurationSeconds,
-                            fadeOutDurationSeconds: clip.fadeOutDurationSeconds,
+                            fadeInDurationSeconds: visualFadeInDurationSeconds,
+                            fadeOutDurationSeconds:
+                                visualFadeOutDurationSeconds,
                             trackColor: visualTrackColor,
                             isSelected: isSelected,
                             isDragging: isDragging,
@@ -523,6 +815,18 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
     _pendingMovePointer = null;
     _pendingMoveGlobalX = null;
     _pendingMoveGlobalY = null;
+  }
+
+  List<CrossfadeDragSnapshot> _crossfadeSnapshotsForMove() {
+    final movingClipIds = widget.selectedClipIds.contains(clip.id)
+        ? widget.selectedClipIds
+        : {clip.id};
+    return [
+      for (final pair in widget.crossfades)
+        if (movingClipIds.contains(pair.outgoingClip.id) ||
+            movingClipIds.contains(pair.incomingClip.id))
+          CrossfadeDragSnapshot.fromPair(pair, movingClipIds: movingClipIds),
+    ];
   }
 
   void _beginTrim({
