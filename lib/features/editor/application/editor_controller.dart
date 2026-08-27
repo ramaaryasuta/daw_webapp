@@ -12,6 +12,7 @@ import '../domain/imported_audio_file.dart';
 import '../domain/loop_region.dart';
 import '../domain/musical_timing.dart';
 import '../domain/timeline_scale.dart';
+import '../domain/timeline_marker.dart';
 import '../domain/track_color.dart';
 import '../domain/track_mixer.dart';
 import '../domain/timeline_snapper.dart';
@@ -31,7 +32,9 @@ class EditorState {
     this.loopRegion,
     this.masterVolumeDb = unityMasterVolumeDb,
     this.tracks = const [],
+    this.markers = const [],
     this.selectedTrackId,
+    this.selectedMarkerId,
     Set<String> selectedClipIds = const {},
     String? selectedClipId,
     EditorClipClipboard? clipClipboard,
@@ -53,7 +56,9 @@ class EditorState {
   final double masterVolumeDb;
 
   final List<DawTrack> tracks;
+  final List<TimelineMarker> markers;
   final String? selectedTrackId;
+  final String? selectedMarkerId;
   final Set<String> selectedClipIds;
   final EditorClipClipboard clipClipboard;
   final EditorHistory history;
@@ -66,7 +71,14 @@ class EditorState {
   }
 
   double get timelineDurationSeconds {
-    return math.max(projectDurationSeconds, loopRegion?.endSeconds ?? 0);
+    final markerEnd = markers.fold<double>(
+      0,
+      (end, marker) => math.max(end, marker.timeSeconds),
+    );
+    return math.max(
+      math.max(projectDurationSeconds, loopRegion?.endSeconds ?? 0),
+      markerEnd,
+    );
   }
 
   String? get selectedClipId =>
@@ -123,10 +135,13 @@ class EditorState {
     LoopRegion? loopRegion,
     double? masterVolumeDb,
     List<DawTrack>? tracks,
+    List<TimelineMarker>? markers,
     String? selectedTrackId,
+    String? selectedMarkerId,
     Set<String>? selectedClipIds,
     String? selectedClipId,
     bool clearSelectedTrack = false,
+    bool clearSelectedMarker = false,
     bool clearSelectedClip = false,
     EditorClipClipboard? clipClipboard,
     EditorHistory? history,
@@ -140,9 +155,13 @@ class EditorState {
       loopRegion: loopRegion ?? this.loopRegion,
       masterVolumeDb: masterVolumeDb ?? this.masterVolumeDb,
       tracks: tracks ?? this.tracks,
+      markers: markers ?? this.markers,
       selectedTrackId: clearSelectedTrack
           ? null
           : selectedTrackId ?? this.selectedTrackId,
+      selectedMarkerId: clearSelectedMarker
+          ? null
+          : selectedMarkerId ?? this.selectedMarkerId,
       selectedClipIds: clearSelectedClip
           ? const {}
           : selectedClipIds ??
@@ -173,6 +192,7 @@ class EditorController extends Notifier<EditorState> {
   int _trackCounter = 0;
   int _assetCounter = 0;
   int _clipCounter = 0;
+  int _markerCounter = 0;
   int _clipEditRequestId = 0;
 
   ProjectSnapshot? _tempoEditStartSnapshot;
@@ -189,6 +209,9 @@ class EditorController extends Notifier<EditorState> {
   _ClipFadeEdge? _clipFadeEditEdge;
   ProjectSnapshot? _clipGainEditStartSnapshot;
   String? _clipGainEditClipId;
+  ProjectSnapshot? _markerMoveStartSnapshot;
+  String? _movingMarkerId;
+  double? _movingMarkerOriginalTime;
 
   Timer? _playheadTimer;
 
@@ -206,6 +229,7 @@ class EditorController extends Notifier<EditorState> {
   ProjectSnapshot _captureProjectSnapshot() {
     return ProjectSnapshot(
       tracks: state.tracks,
+      markers: state.markers,
       bpm: ref.read(tempoControllerProvider).bpm,
       masterVolumeDb: state.masterVolumeDb,
       selectedTrackId: state.selectedTrackId,
@@ -239,6 +263,9 @@ class EditorController extends Notifier<EditorState> {
     _clipFadeEditEdge = null;
     _clipGainEditStartSnapshot = null;
     _clipGainEditClipId = null;
+    _markerMoveStartSnapshot = null;
+    _movingMarkerId = null;
+    _movingMarkerOriginalTime = null;
   }
 
   Future<void> undo() async {
@@ -296,6 +323,10 @@ class EditorController extends Notifier<EditorState> {
     final selectedClipIds = snapshot.selectedClipIds
         .where(existingClipIds.contains)
         .toSet();
+    final selectedMarkerId =
+        snapshot.markers.any((marker) => marker.id == state.selectedMarkerId)
+        ? state.selectedMarkerId
+        : null;
 
     state = EditorState(
       isPlaying: state.isPlaying,
@@ -306,7 +337,9 @@ class EditorController extends Notifier<EditorState> {
       loopRegion: state.loopRegion,
       masterVolumeDb: snapshot.masterVolumeDb,
       tracks: snapshot.tracks,
+      markers: snapshot.markers,
       selectedTrackId: selectedTrackId,
+      selectedMarkerId: selectedMarkerId,
       selectedClipIds: selectedClipIds,
       clipClipboard: state.clipClipboard,
       history: history,
@@ -657,6 +690,12 @@ class EditorController extends Notifier<EditorState> {
         state.isPlaying && loop != null && !loop.contains(position)
         ? loop.startSeconds
         : position;
+    final audioTimelineEnd = math.max(
+      state.projectDurationSeconds,
+      loop?.endSeconds ?? 0,
+    );
+    final preserveMetadataPosition =
+        enginePosition == position && position > audioTimelineEnd;
     await _audioEngine.seek(
       tracks: state.tracks,
       positionSeconds: enginePosition,
@@ -665,7 +704,9 @@ class EditorController extends Notifier<EditorState> {
 
     state = state.copyWith(
       isPlaying: _audioEngine.isPlaying,
-      playheadSeconds: _audioEngine.currentPositionSeconds,
+      playheadSeconds: preserveMetadataPosition
+          ? position
+          : _audioEngine.currentPositionSeconds,
     );
 
     if (_audioEngine.isPlaying) {
@@ -756,6 +797,199 @@ class EditorController extends Notifier<EditorState> {
     if (_audioEngine.isPlaying) {
       _startPlayheadTicker();
     }
+  }
+
+  String addMarker(double timeSeconds) {
+    final before = _captureProjectSnapshot();
+    final markerId = _nextMarkerId();
+    final marker = TimelineMarker(
+      id: markerId,
+      timeSeconds: _snapMarkerTime(timeSeconds),
+      name: _nextDefaultMarkerName(),
+      colorArgb: defaultTrackColorForIndex(state.markers.length + 5),
+    );
+    final markers = [...state.markers, marker]..sort(_compareMarkersByTime);
+    state = state.copyWith(
+      markers: List.unmodifiable(markers),
+      selectedMarkerId: markerId,
+      clearSelectedClip: true,
+    );
+    _recordEdit('Add Marker', before);
+    return markerId;
+  }
+
+  String addMarkerAtPlayhead() => addMarker(state.playheadSeconds);
+
+  void selectMarker(String markerId) {
+    if (!state.markers.any((marker) => marker.id == markerId)) {
+      return;
+    }
+    state = state.copyWith(selectedMarkerId: markerId, clearSelectedClip: true);
+  }
+
+  void clearMarkerSelection() {
+    state = state.copyWith(clearSelectedMarker: true);
+  }
+
+  void beginMarkerMove(String markerId) {
+    final marker = _markerById(markerId);
+    if (marker == null) {
+      return;
+    }
+    _markerMoveStartSnapshot = _captureProjectSnapshot();
+    _movingMarkerId = markerId;
+    _movingMarkerOriginalTime = marker.timeSeconds;
+    selectMarker(markerId);
+  }
+
+  void previewMarkerMove(String markerId, double timeSeconds) {
+    if (_movingMarkerId != markerId || _markerMoveStartSnapshot == null) {
+      return;
+    }
+    final snappedTime = _snapMarkerTime(timeSeconds);
+    final markers = [
+      for (final marker in state.markers)
+        if (marker.id == markerId)
+          marker.copyWith(timeSeconds: snappedTime)
+        else
+          marker,
+    ]..sort(_compareMarkersByTime);
+    state = state.copyWith(markers: List.unmodifiable(markers));
+  }
+
+  void commitMarkerMove(String markerId) {
+    if (_movingMarkerId != markerId) {
+      return;
+    }
+    final before = _markerMoveStartSnapshot;
+    _markerMoveStartSnapshot = null;
+    _movingMarkerId = null;
+    _movingMarkerOriginalTime = null;
+    if (before != null) {
+      _recordEdit('Move Marker', before);
+    }
+  }
+
+  void cancelMarkerMove(String markerId) {
+    if (_movingMarkerId != markerId) {
+      return;
+    }
+    final originalTime = _movingMarkerOriginalTime;
+    _markerMoveStartSnapshot = null;
+    _movingMarkerId = null;
+    _movingMarkerOriginalTime = null;
+    if (originalTime == null) {
+      return;
+    }
+    final markers = [
+      for (final marker in state.markers)
+        if (marker.id == markerId)
+          marker.copyWith(timeSeconds: originalTime)
+        else
+          marker,
+    ]..sort(_compareMarkersByTime);
+    state = state.copyWith(markers: List.unmodifiable(markers));
+  }
+
+  void renameMarker(String markerId, String name) {
+    final normalizedName = name.trim();
+    final marker = _markerById(markerId);
+    if (marker == null ||
+        normalizedName.isEmpty ||
+        marker.name == normalizedName) {
+      return;
+    }
+    final before = _captureProjectSnapshot();
+    state = state.copyWith(
+      markers: List.unmodifiable([
+        for (final item in state.markers)
+          if (item.id == markerId)
+            item.copyWith(name: normalizedName)
+          else
+            item,
+      ]),
+    );
+    _recordEdit('Rename Marker', before);
+  }
+
+  void changeMarkerColor(String markerId, int colorArgb) {
+    final marker = _markerById(markerId);
+    final normalizedColor = opaqueTrackColor(colorArgb);
+    if (marker == null || marker.colorArgb == normalizedColor) {
+      return;
+    }
+    final before = _captureProjectSnapshot();
+    state = state.copyWith(
+      markers: List.unmodifiable([
+        for (final item in state.markers)
+          if (item.id == markerId)
+            item.copyWith(colorArgb: normalizedColor)
+          else
+            item,
+      ]),
+    );
+    _recordEdit('Change Marker Color', before);
+  }
+
+  void deleteMarker(String markerId) {
+    if (!state.markers.any((marker) => marker.id == markerId)) {
+      return;
+    }
+    final before = _captureProjectSnapshot();
+    state = state.copyWith(
+      markers: List.unmodifiable(
+        state.markers.where((marker) => marker.id != markerId),
+      ),
+      clearSelectedMarker: state.selectedMarkerId == markerId,
+    );
+    _recordEdit('Delete Marker', before);
+  }
+
+  void deleteSelectedMarker() {
+    final markerId = state.selectedMarkerId;
+    if (markerId != null) {
+      deleteMarker(markerId);
+    }
+  }
+
+  TimelineMarker? _markerById(String markerId) {
+    for (final marker in state.markers) {
+      if (marker.id == markerId) {
+        return marker;
+      }
+    }
+    return null;
+  }
+
+  double _snapMarkerTime(double timeSeconds) {
+    final finiteTime = timeSeconds.isFinite ? timeSeconds : 0.0;
+    return TimelineSnapper.snapTime(
+      candidateSeconds: math.max(0, finiteTime),
+      bpm: ref.read(tempoControllerProvider).bpm,
+      settings: ref.read(snapControllerProvider),
+    );
+  }
+
+  String _nextMarkerId() {
+    final existingIds = state.markers.map((marker) => marker.id).toSet();
+    do {
+      _markerCounter++;
+    } while (existingIds.contains('marker-$_markerCounter'));
+    return 'marker-$_markerCounter';
+  }
+
+  String _nextDefaultMarkerName() {
+    final existingNames = state.markers.map((marker) => marker.name).toSet();
+    var number = 1;
+    while (existingNames.contains('Marker $number')) {
+      number++;
+    }
+    return 'Marker $number';
+  }
+
+  static int _compareMarkersByTime(TimelineMarker left, TimelineMarker right) {
+    final timeOrder = left.timeSeconds.compareTo(right.timeSeconds);
+    return timeOrder != 0 ? timeOrder : left.id.compareTo(right.id);
   }
 
   void selectTrack(String trackId) {
@@ -1568,6 +1802,7 @@ class EditorController extends Notifier<EditorState> {
     ];
     final after = ProjectSnapshot(
       tracks: tracks,
+      markers: state.markers,
       bpm: ref.read(tempoControllerProvider).bpm,
       masterVolumeDb: state.masterVolumeDb,
       selectedTrackId: state.selectedTrackId,

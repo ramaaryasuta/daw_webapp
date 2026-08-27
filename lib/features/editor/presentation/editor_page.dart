@@ -293,6 +293,44 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     showCommandsDialog(context, commands: EditorCommands.all);
   }
 
+  void _addMarkerAtPlayhead() {
+    _markTimelineUserInteraction();
+    ref.read(editorControllerProvider.notifier).addMarkerAtPlayhead();
+  }
+
+  void _addMarker(double timeSeconds) {
+    _markTimelineUserInteraction();
+    ref.read(editorControllerProvider.notifier).addMarker(timeSeconds);
+  }
+
+  void _selectMarker(String markerId) {
+    _markTimelineUserInteraction();
+    ref.read(editorControllerProvider.notifier).selectMarker(markerId);
+  }
+
+  void _seekToMarker(double timeSeconds) {
+    _markTimelineUserInteraction();
+    ref.read(editorControllerProvider.notifier).seek(timeSeconds);
+  }
+
+  void _beginMarkerMove(String markerId) {
+    _markTimelineUserInteraction();
+    ref.read(editorControllerProvider.notifier).beginMarkerMove(markerId);
+  }
+
+  void _deleteSelectedMarker() {
+    ref.read(editorControllerProvider.notifier).deleteSelectedMarker();
+  }
+
+  void _deleteCurrentSelection() {
+    final editorState = ref.read(editorControllerProvider);
+    if (editorState.selectedMarkerId != null) {
+      _deleteSelectedMarker();
+    } else {
+      _deleteSelectedClip();
+    }
+  }
+
   void _openExportDialog() {
     showExportDialog(
       context,
@@ -397,6 +435,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     required bool canRemoveCrossfade,
     required bool canUndo,
     required bool canRedo,
+    required bool canDeleteMarker,
   }) {
     return [
       EditorMenuSection(
@@ -488,6 +527,24 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             label: 'Remove Crossfade',
             icon: Icons.close,
             onSelected: canRemoveCrossfade ? _removeCrossfade : null,
+          ),
+          EditorMenuAction(
+            label: 'Markers',
+            icon: Icons.flag_outlined,
+            separatorBefore: true,
+            onSelected: null,
+            children: [
+              EditorMenuAction(
+                label: 'Add Marker at Playhead',
+                icon: Icons.add_location_alt_outlined,
+                onSelected: _addMarkerAtPlayhead,
+              ),
+              EditorMenuAction(
+                label: 'Delete Selected Marker',
+                icon: Icons.delete_outline,
+                onSelected: canDeleteMarker ? _deleteSelectedMarker : null,
+              ),
+            ],
           ),
         ],
       ),
@@ -919,7 +976,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
           DeleteClipIntent: CallbackAction<DeleteClipIntent>(
             onInvoke: (_) {
               if (EditorShortcutPolicy.canHandleEditorCommand(context)) {
-                _deleteSelectedClip();
+                _deleteCurrentSelection();
               }
               return null;
             },
@@ -928,6 +985,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             onInvoke: (_) {
               if (EditorShortcutPolicy.canHandleEditorCommand(context)) {
                 controller.clearClipSelection();
+                controller.clearMarkerSelection();
               }
               return null;
             },
@@ -967,6 +1025,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                     canRemoveCrossfade: editorState.canRemoveCrossfade,
                     canUndo: editorState.canUndo,
                     canRedo: editorState.canRedo,
+                    canDeleteMarker: editorState.selectedMarkerId != null,
                   ),
                 ),
 
@@ -1159,6 +1218,38 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                                                                           .isLoopEnabled,
                                                                   snapSettings:
                                                                       snapSettings,
+                                                                  markers:
+                                                                      editorState
+                                                                          .markers,
+                                                                  selectedMarkerId:
+                                                                      editorState
+                                                                          .selectedMarkerId,
+                                                                  onAddMarker:
+                                                                      _addMarker,
+                                                                  onSelectMarker:
+                                                                      _selectMarker,
+                                                                  onMarkerSeek:
+                                                                      _seekToMarker,
+                                                                  onMarkerMoveStart:
+                                                                      _beginMarkerMove,
+                                                                  onMarkerMovePreview:
+                                                                      controller
+                                                                          .previewMarkerMove,
+                                                                  onMarkerMoveEnd:
+                                                                      controller
+                                                                          .commitMarkerMove,
+                                                                  onMarkerMoveCancel:
+                                                                      controller
+                                                                          .cancelMarkerMove,
+                                                                  onMarkerRename:
+                                                                      controller
+                                                                          .renameMarker,
+                                                                  onMarkerColorSelected:
+                                                                      controller
+                                                                          .changeMarkerColor,
+                                                                  onMarkerDelete:
+                                                                      controller
+                                                                          .deleteMarker,
                                                                   onLoopRegionPreviewChanged:
                                                                       (
                                                                         region,
@@ -1189,6 +1280,12 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                                                                         _rulerMode,
                                                                     verticalScrollController:
                                                                         _trackLaneScrollController,
+                                                                    markers:
+                                                                        editorState
+                                                                            .markers,
+                                                                    selectedMarkerId:
+                                                                        editorState
+                                                                            .selectedMarkerId,
                                                                     child:
                                                                         trackList!,
                                                                   ),

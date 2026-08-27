@@ -156,6 +156,7 @@ class _CommandsDialogState extends State<CommandsDialog> {
           command.description,
           command.shortcutParts.join(' '),
           command.category.label,
+          command.searchTerms.join(' '),
         ].join(' ').toLowerCase().contains(normalizedQuery))
           command,
     ];

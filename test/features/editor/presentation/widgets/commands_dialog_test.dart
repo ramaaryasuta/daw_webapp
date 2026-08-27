@@ -32,6 +32,19 @@ void main() {
     await tester.pump();
     expect(find.text('Zoom Timeline'), findsOneWidget);
     expect(find.text('Scroll Timeline'), findsOneWidget);
+
+    await tester.enterText(search, 'marker');
+    await tester.pump();
+    expect(find.text('Add Marker'), findsOneWidget);
+    expect(find.text('Jump to Marker'), findsOneWidget);
+
+    await tester.enterText(search, 'properties');
+    await tester.pump();
+    expect(find.text('Open Marker Properties'), findsOneWidget);
+
+    await tester.enterText(search, 'verse');
+    await tester.pump();
+    expect(find.text('Add Marker'), findsOneWidget);
   });
 
   testWidgets('shows no-result state and clears the query', (tester) async {

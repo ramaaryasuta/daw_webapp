@@ -3,6 +3,7 @@ import 'package:daw_webapp/features/editor/domain/audio_asset.dart';
 import 'package:daw_webapp/features/editor/domain/audio_clip.dart';
 import 'package:daw_webapp/features/editor/domain/daw_track.dart';
 import 'package:daw_webapp/features/editor/domain/track_color.dart';
+import 'package:daw_webapp/features/editor/domain/timeline_marker.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -17,6 +18,36 @@ void main() {
     numberOfChannels: 2,
     waveformPeaks: waveform,
   );
+
+  test('marker project state records metadata in history', () {
+    const marker = TimelineMarker(
+      id: 'marker-1',
+      timeSeconds: 8,
+      name: 'Verse',
+      colorArgb: TrackColors.blue,
+    );
+    final before = ProjectSnapshot(
+      tracks: const [],
+      markers: const [marker],
+      bpm: 120,
+      selectedTrackId: null,
+    );
+    final after = ProjectSnapshot(
+      tracks: const [],
+      markers: [marker.copyWith(name: 'Chorus')],
+      bpm: 120,
+      selectedTrackId: null,
+    );
+
+    final history = EditorHistory().record(
+      label: 'Rename Marker',
+      before: before,
+      after: after,
+    );
+
+    expect(history.past.single.label, 'Rename Marker');
+    expect(history.undo(after)!.snapshot.markers.single, same(marker));
+  });
 
   ProjectSnapshot snapshot({
     required double start,

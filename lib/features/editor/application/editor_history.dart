@@ -1,6 +1,7 @@
 import 'dart:collection';
 
 import '../domain/daw_track.dart';
+import '../domain/timeline_marker.dart';
 
 /// Maximum number of committed project edits retained for undo.
 const int editorHistoryLimit = 100;
@@ -13,12 +14,14 @@ const int editorHistoryLimit = 100;
 class ProjectSnapshot {
   ProjectSnapshot({
     required Iterable<DawTrack> tracks,
+    Iterable<TimelineMarker> markers = const [],
     required this.bpm,
     this.masterVolumeDb = 0,
     required this.selectedTrackId,
     Set<String> selectedClipIds = const {},
     String? selectedClipId,
   }) : tracks = List<DawTrack>.unmodifiable(tracks),
+       markers = List<TimelineMarker>.unmodifiable(markers),
        selectedClipIds = selectedClipIds.isEmpty
            ? selectedClipId == null
                  ? const {}
@@ -26,6 +29,7 @@ class ProjectSnapshot {
            : UnmodifiableSetView({...selectedClipIds});
 
   final List<DawTrack> tracks;
+  final List<TimelineMarker> markers;
   final double bpm;
   final double masterVolumeDb;
 
@@ -40,8 +44,20 @@ class ProjectSnapshot {
   bool hasSameProjectState(ProjectSnapshot other) {
     if (bpm != other.bpm ||
         masterVolumeDb != other.masterVolumeDb ||
-        tracks.length != other.tracks.length) {
+        tracks.length != other.tracks.length ||
+        markers.length != other.markers.length) {
       return false;
+    }
+
+    for (var markerIndex = 0; markerIndex < markers.length; markerIndex++) {
+      final leftMarker = markers[markerIndex];
+      final rightMarker = other.markers[markerIndex];
+      if (leftMarker.id != rightMarker.id ||
+          leftMarker.timeSeconds != rightMarker.timeSeconds ||
+          leftMarker.name != rightMarker.name ||
+          leftMarker.colorArgb != rightMarker.colorArgb) {
+        return false;
+      }
     }
 
     for (var trackIndex = 0; trackIndex < tracks.length; trackIndex++) {

@@ -9,7 +9,9 @@ import '../../domain/musical_timing.dart';
 import '../../domain/snap_settings.dart';
 import '../../domain/timeline_scale.dart';
 import '../../domain/timeline_snapper.dart';
+import '../../domain/timeline_marker.dart';
 import '../models/timeline_ruler_mode.dart';
+import 'timeline_marker_lane.dart';
 
 class TimelineRuler extends StatefulWidget {
   const TimelineRuler({
@@ -25,9 +27,22 @@ class TimelineRuler extends StatefulWidget {
     this.mode = TimelineRulerMode.barsBeats,
     this.bpm = 120,
     this.beatsPerBar = defaultBeatsPerBar,
+    this.markers = const [],
+    this.selectedMarkerId,
+    this.onAddMarker,
+    this.onSelectMarker,
+    this.onMarkerSeek,
+    this.onMarkerMoveStart,
+    this.onMarkerMovePreview,
+    this.onMarkerMoveEnd,
+    this.onMarkerMoveCancel,
+    this.onMarkerRename,
+    this.onMarkerColorSelected,
+    this.onMarkerDelete,
   });
 
-  static const double height = 32;
+  static const double musicalLaneHeight = 32;
+  static const double height = musicalLaneHeight + TimelineMarkerLane.height;
 
   final double playheadSeconds;
   final TimelineGridMetrics gridMetrics;
@@ -40,6 +55,18 @@ class TimelineRuler extends StatefulWidget {
   final TimelineRulerMode mode;
   final double bpm;
   final int beatsPerBar;
+  final List<TimelineMarker> markers;
+  final String? selectedMarkerId;
+  final ValueChanged<double>? onAddMarker;
+  final ValueChanged<String>? onSelectMarker;
+  final ValueChanged<double>? onMarkerSeek;
+  final ValueChanged<String>? onMarkerMoveStart;
+  final void Function(String markerId, double timeSeconds)? onMarkerMovePreview;
+  final ValueChanged<String>? onMarkerMoveEnd;
+  final ValueChanged<String>? onMarkerMoveCancel;
+  final void Function(String markerId, String name)? onMarkerRename;
+  final void Function(String markerId, int colorArgb)? onMarkerColorSelected;
+  final ValueChanged<String>? onMarkerDelete;
 
   @override
   State<TimelineRuler> createState() => _TimelineRulerState();
@@ -197,34 +224,57 @@ class _TimelineRulerState extends State<TimelineRuler> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return MouseRegion(
-      cursor: _isDragging ? SystemMouseCursors.resizeLeftRight : _cursor,
-      onHover: _handleHover,
-      child: Listener(
-        behavior: HitTestBehavior.opaque,
-        onPointerDown: _handlePointerDown,
-        onPointerMove: _handlePointerMove,
-        onPointerUp: _handlePointerUp,
-        onPointerCancel: _handlePointerCancel,
-        child: SizedBox(
-          height: TimelineRuler.height,
-          child: CustomPaint(
-            painter: TimelineRulerPainter(
-              color: colorScheme.outline,
-              playheadColor: colorScheme.tertiary,
-              loopColor: colorScheme.primary,
-              loopRegion: _previewRegion ?? widget.loopRegion,
-              isLoopEnabled: widget.isLoopEnabled,
-              playheadSeconds: widget.playheadSeconds,
-              gridMetrics: widget.gridMetrics,
-              mode: widget.mode,
-              bpm: widget.bpm,
-              beatsPerBar: widget.beatsPerBar,
-              devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+    return SizedBox(
+      height: TimelineRuler.height,
+      child: Column(
+        children: [
+          MouseRegion(
+            cursor: _isDragging ? SystemMouseCursors.resizeLeftRight : _cursor,
+            onHover: _handleHover,
+            child: Listener(
+              behavior: HitTestBehavior.opaque,
+              onPointerDown: _handlePointerDown,
+              onPointerMove: _handlePointerMove,
+              onPointerUp: _handlePointerUp,
+              onPointerCancel: _handlePointerCancel,
+              child: SizedBox(
+                height: TimelineRuler.musicalLaneHeight,
+                child: CustomPaint(
+                  painter: TimelineRulerPainter(
+                    color: colorScheme.outline,
+                    playheadColor: colorScheme.tertiary,
+                    loopColor: colorScheme.primary,
+                    loopRegion: _previewRegion ?? widget.loopRegion,
+                    isLoopEnabled: widget.isLoopEnabled,
+                    playheadSeconds: widget.playheadSeconds,
+                    gridMetrics: widget.gridMetrics,
+                    mode: widget.mode,
+                    bpm: widget.bpm,
+                    beatsPerBar: widget.beatsPerBar,
+                    devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+                  ),
+                  child: const SizedBox.expand(),
+                ),
+              ),
             ),
-            child: const SizedBox.expand(),
           ),
-        ),
+          TimelineMarkerLane(
+            markers: widget.markers,
+            selectedMarkerId: widget.selectedMarkerId,
+            playheadSeconds: widget.playheadSeconds,
+            gridMetrics: widget.gridMetrics,
+            onAddMarker: widget.onAddMarker,
+            onSelectMarker: widget.onSelectMarker,
+            onSeek: widget.onMarkerSeek ?? widget.onSeek,
+            onMoveStart: widget.onMarkerMoveStart,
+            onMovePreview: widget.onMarkerMovePreview,
+            onMoveEnd: widget.onMarkerMoveEnd,
+            onMoveCancel: widget.onMarkerMoveCancel,
+            onRename: widget.onMarkerRename,
+            onColorSelected: widget.onMarkerColorSelected,
+            onDelete: widget.onMarkerDelete,
+          ),
+        ],
       ),
     );
   }

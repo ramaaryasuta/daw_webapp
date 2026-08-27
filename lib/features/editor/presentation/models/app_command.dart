@@ -13,12 +13,14 @@ class AppCommand {
     required this.description,
     required this.shortcutParts,
     required this.category,
+    this.searchTerms = const [],
   });
 
   final String title;
   final String description;
   final List<String> shortcutParts;
   final AppCommandCategory category;
+  final List<String> searchTerms;
 }
 
 abstract final class EditorCommands {
@@ -216,6 +218,35 @@ abstract final class EditorCommands {
     category: AppCommandCategory.timeline,
   );
 
+  static const addMarker = AppCommand(
+    title: 'Add Marker',
+    description: 'Create a timeline marker at the selected position.',
+    shortcutParts: ['Double-click Marker Lane'],
+    category: AppCommandCategory.timeline,
+    searchTerms: ['verse', 'chorus'],
+  );
+
+  static const openMarkerProperties = AppCommand(
+    title: 'Open Marker Properties',
+    description: 'Rename, recolor, or delete a timeline marker.',
+    shortcutParts: ['Double-click Marker'],
+    category: AppCommandCategory.editing,
+  );
+
+  static const moveMarker = AppCommand(
+    title: 'Move Marker',
+    description: 'Move a marker along the timeline.',
+    shortcutParts: ['Drag Marker'],
+    category: AppCommandCategory.timeline,
+  );
+
+  static const jumpToMarker = AppCommand(
+    title: 'Jump to Marker',
+    description: 'Move the playhead to a timeline marker.',
+    shortcutParts: ['Click Marker'],
+    category: AppCommandCategory.timeline,
+  );
+
   static const all = <AppCommand>[
     undo,
     redo,
@@ -244,5 +275,9 @@ abstract final class EditorCommands {
     moveAudioClip,
     marqueeSelect,
     trimAudioClip,
+    addMarker,
+    openMarkerProperties,
+    moveMarker,
+    jumpToMarker,
   ];
 }

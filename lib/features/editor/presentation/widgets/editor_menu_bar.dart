@@ -14,6 +14,7 @@ class EditorMenuAction {
     this.icon,
     this.shortcut,
     this.separatorBefore = false,
+    this.children = const [],
   });
 
   final String label;
@@ -21,6 +22,7 @@ class EditorMenuAction {
   final IconData? icon;
   final MenuSerializableShortcut? shortcut;
   final bool separatorBefore;
+  final List<EditorMenuAction> children;
 }
 
 class EditorMenuBar extends StatelessWidget {
@@ -60,14 +62,33 @@ class EditorMenuBar extends StatelessWidget {
                 menuChildren: [
                   for (final action in section.actions) ...[
                     if (action.separatorBefore) const Divider(height: 1),
-                    MenuItemButton(
-                      leadingIcon: action.icon == null
-                          ? null
-                          : Icon(action.icon, size: 18),
-                      onPressed: action.onSelected,
-                      shortcut: action.shortcut,
-                      child: Text(action.label),
-                    ),
+                    if (action.children.isEmpty)
+                      MenuItemButton(
+                        leadingIcon: action.icon == null
+                            ? null
+                            : Icon(action.icon, size: 18),
+                        onPressed: action.onSelected,
+                        shortcut: action.shortcut,
+                        child: Text(action.label),
+                      )
+                    else
+                      SubmenuButton(
+                        leadingIcon: action.icon == null
+                            ? null
+                            : Icon(action.icon, size: 18),
+                        menuChildren: [
+                          for (final child in action.children)
+                            MenuItemButton(
+                              leadingIcon: child.icon == null
+                                  ? null
+                                  : Icon(child.icon, size: 18),
+                              onPressed: child.onSelected,
+                              shortcut: child.shortcut,
+                              child: Text(child.label),
+                            ),
+                        ],
+                        child: Text(action.label),
+                      ),
                   ],
                 ],
                 child: Text(section.label),

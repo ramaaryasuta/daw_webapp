@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../domain/loop_region.dart';
 import '../../domain/snap_settings.dart';
 import '../../domain/timeline_scale.dart';
+import '../../domain/timeline_marker.dart';
 import '../models/timeline_ruler_mode.dart';
 import 'musical_grid_painter.dart';
 import 'track_header.dart';
@@ -22,6 +24,8 @@ class TimelineLoopOverlay extends StatelessWidget {
     required this.snapSettings,
     required this.rulerMode,
     required this.verticalScrollController,
+    this.markers = const [],
+    this.selectedMarkerId,
   });
 
   final Widget child;
@@ -33,6 +37,8 @@ class TimelineLoopOverlay extends StatelessWidget {
   final SnapSettings snapSettings;
   final TimelineRulerMode rulerMode;
   final ScrollController verticalScrollController;
+  final List<TimelineMarker> markers;
+  final String? selectedMarkerId;
 
   @override
   Widget build(BuildContext context) {
@@ -103,6 +109,16 @@ class TimelineLoopOverlay extends StatelessWidget {
                   ),
                 ),
               ),
+              IgnorePointer(
+                child: CustomPaint(
+                  painter: TimelineMarkerGuidePainter(
+                    markers: markers,
+                    selectedMarkerId: selectedMarkerId,
+                    gridMetrics: gridMetrics,
+                    devicePixelRatio: devicePixelRatio,
+                  ),
+                ),
+              ),
               child!,
               IgnorePointer(
                 child: CustomPaint(
@@ -122,6 +138,50 @@ class TimelineLoopOverlay extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class TimelineMarkerGuidePainter extends CustomPainter {
+  const TimelineMarkerGuidePainter({
+    required this.markers,
+    required this.selectedMarkerId,
+    required this.gridMetrics,
+    required this.devicePixelRatio,
+  });
+
+  final List<TimelineMarker> markers;
+  final String? selectedMarkerId;
+  final TimelineGridMetrics gridMetrics;
+  final double devicePixelRatio;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final marker in markers) {
+      final selected = marker.id == selectedMarkerId;
+      final x = gridMetrics.alignStrokeCenter(
+        gridMetrics.transform.timeToContentX(marker.timeSeconds),
+        devicePixelRatio: devicePixelRatio,
+        strokeWidth: selected ? 1.5 : 1,
+      );
+      canvas.drawLine(
+        Offset(x, 0),
+        Offset(x, size.height),
+        Paint()
+          ..color = Color(
+            marker.colorArgb,
+          ).withValues(alpha: selected ? 0.42 : 0.2)
+          ..strokeWidth = selected ? 1.5 : 1,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant TimelineMarkerGuidePainter oldDelegate) {
+    return !listEquals(oldDelegate.markers, markers) ||
+        oldDelegate.selectedMarkerId != selectedMarkerId ||
+        oldDelegate.gridMetrics.scale.pixelsPerSecond !=
+            gridMetrics.scale.pixelsPerSecond ||
+        oldDelegate.devicePixelRatio != devicePixelRatio;
   }
 }
 

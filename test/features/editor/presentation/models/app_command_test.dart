@@ -2,6 +2,23 @@ import 'package:daw_webapp/features/editor/presentation/models/app_command.dart'
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('Help commands define marker gestures once', () {
+    final markerCommands = EditorCommands.all.where(
+      (command) => command.title.contains('Marker'),
+    );
+
+    expect(markerCommands.map((command) => command.title), [
+      'Add Marker',
+      'Open Marker Properties',
+      'Move Marker',
+      'Jump to Marker',
+    ]);
+    expect(EditorCommands.addMarker.shortcutParts, [
+      'Double-click Marker Lane',
+    ]);
+    expect(EditorCommands.moveMarker.shortcutParts, ['Drag Marker']);
+  });
+
   test('Help commands define the Space Play / Pause shortcut', () {
     final command = EditorCommands.all.singleWhere(
       (command) => command.title == 'Play / Pause',
