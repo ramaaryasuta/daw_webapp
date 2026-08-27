@@ -342,4 +342,33 @@ void main() {
       closeTo(17.2, 1e-9),
     );
   });
+
+  test('undo and redo retain multi-clip selection hints', () {
+    final before = snapshot(start: 2, split: true);
+    final selectedBefore = ProjectSnapshot(
+      tracks: before.tracks,
+      bpm: before.bpm,
+      selectedTrackId: before.selectedTrackId,
+      selectedClipIds: const {'clip-1', 'clip-2'},
+    );
+    final moved = snapshot(start: 5, split: true);
+    final selectedAfter = ProjectSnapshot(
+      tracks: moved.tracks,
+      bpm: moved.bpm,
+      selectedTrackId: moved.selectedTrackId,
+      selectedClipIds: const {'clip-1', 'clip-2'},
+    );
+
+    final history = EditorHistory().record(
+      label: 'Move Clips',
+      before: selectedBefore,
+      after: selectedAfter,
+    );
+    final undo = history.undo(selectedAfter)!;
+    final redo = undo.history.redo(undo.snapshot)!;
+
+    expect(undo.snapshot.selectedClipIds, {'clip-1', 'clip-2'});
+    expect(redo.snapshot.selectedClipIds, {'clip-1', 'clip-2'});
+    expect(redo.history.past.last.label, 'Move Clips');
+  });
 }

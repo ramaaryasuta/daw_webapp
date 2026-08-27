@@ -17,7 +17,8 @@ class TimelineTrackLane extends StatelessWidget {
     required this.clips,
     this.trackColorValue = 0xFF8468C8,
     required this.gridMetrics,
-    required this.selectedClipId,
+    required this.selectedClipIds,
+    required this.groupMinimumStartSeconds,
     required this.clipDragController,
     this.bpm = 120,
     this.snapSettings = const SnapSettings(enabled: false),
@@ -38,12 +39,18 @@ class TimelineTrackLane extends StatelessWidget {
   final List<AudioClip> clips;
   final int trackColorValue;
   final TimelineGridMetrics gridMetrics;
-  final String? selectedClipId;
+  final Set<String> selectedClipIds;
+  final double groupMinimumStartSeconds;
   final TimelineClipDragController clipDragController;
   final double bpm;
   final SnapSettings snapSettings;
   final ValueChanged<double> onSeek;
-  final ValueChanged<String> onSelect;
+  final void Function(
+    String clipId,
+    bool toggle,
+    bool preserveExistingIfSelected,
+  )
+  onSelect;
   final void Function(String clipId, double startSeconds) onMoveCommitted;
   final void Function(String clipId, TimelineClipDragResult result)
   onTrimCommitted;
@@ -84,11 +91,13 @@ class TimelineTrackLane extends StatelessWidget {
               clip: clip,
               trackColor: Color(trackColorValue),
               transform: transform,
-              isSelected: selectedClipId == clip.id,
+              selectedClipIds: selectedClipIds,
+              groupMinimumStartSeconds: groupMinimumStartSeconds,
               clipDragController: clipDragController,
               bpm: bpm,
               snapSettings: snapSettings,
-              onSelect: () => onSelect(clip.id),
+              onSelect: (toggle, preserveExistingIfSelected) =>
+                  onSelect(clip.id, toggle, preserveExistingIfSelected),
               onMoveCommitted: (start) => onMoveCommitted(clip.id, start),
               onTrimCommitted: (result) => onTrimCommitted(clip.id, result),
               onFadeInChangeStart: () => onFadeInChangeStart(clip.id),
@@ -112,7 +121,8 @@ class _TimelineAudioClip extends StatefulWidget {
     required this.clip,
     required this.trackColor,
     required this.transform,
-    required this.isSelected,
+    required this.selectedClipIds,
+    required this.groupMinimumStartSeconds,
     required this.clipDragController,
     required this.bpm,
     required this.snapSettings,
@@ -132,11 +142,12 @@ class _TimelineAudioClip extends StatefulWidget {
   final AudioClip clip;
   final Color trackColor;
   final TimelineTransform transform;
-  final bool isSelected;
+  final Set<String> selectedClipIds;
+  final double groupMinimumStartSeconds;
   final TimelineClipDragController clipDragController;
   final double bpm;
   final SnapSettings snapSettings;
-  final VoidCallback onSelect;
+  final void Function(bool toggle, bool preserveExistingIfSelected) onSelect;
   final ValueChanged<double> onMoveCommitted;
   final ValueChanged<TimelineClipDragResult> onTrimCommitted;
   final VoidCallback onFadeInChangeStart;
@@ -157,16 +168,18 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
 
   int? _pendingMovePointer;
   double? _pendingMoveGlobalX;
+  bool _pendingClickShouldCollapseSelection = false;
 
   AudioClip get clip => widget.clip;
   Color get trackColor => widget.trackColor;
   TimelineTransform get transform => widget.transform;
-  bool get isSelected => widget.isSelected;
+  bool get isSelected => widget.selectedClipIds.contains(clip.id);
   TimelineClipDragController get clipDragController =>
       widget.clipDragController;
   double get bpm => widget.bpm;
   SnapSettings get snapSettings => widget.snapSettings;
-  VoidCallback get onSelect => widget.onSelect;
+  void Function(bool toggle, bool preserveExistingIfSelected) get onSelect =>
+      widget.onSelect;
   ValueChanged<double> get onMoveCommitted => widget.onMoveCommitted;
   ValueChanged<TimelineClipDragResult> get onTrimCommitted =>
       widget.onTrimCommitted;
@@ -236,6 +249,8 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
           pixelsPerSecond: transform.scale.pixelsPerSecond,
           bpm: bpm,
           snapSettings: snapSettings,
+          minimumMoveAnchorStartSeconds:
+              clip.timelineStartSeconds - widget.groupMinimumStartSeconds,
         );
       }
       updateDrag(event);
@@ -244,14 +259,21 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
     return ValueListenableBuilder<TimelineClipDragState?>(
       valueListenable: clipDragController,
       builder: (context, dragState, child) {
-        final isDragging = dragState?.clipId == clip.id;
-        final visualStartSeconds = isDragging
+        final isAnchorDragging = dragState?.clipId == clip.id;
+        final isGroupMoveDragging =
+            dragState?.mode == TimelineClipDragMode.move &&
+            widget.selectedClipIds.contains(dragState!.clipId) &&
+            isSelected;
+        final isDragging = isAnchorDragging || isGroupMoveDragging;
+        final visualStartSeconds = isGroupMoveDragging
+            ? clip.timelineStartSeconds + dragState.moveDeltaSeconds
+            : isAnchorDragging
             ? dragState!.previewStartSeconds
             : clip.timelineStartSeconds;
-        final visualSourceStartSeconds = isDragging
+        final visualSourceStartSeconds = isAnchorDragging
             ? dragState!.previewSourceStartSeconds
             : clip.sourceStartSeconds;
-        final visualDurationSeconds = isDragging
+        final visualDurationSeconds = isAnchorDragging
             ? dragState!.clipDurationSeconds
             : clip.clipDurationSeconds;
         final renderedClipWidth = math.max(
@@ -312,7 +334,13 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
                         if ((event.buttons & kPrimaryMouseButton) == 0) {
                           return;
                         }
-                        onSelect();
+                        final toggle =
+                            HardwareKeyboard.instance.isControlPressed;
+                        _pendingClickShouldCollapseSelection =
+                            !toggle &&
+                            isSelected &&
+                            widget.selectedClipIds.length > 1;
+                        onSelect(toggle, !toggle);
                         _pendingMovePointer = event.pointer;
                         _pendingMoveGlobalX = event.position.dx;
                       },
@@ -327,8 +355,18 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
                       },
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          if (_pendingClickShouldCollapseSelection &&
+                              !HardwareKeyboard.instance.isControlPressed) {
+                            onSelect(false, false);
+                          }
+                          _pendingClickShouldCollapseSelection = false;
+                        },
                         onDoubleTap: () {
-                          onSelect();
+                          if (widget.selectedClipIds.length != 1 ||
+                              !isSelected) {
+                            return;
+                          }
                           menuController.open();
                         },
                         child: _AudioClipSurface(
@@ -415,7 +453,7 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
     if ((event.buttons & kPrimaryMouseButton) == 0) {
       return;
     }
-    onSelect();
+    onSelect(false, false);
     clipDragController.beginTrim(
       pointer: event.pointer,
       clipId: clip.id,

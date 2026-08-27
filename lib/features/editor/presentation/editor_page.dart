@@ -41,6 +41,10 @@ typedef _PlaybackFollowState = ({
   double pixelsPerSecond,
 });
 
+class _ClearClipSelectionIntent extends Intent {
+  const _ClearClipSelectionIntent();
+}
+
 class EditorPage extends ConsumerStatefulWidget {
   const EditorPage({super.key});
 
@@ -790,6 +794,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             DeleteClipIntent(),
         EditorCommandShortcutActivator(LogicalKeyboardKey.backspace):
             DeleteClipIntent(),
+        SingleActivator(LogicalKeyboardKey.escape): _ClearClipSelectionIntent(),
         PlayPauseShortcutActivator(): PlayPauseIntent(),
         EditorCommandShortcutActivator(LogicalKeyboardKey.keyL):
             ToggleLoopIntent(),
@@ -848,6 +853,14 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             onInvoke: (_) {
               if (EditorShortcutPolicy.canHandleEditorCommand(context)) {
                 _deleteSelectedClip();
+              }
+              return null;
+            },
+          ),
+          _ClearClipSelectionIntent: CallbackAction<_ClearClipSelectionIntent>(
+            onInvoke: (_) {
+              if (EditorShortcutPolicy.canHandleEditorCommand(context)) {
+                controller.clearClipSelection();
               }
               return null;
             },

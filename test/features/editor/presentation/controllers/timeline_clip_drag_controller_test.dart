@@ -105,6 +105,51 @@ void main() {
     dragController.cancel(2);
   });
 
+  testWidgets('clamps a group drag by its earliest selected clip', (
+    tester,
+  ) async {
+    final scrollController = ScrollController();
+    final viewportKey = GlobalKey();
+    final dragController = TimelineClipDragController(
+      scrollController,
+      viewportKey,
+      () {},
+    );
+    addTearDown(() {
+      dragController.dispose();
+      scrollController.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          key: viewportKey,
+          width: 300,
+          child: SingleChildScrollView(
+            controller: scrollController,
+            scrollDirection: Axis.horizontal,
+            child: const SizedBox(width: 1200, height: 100),
+          ),
+        ),
+      ),
+    );
+
+    dragController.begin(
+      pointer: 9,
+      clipId: 'later-anchor',
+      pointerGlobalX: 200,
+      clipStartSeconds: 10,
+      clipDurationSeconds: 2,
+      pixelsPerSecond: 100,
+      minimumMoveAnchorStartSeconds: 4,
+    );
+    dragController.update(pointer: 9, pointerGlobalX: -1000);
+
+    expect(dragController.value!.previewStartSeconds, 4);
+    expect(dragController.value!.moveDeltaSeconds, -6);
+    dragController.cancel(9);
+  });
+
   testWidgets('left trim changes timeline and source starts from drag origin', (
     tester,
   ) async {

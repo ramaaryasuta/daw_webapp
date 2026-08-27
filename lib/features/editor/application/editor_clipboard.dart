@@ -6,6 +6,7 @@ class CopiedClipData {
   const CopiedClipData({
     required this.originalTrackId,
     required this.audio,
+    this.timelineOffsetSeconds = 0,
     required this.sourceStartSeconds,
     required this.clipDurationSeconds,
     required this.fadeInDurationSeconds,
@@ -15,10 +16,14 @@ class CopiedClipData {
   factory CopiedClipData.fromClip({
     required String trackId,
     required AudioClip clip,
+    double? timelineOriginSeconds,
   }) {
     return CopiedClipData(
       originalTrackId: trackId,
       audio: clip.audio,
+      timelineOffsetSeconds:
+          clip.timelineStartSeconds -
+          (timelineOriginSeconds ?? clip.timelineStartSeconds),
       sourceStartSeconds: clip.sourceStartSeconds,
       clipDurationSeconds: clip.clipDurationSeconds,
       fadeInDurationSeconds: clip.fadeInDurationSeconds,
@@ -31,6 +36,7 @@ class CopiedClipData {
   /// Shared immutable source reference. PCM, file bytes, and buffers stay owned
   /// by their existing audio-resource layers.
   final AudioAsset audio;
+  final double timelineOffsetSeconds;
   final double sourceStartSeconds;
   final double clipDurationSeconds;
   final double fadeInDurationSeconds;

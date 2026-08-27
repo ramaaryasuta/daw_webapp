@@ -38,22 +38,22 @@ abstract final class EditorCommands {
   );
 
   static const copyAudioClip = AppCommand(
-    title: 'Copy Clip',
-    description: 'Copy the selected audio clip.',
+    title: 'Copy Clip(s)',
+    description: 'Copy all selected audio clips.',
     shortcutParts: ['Ctrl', 'C'],
     category: AppCommandCategory.editing,
   );
 
   static const pasteAudioClip = AppCommand(
-    title: 'Paste Clip',
-    description: 'Paste the copied audio clip at the playhead.',
+    title: 'Paste Clip(s)',
+    description: 'Paste copied audio clips at the playhead.',
     shortcutParts: ['Ctrl', 'V'],
     category: AppCommandCategory.editing,
   );
 
   static const duplicateAudioClip = AppCommand(
-    title: 'Duplicate Clip',
-    description: 'Duplicate the selected clip immediately after itself.',
+    title: 'Duplicate Clip(s)',
+    description: 'Duplicate the selected clip group after its visible end.',
     shortcutParts: ['Ctrl', 'D'],
     category: AppCommandCategory.editing,
   );
@@ -123,8 +123,8 @@ abstract final class EditorCommands {
   );
 
   static const deleteAudioClip = AppCommand(
-    title: 'Delete Clip',
-    description: 'Remove the selected audio clip from the arrangement.',
+    title: 'Delete Clip(s)',
+    description: 'Remove all selected audio clips from the arrangement.',
     shortcutParts: ['Delete / Backspace'],
     category: AppCommandCategory.editing,
   );
@@ -134,6 +134,20 @@ abstract final class EditorCommands {
     description: 'Open Fade In / Fade Out properties for the audio clip.',
     shortcutParts: ['Double-click Audio Clip'],
     category: AppCommandCategory.editing,
+  );
+
+  static const multiSelectClip = AppCommand(
+    title: 'Multi-Select Clip',
+    description: 'Add or remove an audio clip from the current selection.',
+    shortcutParts: ['Ctrl', 'Click'],
+    category: AppCommandCategory.editing,
+  );
+
+  static const marqueeSelect = AppCommand(
+    title: 'Marquee Select',
+    description: 'Select multiple audio clips with a selection rectangle.',
+    shortcutParts: ['Drag Empty Timeline'],
+    category: AppCommandCategory.timeline,
   );
 
   static const renameTrack = AppCommand(
@@ -173,6 +187,7 @@ abstract final class EditorCommands {
     duplicateAudioClip,
     splitAudioClip,
     deleteAudioClip,
+    multiSelectClip,
     clipProperties,
     renameTrack,
     changeTrackColor,
@@ -185,6 +200,7 @@ abstract final class EditorCommands {
     scrollTimeline,
     panTimeline,
     moveAudioClip,
+    marqueeSelect,
     trimAudioClip,
   ];
 }

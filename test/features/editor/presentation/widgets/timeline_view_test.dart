@@ -64,10 +64,11 @@ void main() {
                   gridMetrics: const TimelineGridMetrics(
                     transform: TimelineTransform(scale: TimelineScale(100)),
                   ),
-                  selectedClipId: null,
+                  selectedClipIds: const {'clip-1'},
+                  groupMinimumStartSeconds: 1,
                   clipDragController: dragController,
                   onSeek: (_) => seekCount++,
-                  onSelect: (_) => selectCount++,
+                  onSelect: (_, _, _) => selectCount++,
                   onMoveCommitted: (_, _) => moveCommitCount++,
                   onTrimCommitted: (_, result) => trimResult = result,
                   onFadeInChangeStart: (_) {},

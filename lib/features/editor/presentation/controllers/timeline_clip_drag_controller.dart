@@ -14,6 +14,7 @@ class TimelineClipDragState {
   const TimelineClipDragState({
     required this.clipId,
     required this.mode,
+    required this.dragStartSeconds,
     required this.previewStartSeconds,
     required this.previewSourceStartSeconds,
     required this.clipDurationSeconds,
@@ -21,6 +22,7 @@ class TimelineClipDragState {
 
   final String clipId;
   final TimelineClipDragMode mode;
+  final double dragStartSeconds;
   final double previewStartSeconds;
   final double previewSourceStartSeconds;
   final double clipDurationSeconds;
@@ -28,6 +30,8 @@ class TimelineClipDragState {
   double get previewEndSeconds {
     return previewStartSeconds + clipDurationSeconds;
   }
+
+  double get moveDeltaSeconds => previewStartSeconds - dragStartSeconds;
 }
 
 class TimelineClipDragResult {
@@ -76,6 +80,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
   double _dragStartClipSeconds = 0;
   double _dragStartSourceSeconds = 0;
   double _dragStartClipDurationSeconds = 0;
+  double _minimumMoveAnchorStartSeconds = 0;
   double _sourceAudioDurationSeconds = 0;
   double _pixelsPerSecond = 1;
   double _bpm = 120;
@@ -94,6 +99,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     double? sourceAudioDurationSeconds,
     double bpm = 120,
     SnapSettings snapSettings = const SnapSettings(enabled: false),
+    double minimumMoveAnchorStartSeconds = 0,
   }) {
     return _begin(
       pointer: pointer,
@@ -108,6 +114,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
       pixelsPerSecond: pixelsPerSecond,
       bpm: bpm,
       snapSettings: snapSettings,
+      minimumMoveAnchorStartSeconds: minimumMoveAnchorStartSeconds,
     );
   }
 
@@ -137,6 +144,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
       pixelsPerSecond: pixelsPerSecond,
       bpm: bpm,
       snapSettings: snapSettings,
+      minimumMoveAnchorStartSeconds: 0,
     );
   }
 
@@ -152,6 +160,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     required double pixelsPerSecond,
     required double bpm,
     required SnapSettings snapSettings,
+    required double minimumMoveAnchorStartSeconds,
   }) {
     if (isDragging ||
         !_horizontalScrollController.hasClients ||
@@ -167,6 +176,10 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     _dragStartClipSeconds = math.max(0.0, clipStartSeconds);
     _dragStartSourceSeconds = math.max(0.0, sourceStartSeconds);
     _dragStartClipDurationSeconds = clipDurationSeconds;
+    _minimumMoveAnchorStartSeconds = math.max(
+      0.0,
+      minimumMoveAnchorStartSeconds,
+    );
     _sourceAudioDurationSeconds = sourceAudioDurationSeconds;
     _pixelsPerSecond = pixelsPerSecond;
     _bpm = bpm;
@@ -174,6 +187,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     value = TimelineClipDragState(
       clipId: clipId,
       mode: mode,
+      dragStartSeconds: _dragStartClipSeconds,
       previewStartSeconds: _dragStartClipSeconds,
       previewSourceStartSeconds: _dragStartSourceSeconds,
       clipDurationSeconds: clipDurationSeconds,
@@ -251,9 +265,12 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
 
     switch (currentState.mode) {
       case TimelineClipDragMode.move:
-        previewStart = _snapTimelineTime(
-          _dragStartClipSeconds + deltaSeconds,
-          bypassSnap: bypassSnap,
+        previewStart = math.max(
+          _minimumMoveAnchorStartSeconds,
+          _snapTimelineTime(
+            _dragStartClipSeconds + deltaSeconds,
+            bypassSnap: bypassSnap,
+          ),
         );
         break;
       case TimelineClipDragMode.trimStart:
@@ -314,6 +331,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     value = TimelineClipDragState(
       clipId: currentState.clipId,
       mode: currentState.mode,
+      dragStartSeconds: currentState.dragStartSeconds,
       previewStartSeconds: previewStart,
       previewSourceStartSeconds: previewSourceStart,
       clipDurationSeconds: previewDuration,

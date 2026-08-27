@@ -51,4 +51,30 @@ void main() {
     expect(clipboard.singleClip!.originalTrackId, 'track-1');
     expect(clipboard.singleClip!.audio.id, 'asset-1');
   });
+
+  test('group clipboard preserves relative offsets and shared sources', () {
+    final later = original.copyWith(id: 'clip-2', timelineStartSeconds: 13);
+    final clipboard = EditorClipClipboard([
+      CopiedClipData.fromClip(
+        trackId: 'track-1',
+        clip: original,
+        timelineOriginSeconds: 10,
+      ),
+      CopiedClipData.fromClip(
+        trackId: 'track-2',
+        clip: later,
+        timelineOriginSeconds: 10,
+      ),
+    ]);
+
+    expect(clipboard.clips.map((clip) => clip.timelineOffsetSeconds), [0, 3]);
+    expect(clipboard.clips.map((clip) => clip.originalTrackId), [
+      'track-1',
+      'track-2',
+    ]);
+    expect(
+      clipboard.clips.every((clip) => identical(clip.audio, audio)),
+      isTrue,
+    );
+  });
 }

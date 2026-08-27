@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import '../domain/daw_track.dart';
 
 /// Maximum number of committed project edits retained for undo.
@@ -13,15 +15,25 @@ class ProjectSnapshot {
     required Iterable<DawTrack> tracks,
     required this.bpm,
     required this.selectedTrackId,
-    required this.selectedClipId,
-  }) : tracks = List<DawTrack>.unmodifiable(tracks);
+    Set<String> selectedClipIds = const {},
+    String? selectedClipId,
+  }) : tracks = List<DawTrack>.unmodifiable(tracks),
+       selectedClipIds = selectedClipIds.isEmpty
+           ? selectedClipId == null
+                 ? const {}
+                 : UnmodifiableSetView({selectedClipId})
+           : UnmodifiableSetView({...selectedClipIds});
 
   final List<DawTrack> tracks;
   final double bpm;
 
   /// Selection is a restoration hint, not an independently undoable edit.
   final String? selectedTrackId;
-  final String? selectedClipId;
+  final Set<String> selectedClipIds;
+
+  /// The selected clip when exactly one clip is selected.
+  String? get selectedClipId =>
+      selectedClipIds.length == 1 ? selectedClipIds.single : null;
 
   bool hasSameProjectState(ProjectSnapshot other) {
     if (bpm != other.bpm || tracks.length != other.tracks.length) {
