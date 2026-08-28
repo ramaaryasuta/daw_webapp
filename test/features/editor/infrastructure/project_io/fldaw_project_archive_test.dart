@@ -9,6 +9,7 @@ import 'package:daw_webapp/features/editor/domain/loop_region.dart';
 import 'package:daw_webapp/features/editor/domain/musical_timing.dart';
 import 'package:daw_webapp/features/editor/domain/snap_settings.dart';
 import 'package:daw_webapp/features/editor/domain/timeline_marker.dart';
+import 'package:daw_webapp/features/editor/domain/timeline_section.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/fldaw_project_archive.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/fldaw_project_codec.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/fldaw_project_io_service.dart';
@@ -96,6 +97,15 @@ void main() {
           colorArgb: 0xffabcdef,
         ),
       ],
+      sections: const [
+        TimelineSection(
+          id: 'section-4',
+          startTime: 1.25,
+          endTime: 3.75,
+          name: 'Verse',
+          colorArgb: 0xff527ac2,
+        ),
+      ],
     );
 
     final bytes = projectArchive.encode(codec.encodeSnapshot(snapshot));
@@ -153,6 +163,9 @@ void main() {
     expect(restored.tracks.single.clips.last.fadeInDurationSeconds, 0.4);
     expect(restored.tracks.single.clips.last.fadeOutDurationSeconds, 0.5);
     expect(restored.markers.single.id, 'marker-9');
+    expect(restored.sections.single.id, 'section-4');
+    expect(restored.sections.single.startTime, 1.25);
+    expect(restored.sections.single.endTime, 3.75);
   });
 
   test('archive rejects a newer project version', () {
@@ -175,6 +188,7 @@ void main() {
     final manifest = FldawProjectManifest.fromJson(_emptyManifest());
 
     expect(manifest.project.timeSignature, TimeSignature.commonTime);
+    expect(manifest.sections, isEmpty);
   });
 
   test('manifest rejects unsupported time signatures', () {

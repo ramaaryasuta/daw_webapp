@@ -313,6 +313,70 @@ abstract final class EditorCommands {
     category: AppCommandCategory.timeline,
   );
 
+  static const createSection = AppCommand(
+    title: 'Create Section',
+    description: 'Create a named range for part of the arrangement.',
+    shortcutParts: ['Drag Section Lane'],
+    category: AppCommandCategory.timeline,
+    searchTerms: [
+      'section',
+      'range',
+      'intro',
+      'verse',
+      'chorus',
+      'arrangement',
+    ],
+    usageSteps: [
+      'Drag from the beginning to the end of a Verse.',
+      'Rename the created section.',
+    ],
+  );
+
+  static const moveSection = AppCommand(
+    title: 'Move Section',
+    description: 'Move the complete section while preserving its duration.',
+    shortcutParts: ['Drag Section'],
+    category: AppCommandCategory.timeline,
+    searchTerms: [
+      'section',
+      'range',
+      'intro',
+      'verse',
+      'chorus',
+      'arrangement',
+    ],
+  );
+
+  static const resizeSection = AppCommand(
+    title: 'Resize Section',
+    description: 'Adjust the start or end of a section.',
+    shortcutParts: ['Drag Section Edge'],
+    category: AppCommandCategory.timeline,
+    searchTerms: [
+      'section',
+      'range',
+      'intro',
+      'verse',
+      'chorus',
+      'arrangement',
+    ],
+  );
+
+  static const sectionProperties = AppCommand(
+    title: 'Section Properties',
+    description: 'Rename, recolor, or delete an arrangement section.',
+    shortcutParts: ['Double-click Section'],
+    category: AppCommandCategory.editing,
+    searchTerms: [
+      'section',
+      'range',
+      'intro',
+      'verse',
+      'chorus',
+      'arrangement',
+    ],
+  );
+
   static const all = <AppCommand>[
     undo,
     redo,
@@ -350,5 +414,9 @@ abstract final class EditorCommands {
     openMarkerProperties,
     moveMarker,
     jumpToMarker,
+    createSection,
+    moveSection,
+    resizeSection,
+    sectionProperties,
   ];
 }

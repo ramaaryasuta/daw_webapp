@@ -8,6 +8,7 @@ import '../../domain/loop_region.dart';
 import '../../domain/musical_timing.dart';
 import '../../domain/snap_settings.dart';
 import '../../domain/timeline_marker.dart';
+import '../../domain/timeline_section.dart';
 import '../../presentation/models/timeline_ruler_mode.dart';
 import 'project_dto.dart';
 
@@ -23,6 +24,7 @@ class FldawProjectSnapshot {
     required this.masterVolumeDb,
     required this.tracks,
     required this.markers,
+    this.sections = const [],
   });
 
   final String name;
@@ -35,6 +37,7 @@ class FldawProjectSnapshot {
   final double masterVolumeDb;
   final List<DawTrack> tracks;
   final List<TimelineMarker> markers;
+  final List<TimelineSection> sections;
 
   int get retainedAudioByteCount {
     final seen = <String>{};
@@ -72,6 +75,7 @@ class RestoredFldawProject {
     required this.masterVolumeDb,
     required this.tracks,
     required this.markers,
+    this.sections = const [],
   });
 
   final String name;
@@ -84,6 +88,7 @@ class RestoredFldawProject {
   final double masterVolumeDb;
   final List<DawTrack> tracks;
   final List<TimelineMarker> markers;
+  final List<TimelineSection> sections;
 }
 
 class FldawProjectCodec {
@@ -191,6 +196,16 @@ class FldawProjectCodec {
             colorArgb: marker.colorArgb,
           ),
       ],
+      sections: [
+        for (final section in snapshot.sections)
+          ProjectSectionDto(
+            id: section.id,
+            startTime: section.startTime,
+            endTime: section.endTime,
+            name: section.name,
+            colorArgb: section.colorArgb,
+          ),
+      ],
       audioSources: sourceDtos,
     );
 
@@ -293,6 +308,16 @@ class FldawProjectCodec {
             timeSeconds: marker.timeSeconds,
             name: marker.name,
             colorArgb: marker.colorArgb,
+          ),
+      ]),
+      sections: List.unmodifiable([
+        for (final section in manifest.sections)
+          TimelineSection(
+            id: section.id,
+            startTime: section.startTime,
+            endTime: section.endTime,
+            name: section.name,
+            colorArgb: section.colorArgb,
           ),
       ]),
     );

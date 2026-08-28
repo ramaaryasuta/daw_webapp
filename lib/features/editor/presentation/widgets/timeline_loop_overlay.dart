@@ -6,6 +6,7 @@ import '../../domain/musical_timing.dart';
 import '../../domain/snap_settings.dart';
 import '../../domain/timeline_scale.dart';
 import '../../domain/timeline_marker.dart';
+import '../../domain/timeline_section.dart';
 import '../models/timeline_ruler_mode.dart';
 import 'musical_grid_painter.dart';
 import 'track_header.dart';
@@ -28,6 +29,8 @@ class TimelineLoopOverlay extends StatelessWidget {
     required this.verticalScrollController,
     this.markers = const [],
     this.selectedMarkerId,
+    this.sections = const [],
+    this.selectedSectionId,
   });
 
   final Widget child;
@@ -42,6 +45,8 @@ class TimelineLoopOverlay extends StatelessWidget {
   final ScrollController verticalScrollController;
   final List<TimelineMarker> markers;
   final String? selectedMarkerId;
+  final List<TimelineSection> sections;
+  final String? selectedSectionId;
 
   @override
   Widget build(BuildContext context) {
@@ -64,6 +69,15 @@ class TimelineLoopOverlay extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
+              IgnorePointer(
+                child: CustomPaint(
+                  painter: TimelineSectionTintPainter(
+                    sections: sections,
+                    selectedSectionId: selectedSectionId,
+                    gridMetrics: gridMetrics,
+                  ),
+                ),
+              ),
               IgnorePointer(
                 child: CustomPaint(
                   painter: TrackLaneBackgroundPainter(
@@ -142,6 +156,49 @@ class TimelineLoopOverlay extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class TimelineSectionTintPainter extends CustomPainter {
+  const TimelineSectionTintPainter({
+    required this.sections,
+    required this.selectedSectionId,
+    required this.gridMetrics,
+  });
+
+  final List<TimelineSection> sections;
+  final String? selectedSectionId;
+  final TimelineGridMetrics gridMetrics;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final transform = gridMetrics.transform;
+    for (final section in sections) {
+      final rect = Rect.fromLTRB(
+        transform.timeToContentX(section.startTime),
+        0,
+        transform.timeToContentX(section.endTime),
+        size.height,
+      );
+      canvas.drawRect(
+        rect,
+        Paint()
+          ..color = Color(
+            section.colorArgb,
+          ).withValues(alpha: section.id == selectedSectionId ? 0.045 : 0.025),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant TimelineSectionTintPainter oldDelegate) {
+    return !listEquals(oldDelegate.sections, sections) ||
+        oldDelegate.selectedSectionId != selectedSectionId ||
+        oldDelegate.gridMetrics.scale.pixelsPerSecond !=
+            gridMetrics.scale.pixelsPerSecond ||
+        oldDelegate.gridMetrics.transform.horizontalScrollOffset !=
+            gridMetrics.transform.horizontalScrollOffset;
   }
 }
 

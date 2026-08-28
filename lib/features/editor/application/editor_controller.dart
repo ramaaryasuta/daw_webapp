@@ -13,6 +13,7 @@ import '../domain/loop_region.dart';
 import '../domain/musical_timing.dart';
 import '../domain/timeline_scale.dart';
 import '../domain/timeline_marker.dart';
+import '../domain/timeline_section.dart';
 import '../domain/track_color.dart';
 import '../domain/track_mixer.dart';
 import '../domain/timeline_snapper.dart';
@@ -39,8 +40,10 @@ class EditorState {
     this.masterVolumeDb = unityMasterVolumeDb,
     this.tracks = const [],
     this.markers = const [],
+    this.sections = const [],
     this.selectedTrackId,
     this.selectedMarkerId,
+    this.selectedSectionId,
     Set<String> selectedClipIds = const {},
     String? selectedClipId,
     EditorClipClipboard? clipClipboard,
@@ -68,8 +71,10 @@ class EditorState {
 
   final List<DawTrack> tracks;
   final List<TimelineMarker> markers;
+  final List<TimelineSection> sections;
   final String? selectedTrackId;
   final String? selectedMarkerId;
+  final String? selectedSectionId;
   final Set<String> selectedClipIds;
   final EditorClipClipboard clipClipboard;
   final EditorHistory history;
@@ -86,9 +91,16 @@ class EditorState {
       0,
       (end, marker) => math.max(end, marker.timeSeconds),
     );
+    final sectionEnd = sections.fold<double>(
+      0,
+      (end, section) => math.max(end, section.endTime),
+    );
     return math.max(
-      math.max(projectDurationSeconds, loopRegion?.endSeconds ?? 0),
-      markerEnd,
+      math.max(
+        math.max(projectDurationSeconds, loopRegion?.endSeconds ?? 0),
+        markerEnd,
+      ),
+      sectionEnd,
     );
   }
 
@@ -150,12 +162,15 @@ class EditorState {
     double? masterVolumeDb,
     List<DawTrack>? tracks,
     List<TimelineMarker>? markers,
+    List<TimelineSection>? sections,
     String? selectedTrackId,
     String? selectedMarkerId,
+    String? selectedSectionId,
     Set<String>? selectedClipIds,
     String? selectedClipId,
     bool clearSelectedTrack = false,
     bool clearSelectedMarker = false,
+    bool clearSelectedSection = false,
     bool clearSelectedClip = false,
     EditorClipClipboard? clipClipboard,
     EditorHistory? history,
@@ -174,12 +189,16 @@ class EditorState {
       masterVolumeDb: masterVolumeDb ?? this.masterVolumeDb,
       tracks: tracks ?? this.tracks,
       markers: markers ?? this.markers,
+      sections: sections ?? this.sections,
       selectedTrackId: clearSelectedTrack
           ? null
           : selectedTrackId ?? this.selectedTrackId,
       selectedMarkerId: clearSelectedMarker
           ? null
           : selectedMarkerId ?? this.selectedMarkerId,
+      selectedSectionId: clearSelectedSection
+          ? null
+          : selectedSectionId ?? this.selectedSectionId,
       selectedClipIds: clearSelectedClip
           ? const {}
           : selectedClipIds ??
@@ -211,6 +230,7 @@ class EditorController extends Notifier<EditorState> {
   int _assetCounter = 0;
   int _clipCounter = 0;
   int _markerCounter = 0;
+  int _sectionCounter = 0;
   int _clipEditRequestId = 0;
 
   ProjectSnapshot? _tempoEditStartSnapshot;
@@ -230,6 +250,9 @@ class EditorController extends Notifier<EditorState> {
   ProjectSnapshot? _markerMoveStartSnapshot;
   String? _movingMarkerId;
   double? _movingMarkerOriginalTime;
+  ProjectSnapshot? _sectionEditStartSnapshot;
+  String? _editingSectionId;
+  TimelineSection? _editingSectionOriginal;
 
   Timer? _playheadTimer;
 
@@ -249,6 +272,7 @@ class EditorController extends Notifier<EditorState> {
     return ProjectSnapshot(
       tracks: state.tracks,
       markers: state.markers,
+      sections: state.sections,
       bpm: tempo.bpm,
       timeSignature: tempo.timeSignature,
       masterVolumeDb: state.masterVolumeDb,
@@ -289,6 +313,9 @@ class EditorController extends Notifier<EditorState> {
     _markerMoveStartSnapshot = null;
     _movingMarkerId = null;
     _movingMarkerOriginalTime = null;
+    _sectionEditStartSnapshot = null;
+    _editingSectionId = null;
+    _editingSectionOriginal = null;
   }
 
   Future<void> undo() async {
@@ -350,6 +377,12 @@ class EditorController extends Notifier<EditorState> {
         snapshot.markers.any((marker) => marker.id == state.selectedMarkerId)
         ? state.selectedMarkerId
         : null;
+    final selectedSectionId =
+        snapshot.sections.any(
+          (section) => section.id == state.selectedSectionId,
+        )
+        ? state.selectedSectionId
+        : null;
 
     state = EditorState(
       projectName: state.projectName,
@@ -364,8 +397,10 @@ class EditorController extends Notifier<EditorState> {
       masterVolumeDb: snapshot.masterVolumeDb,
       tracks: snapshot.tracks,
       markers: snapshot.markers,
+      sections: snapshot.sections,
       selectedTrackId: selectedTrackId,
       selectedMarkerId: selectedMarkerId,
+      selectedSectionId: selectedSectionId,
       selectedClipIds: selectedClipIds,
       clipClipboard: state.clipClipboard,
       history: history,
@@ -648,6 +683,7 @@ class EditorController extends Notifier<EditorState> {
       masterVolumeDb: restored.masterVolumeDb,
       tracks: restored.tracks,
       markers: restored.markers,
+      sections: restored.sections,
       selectedClipIds: const {},
       clipClipboard: EditorClipClipboard.empty,
       history: EditorHistory(),
@@ -1012,7 +1048,11 @@ class EditorController extends Notifier<EditorState> {
     if (!state.markers.any((marker) => marker.id == markerId)) {
       return;
     }
-    state = state.copyWith(selectedMarkerId: markerId, clearSelectedClip: true);
+    state = state.copyWith(
+      selectedMarkerId: markerId,
+      clearSelectedSection: true,
+      clearSelectedClip: true,
+    );
   }
 
   void clearMarkerSelection() {
@@ -1180,6 +1220,228 @@ class EditorController extends Notifier<EditorState> {
   static int _compareMarkersByTime(TimelineMarker left, TimelineMarker right) {
     final timeOrder = left.timeSeconds.compareTo(right.timeSeconds);
     return timeOrder != 0 ? timeOrder : left.id.compareTo(right.id);
+  }
+
+  String addSection(double firstTime, double secondTime) {
+    final first = _snapTimelineTime(firstTime);
+    final second = _snapTimelineTime(secondTime);
+    final start = math.min(first, second);
+    final end = math.max(first, second);
+    if (!start.isFinite || !end.isFinite || end - start <= 0.000001) {
+      return '';
+    }
+    final before = _captureProjectSnapshot();
+    final sectionId = _nextSectionId();
+    final section = TimelineSection(
+      id: sectionId,
+      startTime: start,
+      endTime: end,
+      name: _nextDefaultSectionName(),
+      colorArgb: defaultTrackColorForIndex(state.sections.length + 2),
+    );
+    final sections = [...state.sections, section]..sort(_compareSectionsByTime);
+    state = state.copyWith(
+      sections: List.unmodifiable(sections),
+      selectedSectionId: sectionId,
+      clearSelectedMarker: true,
+      clearSelectedClip: true,
+    );
+    _recordEdit('Add Section', before);
+    return sectionId;
+  }
+
+  void selectSection(String sectionId) {
+    if (!state.sections.any((section) => section.id == sectionId)) {
+      return;
+    }
+    state = state.copyWith(
+      selectedSectionId: sectionId,
+      clearSelectedMarker: true,
+      clearSelectedClip: true,
+    );
+  }
+
+  void clearSectionSelection() {
+    state = state.copyWith(clearSelectedSection: true);
+  }
+
+  void beginSectionEdit(String sectionId) {
+    final section = _sectionById(sectionId);
+    if (section == null) {
+      return;
+    }
+    _sectionEditStartSnapshot = _captureProjectSnapshot();
+    _editingSectionId = sectionId;
+    _editingSectionOriginal = section;
+    selectSection(sectionId);
+  }
+
+  void previewSectionMove(String sectionId, double candidateStartTime) {
+    final original = _activeSectionOriginal(sectionId);
+    if (original == null) {
+      return;
+    }
+    final start = _snapTimelineTime(candidateStartTime);
+    _replaceSection(
+      original.copyWith(startTime: start, endTime: start + original.duration),
+    );
+  }
+
+  void previewSectionStartResize(String sectionId, double candidateStartTime) {
+    final current = _sectionById(sectionId);
+    if (_activeSectionOriginal(sectionId) == null || current == null) {
+      return;
+    }
+    final start = _snapTimelineTime(candidateStartTime);
+    if (start >= current.endTime - 0.000001) {
+      return;
+    }
+    _replaceSection(current.copyWith(startTime: start));
+  }
+
+  void previewSectionEndResize(String sectionId, double candidateEndTime) {
+    final current = _sectionById(sectionId);
+    if (_activeSectionOriginal(sectionId) == null || current == null) {
+      return;
+    }
+    final end = _snapTimelineTime(candidateEndTime);
+    if (end <= current.startTime + 0.000001) {
+      return;
+    }
+    _replaceSection(current.copyWith(endTime: end));
+  }
+
+  void commitSectionEdit(String sectionId, {required bool isResize}) {
+    if (_editingSectionId != sectionId) {
+      return;
+    }
+    final before = _sectionEditStartSnapshot;
+    _clearSectionEditTransaction();
+    if (before != null) {
+      _recordEdit(isResize ? 'Resize Section' : 'Move Section', before);
+    }
+  }
+
+  void cancelSectionEdit(String sectionId) {
+    if (_editingSectionId != sectionId) {
+      return;
+    }
+    final original = _editingSectionOriginal;
+    _clearSectionEditTransaction();
+    if (original != null) {
+      _replaceSection(original);
+    }
+  }
+
+  void renameSection(String sectionId, String name) {
+    final normalizedName = name.trim();
+    final section = _sectionById(sectionId);
+    if (section == null ||
+        normalizedName.isEmpty ||
+        section.name == normalizedName) {
+      return;
+    }
+    final before = _captureProjectSnapshot();
+    _replaceSection(section.copyWith(name: normalizedName));
+    _recordEdit('Rename Section', before);
+  }
+
+  void changeSectionColor(String sectionId, int colorArgb) {
+    final section = _sectionById(sectionId);
+    final normalizedColor = opaqueTrackColor(colorArgb);
+    if (section == null || section.colorArgb == normalizedColor) {
+      return;
+    }
+    final before = _captureProjectSnapshot();
+    _replaceSection(section.copyWith(colorArgb: normalizedColor));
+    _recordEdit('Change Section Color', before);
+  }
+
+  void deleteSection(String sectionId) {
+    if (!state.sections.any((section) => section.id == sectionId)) {
+      return;
+    }
+    final before = _captureProjectSnapshot();
+    state = state.copyWith(
+      sections: List.unmodifiable(
+        state.sections.where((section) => section.id != sectionId),
+      ),
+      clearSelectedSection: state.selectedSectionId == sectionId,
+    );
+    _recordEdit('Delete Section', before);
+  }
+
+  void deleteSelectedSection() {
+    final sectionId = state.selectedSectionId;
+    if (sectionId != null) {
+      deleteSection(sectionId);
+    }
+  }
+
+  TimelineSection? _sectionById(String sectionId) {
+    for (final section in state.sections) {
+      if (section.id == sectionId) {
+        return section;
+      }
+    }
+    return null;
+  }
+
+  TimelineSection? _activeSectionOriginal(String sectionId) {
+    if (_editingSectionId != sectionId || _sectionEditStartSnapshot == null) {
+      return null;
+    }
+    return _editingSectionOriginal;
+  }
+
+  void _replaceSection(TimelineSection replacement) {
+    final sections = [
+      for (final section in state.sections)
+        if (section.id == replacement.id) replacement else section,
+    ]..sort(_compareSectionsByTime);
+    state = state.copyWith(sections: List.unmodifiable(sections));
+  }
+
+  void _clearSectionEditTransaction() {
+    _sectionEditStartSnapshot = null;
+    _editingSectionId = null;
+    _editingSectionOriginal = null;
+  }
+
+  double _snapTimelineTime(double timeSeconds) {
+    final finiteTime = timeSeconds.isFinite ? timeSeconds : 0.0;
+    final tempo = ref.read(tempoControllerProvider);
+    return TimelineSnapper.snapTime(
+      candidateSeconds: math.max(0, finiteTime),
+      bpm: tempo.bpm,
+      timeSignature: tempo.timeSignature,
+      settings: ref.read(snapControllerProvider),
+    );
+  }
+
+  String _nextSectionId() {
+    final existingIds = state.sections.map((section) => section.id).toSet();
+    do {
+      _sectionCounter++;
+    } while (existingIds.contains('section-$_sectionCounter'));
+    return 'section-$_sectionCounter';
+  }
+
+  String _nextDefaultSectionName() {
+    final existingNames = state.sections.map((section) => section.name).toSet();
+    var number = 1;
+    while (existingNames.contains('Section $number')) {
+      number++;
+    }
+    return 'Section $number';
+  }
+
+  static int _compareSectionsByTime(
+    TimelineSection left,
+    TimelineSection right,
+  ) {
+    final order = left.startTime.compareTo(right.startTime);
+    return order != 0 ? order : left.id.compareTo(right.id);
   }
 
   void selectTrack(String trackId) {
@@ -1996,6 +2258,7 @@ class EditorController extends Notifier<EditorState> {
     final after = ProjectSnapshot(
       tracks: tracks,
       markers: state.markers,
+      sections: state.sections,
       bpm: tempo.bpm,
       timeSignature: tempo.timeSignature,
       masterVolumeDb: state.masterVolumeDb,

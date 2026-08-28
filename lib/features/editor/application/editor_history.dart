@@ -3,6 +3,7 @@ import 'dart:collection';
 import '../domain/daw_track.dart';
 import '../domain/musical_timing.dart';
 import '../domain/timeline_marker.dart';
+import '../domain/timeline_section.dart';
 
 /// Maximum number of committed project edits retained for undo.
 const int editorHistoryLimit = 100;
@@ -16,6 +17,7 @@ class ProjectSnapshot {
   ProjectSnapshot({
     required Iterable<DawTrack> tracks,
     Iterable<TimelineMarker> markers = const [],
+    Iterable<TimelineSection> sections = const [],
     required this.bpm,
     this.timeSignature = defaultTimeSignature,
     this.masterVolumeDb = 0,
@@ -24,6 +26,7 @@ class ProjectSnapshot {
     String? selectedClipId,
   }) : tracks = List<DawTrack>.unmodifiable(tracks),
        markers = List<TimelineMarker>.unmodifiable(markers),
+       sections = List<TimelineSection>.unmodifiable(sections),
        selectedClipIds = selectedClipIds.isEmpty
            ? selectedClipId == null
                  ? const {}
@@ -32,6 +35,7 @@ class ProjectSnapshot {
 
   final List<DawTrack> tracks;
   final List<TimelineMarker> markers;
+  final List<TimelineSection> sections;
   final double bpm;
   final TimeSignature timeSignature;
   final double masterVolumeDb;
@@ -49,8 +53,21 @@ class ProjectSnapshot {
         timeSignature != other.timeSignature ||
         masterVolumeDb != other.masterVolumeDb ||
         tracks.length != other.tracks.length ||
-        markers.length != other.markers.length) {
+        markers.length != other.markers.length ||
+        sections.length != other.sections.length) {
       return false;
+    }
+
+    for (var index = 0; index < sections.length; index++) {
+      final left = sections[index];
+      final right = other.sections[index];
+      if (left.id != right.id ||
+          left.startTime != right.startTime ||
+          left.endTime != right.endTime ||
+          left.name != right.name ||
+          left.colorArgb != right.colorArgb) {
+        return false;
+      }
     }
 
     for (var markerIndex = 0; markerIndex < markers.length; markerIndex++) {

@@ -1,5 +1,6 @@
 import 'package:daw_webapp/features/editor/domain/timeline_marker.dart';
 import 'package:daw_webapp/features/editor/domain/timeline_scale.dart';
+import 'package:daw_webapp/features/editor/domain/timeline_section.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/timeline_ruler.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +15,87 @@ void main() {
     name: 'Verse',
     colorArgb: 0xFF527AC2,
   );
+  const section = TimelineSection(
+    id: 'section-1',
+    startTime: 1,
+    endTime: 3,
+    name: 'Intro',
+    colorArgb: 0xFF43A047,
+  );
+
+  testWidgets('dragging empty lane shows preview and commits one section', (
+    tester,
+  ) async {
+    final added = <(double, double)>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 600,
+            child: TimelineRuler(
+              playheadSeconds: 0,
+              gridMetrics: metrics,
+              onSeek: (_) {},
+              onAddSection: (start, end) => added.add((start, end)),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.drag(
+      find.byKey(const ValueKey('timeline-marker-lane')),
+      const Offset(150, 0),
+    );
+    await tester.pump();
+
+    expect(added, hasLength(1));
+    expect(added.single.$2 - added.single.$1, closeTo(1.5, .05));
+  });
+
+  testWidgets('selected section exposes handles and opens properties', (
+    tester,
+  ) async {
+    double? seekTime;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 600,
+            child: TimelineRuler(
+              playheadSeconds: 0,
+              gridMetrics: metrics,
+              sections: const [section],
+              selectedSectionId: section.id,
+              onSeek: (time) => seekTime = time,
+              onSelectSection: (_) {},
+              onSectionRename: (_, _) {},
+              onSectionColorSelected: (_, _) {},
+              onSectionDelete: (_) {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('section-left-handle')), findsOneWidget);
+    expect(find.byKey(const ValueKey('section-right-handle')), findsOneWidget);
+    await tester.tap(find.text('Intro'));
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(seekTime, section.startTime);
+    await tester.tap(find.text('Intro'));
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(find.text('Intro'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('section-properties-popover')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('section-name-field')), findsOneWidget);
+  });
 
   testWidgets(
     'empty marker lane double-click creates at shared timeline time',

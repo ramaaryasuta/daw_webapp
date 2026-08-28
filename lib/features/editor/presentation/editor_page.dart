@@ -360,7 +360,9 @@ class _EditorPageState extends ConsumerState<EditorPage> {
 
   void _deleteCurrentSelection() {
     final editorState = ref.read(editorControllerProvider);
-    if (editorState.selectedMarkerId != null) {
+    if (editorState.selectedSectionId != null) {
+      ref.read(editorControllerProvider.notifier).deleteSelectedSection();
+    } else if (editorState.selectedMarkerId != null) {
       _deleteSelectedMarker();
     } else {
       _deleteSelectedClip();
@@ -398,6 +400,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       masterVolumeDb: editor.masterVolumeDb,
       tracks: List<DawTrack>.unmodifiable(editor.tracks),
       markers: List.unmodifiable(editor.markers),
+      sections: List.unmodifiable(editor.sections),
     );
   }
 
@@ -1464,6 +1467,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
               if (EditorShortcutPolicy.canHandleEditorCommand(context)) {
                 controller.clearClipSelection();
                 controller.clearMarkerSelection();
+                controller.clearSectionSelection();
               }
               return null;
             },
@@ -1708,9 +1712,15 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                                                                   markers:
                                                                       editorState
                                                                           .markers,
+                                                                  sections:
+                                                                      editorState
+                                                                          .sections,
                                                                   selectedMarkerId:
                                                                       editorState
                                                                           .selectedMarkerId,
+                                                                  selectedSectionId:
+                                                                      editorState
+                                                                          .selectedSectionId,
                                                                   onAddMarker:
                                                                       _addMarker,
                                                                   onSelectMarker:
@@ -1737,6 +1747,48 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                                                                   onMarkerDelete:
                                                                       controller
                                                                           .deleteMarker,
+                                                                  onAddSection:
+                                                                      controller
+                                                                          .addSection,
+                                                                  onSelectSection:
+                                                                      controller
+                                                                          .selectSection,
+                                                                  onSectionEditStart:
+                                                                      controller
+                                                                          .beginSectionEdit,
+                                                                  onSectionMovePreview:
+                                                                      controller
+                                                                          .previewSectionMove,
+                                                                  onSectionStartResizePreview:
+                                                                      controller
+                                                                          .previewSectionStartResize,
+                                                                  onSectionEndResizePreview:
+                                                                      controller
+                                                                          .previewSectionEndResize,
+                                                                  onSectionEditEnd:
+                                                                      (
+                                                                        sectionId,
+                                                                        isResize,
+                                                                      ) => controller.commitSectionEdit(
+                                                                        sectionId,
+                                                                        isResize:
+                                                                            isResize,
+                                                                      ),
+                                                                  onSectionEditCancel:
+                                                                      controller
+                                                                          .cancelSectionEdit,
+                                                                  onSectionRename:
+                                                                      controller
+                                                                          .renameSection,
+                                                                  onSectionColorSelected:
+                                                                      controller
+                                                                          .changeSectionColor,
+                                                                  onSectionDelete:
+                                                                      controller
+                                                                          .deleteSection,
+                                                                  onEmptySectionLaneTap:
+                                                                      controller
+                                                                          .clearSectionSelection,
                                                                   onLoopRegionPreviewChanged:
                                                                       (
                                                                         region,
@@ -1772,9 +1824,15 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                                                                     markers:
                                                                         editorState
                                                                             .markers,
+                                                                    sections:
+                                                                        editorState
+                                                                            .sections,
                                                                     selectedMarkerId:
                                                                         editorState
                                                                             .selectedMarkerId,
+                                                                    selectedSectionId:
+                                                                        editorState
+                                                                            .selectedSectionId,
                                                                     child:
                                                                         trackList!,
                                                                   ),

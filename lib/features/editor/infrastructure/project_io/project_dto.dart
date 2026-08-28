@@ -21,6 +21,7 @@ class FldawProjectManifest {
     required this.tracks,
     required this.clips,
     required this.markers,
+    this.sections = const [],
     required this.audioSources,
   });
 
@@ -28,6 +29,7 @@ class FldawProjectManifest {
   final List<ProjectTrackDto> tracks;
   final List<ProjectClipDto> clips;
   final List<ProjectMarkerDto> markers;
+  final List<ProjectSectionDto> sections;
   final List<ProjectAudioSourceDto> audioSources;
 
   Map<String, Object?> toJson() => {
@@ -37,6 +39,7 @@ class FldawProjectManifest {
     'tracks': [for (final track in tracks) track.toJson()],
     'clips': [for (final clip in clips) clip.toJson()],
     'markers': [for (final marker in markers) marker.toJson()],
+    'sections': [for (final section in sections) section.toJson()],
     'audioSources': [for (final source in audioSources) source.toJson()],
   };
 
@@ -89,6 +92,11 @@ class FldawProjectManifest {
       tracks: _objectList(json, 'tracks', ProjectTrackDto.fromJson),
       clips: _objectList(json, 'clips', ProjectClipDto.fromJson),
       markers: _objectList(json, 'markers', ProjectMarkerDto.fromJson),
+      sections: _optionalObjectList(
+        json,
+        'sections',
+        ProjectSectionDto.fromJson,
+      ),
       audioSources: _objectList(
         json,
         'audioSources',
@@ -103,6 +111,7 @@ class FldawProjectManifest {
     _requireUnique(tracks.map((track) => track.id), 'track ID');
     _requireUnique(clips.map((clip) => clip.id), 'clip ID');
     _requireUnique(markers.map((marker) => marker.id), 'marker ID');
+    _requireUnique(sections.map((section) => section.id), 'section ID');
     _requireUnique(audioSources.map((source) => source.sourceId), 'source ID');
     _requireUnique(
       audioSources.map((source) => source.archivePath),
@@ -388,6 +397,45 @@ class ProjectMarkerDto {
       );
 }
 
+class ProjectSectionDto {
+  const ProjectSectionDto({
+    required this.id,
+    required this.startTime,
+    required this.endTime,
+    required this.name,
+    required this.colorArgb,
+  });
+
+  final String id;
+  final double startTime;
+  final double endTime;
+  final String name;
+  final int colorArgb;
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'startTime': startTime,
+    'endTime': endTime,
+    'name': name,
+    'colorArgb': colorArgb,
+  };
+
+  factory ProjectSectionDto.fromJson(Map<String, Object?> json) {
+    final startTime = _nonNegativeNumber(json, 'startTime');
+    final endTime = _positiveNumber(json, 'endTime');
+    if (endTime <= startTime) {
+      _invalid('Section endTime must be greater than startTime.');
+    }
+    return ProjectSectionDto(
+      id: _nonEmptyId(json, 'id'),
+      startTime: startTime,
+      endTime: endTime,
+      name: _requiredString(json, 'name'),
+      colorArgb: _argb(json, 'colorArgb'),
+    );
+  }
+}
+
 class ProjectAudioSourceDto {
   const ProjectAudioSourceDto({
     required this.sourceId,
@@ -509,6 +557,17 @@ List<T> _objectList<T>(
           userMessage: 'The project metadata is invalid or corrupt.',
         ),
   ];
+}
+
+List<T> _optionalObjectList<T>(
+  Map<String, Object?> json,
+  String key,
+  T Function(Map<String, Object?>) decode,
+) {
+  if (!json.containsKey(key)) {
+    return const [];
+  }
+  return _objectList(json, key, decode);
 }
 
 Map<String, Object?> _requiredMap(Map<String, Object?> json, String key) {

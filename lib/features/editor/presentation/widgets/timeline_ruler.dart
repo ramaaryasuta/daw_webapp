@@ -10,6 +10,7 @@ import '../../domain/snap_settings.dart';
 import '../../domain/timeline_scale.dart';
 import '../../domain/timeline_snapper.dart';
 import '../../domain/timeline_marker.dart';
+import '../../domain/timeline_section.dart';
 import '../models/timeline_ruler_mode.dart';
 import 'timeline_marker_lane.dart';
 
@@ -39,6 +40,20 @@ class TimelineRuler extends StatefulWidget {
     this.onMarkerRename,
     this.onMarkerColorSelected,
     this.onMarkerDelete,
+    this.sections = const [],
+    this.selectedSectionId,
+    this.onAddSection,
+    this.onSelectSection,
+    this.onSectionEditStart,
+    this.onSectionMovePreview,
+    this.onSectionStartResizePreview,
+    this.onSectionEndResizePreview,
+    this.onSectionEditEnd,
+    this.onSectionEditCancel,
+    this.onSectionRename,
+    this.onSectionColorSelected,
+    this.onSectionDelete,
+    this.onEmptySectionLaneTap,
   });
 
   static const double musicalLaneHeight = 32;
@@ -67,6 +82,22 @@ class TimelineRuler extends StatefulWidget {
   final void Function(String markerId, String name)? onMarkerRename;
   final void Function(String markerId, int colorArgb)? onMarkerColorSelected;
   final ValueChanged<String>? onMarkerDelete;
+  final List<TimelineSection> sections;
+  final String? selectedSectionId;
+  final void Function(double startTime, double endTime)? onAddSection;
+  final ValueChanged<String>? onSelectSection;
+  final ValueChanged<String>? onSectionEditStart;
+  final void Function(String sectionId, double startTime)? onSectionMovePreview;
+  final void Function(String sectionId, double startTime)?
+  onSectionStartResizePreview;
+  final void Function(String sectionId, double endTime)?
+  onSectionEndResizePreview;
+  final void Function(String sectionId, bool isResize)? onSectionEditEnd;
+  final ValueChanged<String>? onSectionEditCancel;
+  final void Function(String sectionId, String name)? onSectionRename;
+  final void Function(String sectionId, int colorArgb)? onSectionColorSelected;
+  final ValueChanged<String>? onSectionDelete;
+  final VoidCallback? onEmptySectionLaneTap;
 
   @override
   State<TimelineRuler> createState() => _TimelineRulerState();
@@ -273,6 +304,23 @@ class _TimelineRulerState extends State<TimelineRuler> {
             onRename: widget.onMarkerRename,
             onColorSelected: widget.onMarkerColorSelected,
             onDelete: widget.onMarkerDelete,
+            sections: widget.sections,
+            selectedSectionId: widget.selectedSectionId,
+            bpm: widget.bpm,
+            timeSignature: widget.timeSignature,
+            snapSettings: widget.snapSettings,
+            onAddSection: widget.onAddSection,
+            onSelectSection: widget.onSelectSection,
+            onSectionEditStart: widget.onSectionEditStart,
+            onSectionMovePreview: widget.onSectionMovePreview,
+            onSectionStartResizePreview: widget.onSectionStartResizePreview,
+            onSectionEndResizePreview: widget.onSectionEndResizePreview,
+            onSectionEditEnd: widget.onSectionEditEnd,
+            onSectionEditCancel: widget.onSectionEditCancel,
+            onSectionRename: widget.onSectionRename,
+            onSectionColorSelected: widget.onSectionColorSelected,
+            onSectionDelete: widget.onSectionDelete,
+            onEmptyTap: widget.onEmptySectionLaneTap,
           ),
         ],
       ),
