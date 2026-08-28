@@ -5,6 +5,7 @@ import '../../domain/audio_asset.dart';
 import '../../domain/audio_clip.dart';
 import '../../domain/daw_track.dart';
 import '../../domain/loop_region.dart';
+import '../../domain/musical_timing.dart';
 import '../../domain/snap_settings.dart';
 import '../../domain/timeline_marker.dart';
 import '../../presentation/models/timeline_ruler_mode.dart';
@@ -14,6 +15,7 @@ class FldawProjectSnapshot {
   const FldawProjectSnapshot({
     required this.name,
     required this.bpm,
+    this.timeSignature = defaultTimeSignature,
     required this.snapSettings,
     required this.rulerMode,
     required this.isLoopEnabled,
@@ -25,6 +27,7 @@ class FldawProjectSnapshot {
 
   final String name;
   final double bpm;
+  final TimeSignature timeSignature;
   final SnapSettings snapSettings;
   final TimelineRulerMode rulerMode;
   final bool isLoopEnabled;
@@ -61,6 +64,7 @@ class RestoredFldawProject {
   const RestoredFldawProject({
     required this.name,
     required this.bpm,
+    this.timeSignature = defaultTimeSignature,
     required this.snapSettings,
     required this.rulerMode,
     required this.isLoopEnabled,
@@ -72,6 +76,7 @@ class RestoredFldawProject {
 
   final String name;
   final double bpm;
+  final TimeSignature timeSignature;
   final SnapSettings snapSettings;
   final TimelineRulerMode rulerMode;
   final bool isLoopEnabled;
@@ -139,6 +144,7 @@ class FldawProjectCodec {
       project: ProjectSettingsDto(
         name: _projectName(snapshot.name),
         bpm: snapshot.bpm,
+        timeSignature: snapshot.timeSignature,
         snapEnabled: snapshot.snapSettings.enabled,
         snapSubdivision: snapshot.snapSettings.subdivision.name,
         rulerDisplayMode: snapshot.rulerMode.name,
@@ -270,6 +276,7 @@ class FldawProjectCodec {
     return RestoredFldawProject(
       name: settings.name,
       bpm: settings.bpm,
+      timeSignature: settings.timeSignature,
       snapSettings: SnapSettings(
         enabled: settings.snapEnabled,
         subdivision: SnapSubdivision.values.byName(settings.snapSubdivision),

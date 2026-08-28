@@ -1,7 +1,8 @@
 enum AppCommandCategory {
-  file('File'),
+  file('Project'),
   editing('Editing'),
-  timeline('Timeline');
+  timeline('Timeline'),
+  mixer('Mixer');
 
   const AppCommandCategory(this.label);
 
@@ -15,6 +16,9 @@ class AppCommand {
     required this.shortcutParts,
     required this.category,
     this.searchTerms = const [],
+    this.details,
+    this.usageSteps = const [],
+    this.tip,
   });
 
   final String title;
@@ -22,6 +26,9 @@ class AppCommand {
   final List<String> shortcutParts;
   final AppCommandCategory category;
   final List<String> searchTerms;
+  final String? details;
+  final List<String> usageSteps;
+  final String? tip;
 }
 
 abstract final class EditorCommands {
@@ -138,6 +145,9 @@ abstract final class EditorCommands {
     description: 'Split the selected audio clip at the playhead.',
     shortcutParts: ['S'],
     category: AppCommandCategory.editing,
+    details: 'Splits the selected audio clip at the current playhead position.',
+    usageSteps: ['Select one clip.', 'Move the playhead.', 'Press S.'],
+    tip: 'Snap can be used to position the playhead before splitting.',
   );
 
   static const deleteAudioClip = AppCommand(
@@ -227,6 +237,37 @@ abstract final class EditorCommands {
     category: AppCommandCategory.timeline,
   );
 
+  static const timeSignature = AppCommand(
+    title: 'Time Signature',
+    description:
+        "Change the project's musical meter, such as 4/4, 3/4, or 6/8.",
+    shortcutParts: ['Toolbar', 'Time Signature'],
+    category: AppCommandCategory.timeline,
+    searchTerms: ['time', 'signature', '4/4', '3/4', '6/8', 'meter'],
+    details:
+        'Changes how bars and beats are interpreted without moving clips, markers, or loop boundaries.',
+    usageSteps: [
+      'Open Time Signature in the toolbar.',
+      'Choose 4/4, 3/4, or 6/8.',
+    ],
+    tip: 'The ruler, Snap, and metronome update to the selected meter.',
+  );
+
+  static const trackMixerControls = AppCommand(
+    title: 'Track Mixer Controls',
+    description: 'Adjust track volume, pan, mute, and solo.',
+    shortcutParts: ['Track Header', 'Mixer Controls'],
+    category: AppCommandCategory.mixer,
+    searchTerms: ['gain', 'level', 'stereo', 'mute', 'solo', 'volume', 'pan'],
+    details:
+        'Shapes each track in the mix with level, stereo position, mute, and solo controls.',
+    usageSteps: [
+      'Locate the track header.',
+      'Adjust its volume or pan, or use Mute and Solo.',
+    ],
+    tip: 'Double-click a volume or pan control to reset it.',
+  );
+
   static const temporarilyDisableSnap = AppCommand(
     title: 'Temporarily Disable Snap',
     description: 'Temporarily move or trim freely without snapping.',
@@ -282,9 +323,11 @@ abstract final class EditorCommands {
     addAudioTrack,
     deleteTrack,
     reorderTrack,
+    trackMixerControls,
     playPause,
     toggleLoop,
     setLoopRegion,
+    timeSignature,
     snapToGrid,
     temporarilyDisableSnap,
     zoomTimeline,

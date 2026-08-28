@@ -2,6 +2,7 @@ import 'package:daw_webapp/features/editor/application/editor_history.dart';
 import 'package:daw_webapp/features/editor/domain/audio_asset.dart';
 import 'package:daw_webapp/features/editor/domain/audio_clip.dart';
 import 'package:daw_webapp/features/editor/domain/daw_track.dart';
+import 'package:daw_webapp/features/editor/domain/musical_timing.dart';
 import 'package:daw_webapp/features/editor/domain/track_color.dart';
 import 'package:daw_webapp/features/editor/domain/timeline_marker.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -47,6 +48,32 @@ void main() {
 
     expect(history.past.single.label, 'Rename Marker');
     expect(history.undo(after)!.snapshot.markers.single, same(marker));
+  });
+
+  test('time signature is persistent undoable project state', () {
+    final before = ProjectSnapshot(
+      tracks: const [],
+      bpm: 120,
+      selectedTrackId: null,
+    );
+    final after = ProjectSnapshot(
+      tracks: const [],
+      bpm: 120,
+      timeSignature: TimeSignature.threeFour,
+      selectedTrackId: null,
+    );
+
+    final history = EditorHistory().record(
+      label: 'Change Time Signature',
+      before: before,
+      after: after,
+    );
+
+    expect(history.past.single.label, 'Change Time Signature');
+    expect(
+      history.undo(after)!.snapshot.timeSignature,
+      TimeSignature.commonTime,
+    );
   });
 
   ProjectSnapshot snapshot({

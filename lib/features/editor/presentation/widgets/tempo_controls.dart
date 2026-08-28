@@ -146,7 +146,7 @@ class _TempoControlsState extends ConsumerState<TempoControls> {
             padding: const EdgeInsets.symmetric(horizontal: 9),
             decoration: BoxDecoration(
               color: colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(6),
               border: Border.all(color: colorScheme.outlineVariant),
             ),
             child: Row(

@@ -2,6 +2,27 @@ import 'package:daw_webapp/features/editor/presentation/models/app_command.dart'
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('Help commands expose searchable project time signature', () {
+    final command = EditorCommands.all.singleWhere(
+      (command) => command.title == 'Time Signature',
+    );
+
+    expect(command.shortcutParts, ['Toolbar', 'Time Signature']);
+    expect(command.description, contains('4/4, 3/4, or 6/8'));
+    expect(command.searchTerms, containsAll(['time', 'signature', 'meter']));
+  });
+
+  test('command metadata centralizes expandable guidance and categories', () {
+    expect(AppCommandCategory.file.label, 'Project');
+    expect(EditorCommands.splitAudioClip.details, isNotEmpty);
+    expect(EditorCommands.splitAudioClip.usageSteps, hasLength(3));
+    expect(EditorCommands.splitAudioClip.tip, contains('Snap'));
+    expect(
+      EditorCommands.trackMixerControls.category,
+      AppCommandCategory.mixer,
+    );
+  });
+
   test('Help commands define portable project Save and Open', () {
     final save = EditorCommands.all.singleWhere(
       (command) => command.title == 'Save Project',

@@ -9,6 +9,7 @@ import '../domain/audio_clip.dart';
 import '../domain/audio_meter.dart';
 import '../domain/daw_track.dart';
 import '../domain/loop_region.dart';
+import '../domain/musical_timing.dart';
 import '../domain/track_mixer.dart';
 import 'web_metronome_scheduler.dart';
 
@@ -511,6 +512,10 @@ class WebAudioEngine implements AudioMeterPeakSource {
 
   void setTempoBpm(double tempoBpm) {
     _metronomeScheduler.setTempoBpm(tempoBpm);
+  }
+
+  void setTimeSignature(TimeSignature timeSignature) {
+    _metronomeScheduler.setTimeSignature(timeSignature);
   }
 
   void setMetronomeEnabled(bool enabled) {

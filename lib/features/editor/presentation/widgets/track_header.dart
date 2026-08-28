@@ -275,7 +275,7 @@ class _TrackHeaderState extends State<TrackHeader> {
                               elevation: const WidgetStatePropertyAll(8),
                               shape: WidgetStatePropertyAll(
                                 RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
+                                  borderRadius: BorderRadius.circular(7),
                                   side: BorderSide(
                                     color: colorScheme.outlineVariant,
                                   ),
@@ -329,7 +329,7 @@ class _TrackHeaderState extends State<TrackHeader> {
                               elevation: const WidgetStatePropertyAll(8),
                               shape: WidgetStatePropertyAll(
                                 RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
+                                  borderRadius: BorderRadius.circular(7),
                                   side: BorderSide(
                                     color: colorScheme.outlineVariant,
                                   ),

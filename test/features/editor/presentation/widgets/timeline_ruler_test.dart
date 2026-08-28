@@ -1,4 +1,5 @@
 import 'package:daw_webapp/features/editor/domain/loop_region.dart';
+import 'package:daw_webapp/features/editor/domain/musical_timing.dart';
 import 'package:daw_webapp/features/editor/domain/snap_settings.dart';
 import 'package:daw_webapp/features/editor/domain/timeline_scale.dart';
 import 'package:daw_webapp/features/editor/presentation/models/timeline_ruler_mode.dart';
@@ -62,7 +63,7 @@ void main() {
         gridMetrics: metrics,
         mode: mode,
         bpm: bpm,
-        beatsPerBar: 4,
+        timeSignature: TimeSignature.commonTime,
         devicePixelRatio: 1,
       );
     }
@@ -73,6 +74,19 @@ void main() {
 
     expect(musical60.shouldRepaint(musical120), isTrue);
     expect(time.shouldRepaint(musical120), isTrue);
+    expect(
+      TimelineRulerPainter(
+        color: Colors.grey,
+        playheadColor: Colors.red,
+        playheadSeconds: 0,
+        gridMetrics: metrics,
+        mode: TimelineRulerMode.barsBeats,
+        bpm: 120,
+        timeSignature: TimeSignature.sixEight,
+        devicePixelRatio: 1,
+      ).shouldRepaint(musical120),
+      isTrue,
+    );
   });
 
   testWidgets('drag creates a normalized free-time loop without seeking', (

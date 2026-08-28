@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../../domain/musical_timing.dart';
+
 const String fldawProjectFormat = 'fldawproj';
 const int fldawProjectFormatVersion = 1;
 
@@ -135,6 +137,7 @@ class ProjectSettingsDto {
   const ProjectSettingsDto({
     required this.name,
     required this.bpm,
+    this.timeSignature = defaultTimeSignature,
     required this.snapEnabled,
     required this.snapSubdivision,
     required this.rulerDisplayMode,
@@ -146,6 +149,7 @@ class ProjectSettingsDto {
 
   final String name;
   final double bpm;
+  final TimeSignature timeSignature;
   final bool snapEnabled;
   final String snapSubdivision;
   final String rulerDisplayMode;
@@ -157,6 +161,10 @@ class ProjectSettingsDto {
   Map<String, Object?> toJson() => {
     'name': name,
     'bpm': bpm,
+    'timeSignature': {
+      'numerator': timeSignature.numerator,
+      'denominator': timeSignature.denominator,
+    },
     'snap': {'enabled': snapEnabled, 'subdivision': snapSubdivision},
     'rulerDisplayMode': rulerDisplayMode,
     'loop': {
@@ -172,6 +180,7 @@ class ProjectSettingsDto {
   factory ProjectSettingsDto.fromJson(Map<String, Object?> json) {
     final name = _requiredString(json, 'name');
     final bpm = _finiteNumber(json, 'bpm');
+    final timeSignature = _timeSignature(json);
     final snap = _requiredMap(json, 'snap');
     final subdivision = _requiredString(snap, 'subdivision');
     if (!const {
@@ -208,6 +217,7 @@ class ProjectSettingsDto {
     return ProjectSettingsDto(
       name: name,
       bpm: bpm,
+      timeSignature: timeSignature,
       snapEnabled: _requiredBool(snap, 'enabled'),
       snapSubdivision: subdivision,
       rulerDisplayMode: rulerMode,
@@ -217,6 +227,29 @@ class ProjectSettingsDto {
       masterVolumeDb: _boundedNumber(json, 'masterVolumeDb', -60, 6),
     );
   }
+}
+
+TimeSignature _timeSignature(Map<String, Object?> json) {
+  final value = json['timeSignature'];
+  if (value == null) {
+    return defaultTimeSignature;
+  }
+  if (value is! Map<String, Object?>) {
+    _invalid('timeSignature must be an object.');
+  }
+  final numerator = _requiredInt(value, 'numerator');
+  final denominator = _requiredInt(value, 'denominator');
+  if (numerator <= 0 || denominator <= 0) {
+    _invalid('Time signature values must be positive.');
+  }
+  final signature = TimeSignature(
+    numerator: numerator,
+    denominator: denominator,
+  );
+  if (!signature.isSupported) {
+    _invalid('Unsupported time signature: ${signature.label}.');
+  }
+  return signature;
 }
 
 class ProjectTrackDto {

@@ -31,7 +31,10 @@ void main() {
     });
 
     test('converts positions and detects downbeats using the meter', () {
-      final timing = MusicalTiming(bpm: 120, beatsPerBar: 3);
+      final timing = MusicalTiming(
+        bpm: 120,
+        timeSignature: TimeSignature.threeFour,
+      );
 
       expect(
         timing.musicalPositionToTime(const MusicalPosition(bar: 3, beat: 2)),
@@ -40,6 +43,30 @@ void main() {
       expect(timing.isDownbeat(0), isTrue);
       expect(timing.isDownbeat(3), isTrue);
       expect(timing.isDownbeat(4), isFalse);
+    });
+
+    test('uses the denominator to derive literal beat duration', () {
+      final threeFour = MusicalTiming(
+        bpm: 120,
+        timeSignature: TimeSignature.threeFour,
+      );
+      final sixEight = MusicalTiming(
+        bpm: 120,
+        timeSignature: TimeSignature.sixEight,
+      );
+
+      expect(threeFour.quarterNoteSeconds, 0.5);
+      expect(threeFour.beatSeconds, 0.5);
+      expect(threeFour.barSeconds, 1.5);
+      expect(threeFour.positionAtBeatIndex(3).label, '2:1');
+      expect(sixEight.quarterNoteSeconds, 0.5);
+      expect(sixEight.beatSeconds, 0.25);
+      expect(sixEight.barSeconds, 1.5);
+      expect(sixEight.positionAtBeatIndex(5).label, '1:6');
+      expect(sixEight.positionAtBeatIndex(6).label, '2:1');
+      expect(sixEight.isDownbeat(0), isTrue);
+      expect(sixEight.isDownbeat(5), isFalse);
+      expect(sixEight.isDownbeat(6), isTrue);
     });
 
     test('calculates visible beat starts directly by index', () {

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../../domain/audio_clip.dart';
 import '../../domain/clip_crossfade.dart';
+import '../../domain/musical_timing.dart';
 import '../../domain/snap_settings.dart';
 import '../../domain/timeline_snapper.dart';
 import '../widgets/track_header.dart';
@@ -110,6 +111,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
   double _sourceAudioDurationSeconds = 0;
   double _pixelsPerSecond = 1;
   double _bpm = 120;
+  TimeSignature _timeSignature = defaultTimeSignature;
   SnapSettings _snapSettings = const SnapSettings(enabled: false);
   int? _anchorTrackIndex;
   int? _minimumSelectedTrackIndex;
@@ -128,6 +130,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     double sourceStartSeconds = 0,
     double? sourceAudioDurationSeconds,
     double bpm = 120,
+    TimeSignature timeSignature = defaultTimeSignature,
     SnapSettings snapSettings = const SnapSettings(enabled: false),
     double minimumMoveAnchorStartSeconds = 0,
     double? pointerGlobalY,
@@ -149,6 +152,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
           sourceAudioDurationSeconds ?? clipDurationSeconds,
       pixelsPerSecond: pixelsPerSecond,
       bpm: bpm,
+      timeSignature: timeSignature,
       snapSettings: snapSettings,
       minimumMoveAnchorStartSeconds: minimumMoveAnchorStartSeconds,
       pointerGlobalY: pointerGlobalY,
@@ -171,6 +175,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     required double sourceAudioDurationSeconds,
     required double pixelsPerSecond,
     double bpm = 120,
+    TimeSignature timeSignature = defaultTimeSignature,
     SnapSettings snapSettings = const SnapSettings(enabled: false),
   }) {
     assert(mode != TimelineClipDragMode.move);
@@ -185,6 +190,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
       sourceAudioDurationSeconds: sourceAudioDurationSeconds,
       pixelsPerSecond: pixelsPerSecond,
       bpm: bpm,
+      timeSignature: timeSignature,
       snapSettings: snapSettings,
       minimumMoveAnchorStartSeconds: 0,
       pointerGlobalY: null,
@@ -207,6 +213,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     required double sourceAudioDurationSeconds,
     required double pixelsPerSecond,
     required double bpm,
+    required TimeSignature timeSignature,
     required SnapSettings snapSettings,
     required double minimumMoveAnchorStartSeconds,
     required double? pointerGlobalY,
@@ -238,6 +245,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     _sourceAudioDurationSeconds = sourceAudioDurationSeconds;
     _pixelsPerSecond = pixelsPerSecond;
     _bpm = bpm;
+    _timeSignature = timeSignature;
     _snapSettings = snapSettings;
     _anchorTrackIndex = anchorTrackIndex;
     _minimumSelectedTrackIndex = minimumSelectedTrackIndex;
@@ -463,6 +471,7 @@ class TimelineClipDragController extends ValueNotifier<TimelineClipDragState?> {
     return TimelineSnapper.snapTime(
       candidateSeconds: candidateSeconds,
       bpm: _bpm,
+      timeSignature: _timeSignature,
       settings: bypassSnap
           ? _snapSettings.copyWith(enabled: false)
           : _snapSettings,

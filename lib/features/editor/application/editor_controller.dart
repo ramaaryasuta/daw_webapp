@@ -244,10 +244,12 @@ class EditorController extends Notifier<EditorState> {
   }
 
   ProjectSnapshot _captureProjectSnapshot() {
+    final tempo = ref.read(tempoControllerProvider);
     return ProjectSnapshot(
       tracks: state.tracks,
       markers: state.markers,
-      bpm: ref.read(tempoControllerProvider).bpm,
+      bpm: tempo.bpm,
+      timeSignature: tempo.timeSignature,
       masterVolumeDb: state.masterVolumeDb,
       selectedTrackId: state.selectedTrackId,
       selectedClipIds: state.selectedClipIds,
@@ -368,6 +370,9 @@ class EditorController extends Notifier<EditorState> {
       history: history,
     );
     ref.read(tempoControllerProvider.notifier).setBpm(snapshot.bpm);
+    ref
+        .read(tempoControllerProvider.notifier)
+        .setTimeSignature(snapshot.timeSignature);
     _audioEngine.setMasterVolumeDb(snapshot.masterVolumeDb);
 
     if (arrangementChanged) {
@@ -620,6 +625,9 @@ class EditorController extends Notifier<EditorState> {
     _audioEngine.commitPreparedAudioSources(prepared);
     _audioEngine.setMasterVolumeDb(restored.masterVolumeDb);
     ref.read(tempoControllerProvider.notifier).setBpm(restored.bpm);
+    ref
+        .read(tempoControllerProvider.notifier)
+        .setTimeSignature(restored.timeSignature);
     ref
         .read(snapControllerProvider.notifier)
         .replaceSettings(restored.snapSettings);
@@ -897,7 +905,11 @@ class EditorController extends Notifier<EditorState> {
   Future<void> toggleLoop() async {
     var region = state.loopRegion;
     if (region == null) {
-      final timing = MusicalTiming(bpm: ref.read(tempoControllerProvider).bpm);
+      final tempo = ref.read(tempoControllerProvider);
+      final timing = MusicalTiming(
+        bpm: tempo.bpm,
+        timeSignature: tempo.timeSignature,
+      );
       final barDuration = timing.barDurationSeconds;
       final start = (state.playheadSeconds / barDuration).floor() * barDuration;
       region = LoopRegion(startSeconds: start, endSeconds: start + barDuration);
@@ -1104,9 +1116,11 @@ class EditorController extends Notifier<EditorState> {
 
   double _snapMarkerTime(double timeSeconds) {
     final finiteTime = timeSeconds.isFinite ? timeSeconds : 0.0;
+    final tempo = ref.read(tempoControllerProvider);
     return TimelineSnapper.snapTime(
       candidateSeconds: math.max(0, finiteTime),
-      bpm: ref.read(tempoControllerProvider).bpm,
+      bpm: tempo.bpm,
+      timeSignature: tempo.timeSignature,
       settings: ref.read(snapControllerProvider),
     );
   }
@@ -1215,9 +1229,11 @@ class EditorController extends Notifier<EditorState> {
       return;
     }
 
+    final tempo = ref.read(tempoControllerProvider);
     final anchorSeconds = TimelineSnapper.snapTime(
       candidateSeconds: state.playheadSeconds,
-      bpm: ref.read(tempoControllerProvider).bpm,
+      bpm: tempo.bpm,
+      timeSignature: tempo.timeSignature,
       settings: ref.read(snapControllerProvider),
     );
     await _insertCopiedClips(
@@ -1941,10 +1957,12 @@ class EditorController extends Notifier<EditorState> {
           ],
         ),
     ];
+    final tempo = ref.read(tempoControllerProvider);
     final after = ProjectSnapshot(
       tracks: tracks,
       markers: state.markers,
-      bpm: ref.read(tempoControllerProvider).bpm,
+      bpm: tempo.bpm,
+      timeSignature: tempo.timeSignature,
       masterVolumeDb: state.masterVolumeDb,
       selectedTrackId: state.selectedTrackId,
       selectedClipIds: const {},
@@ -2241,6 +2259,16 @@ class EditorController extends Notifier<EditorState> {
     final before = _captureProjectSnapshot();
     ref.read(tempoControllerProvider.notifier).setBpm(bpm);
     _recordEdit('Change Tempo', before);
+  }
+
+  void setProjectTimeSignature(TimeSignature timeSignature) {
+    if (ref.read(tempoControllerProvider).timeSignature == timeSignature ||
+        !timeSignature.isSupported) {
+      return;
+    }
+    final before = _captureProjectSnapshot();
+    ref.read(tempoControllerProvider.notifier).setTimeSignature(timeSignature);
+    _recordEdit('Change Time Signature', before);
   }
 
   void beginTempoChange() {

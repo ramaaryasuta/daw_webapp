@@ -29,7 +29,7 @@ class TimelineRulerModeControl extends StatelessWidget {
         padding: const EdgeInsets.only(left: 9, right: 5),
         decoration: BoxDecoration(
           color: colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(6),
           border: Border.all(color: colorScheme.outlineVariant),
         ),
         child: Row(

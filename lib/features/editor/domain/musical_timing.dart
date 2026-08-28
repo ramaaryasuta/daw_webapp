@@ -1,12 +1,40 @@
 import 'dart:math' as math;
 
-/// Default project meter used by the metronome and musical timeline grid.
-///
-/// Keeping this in the domain layer allows a future time-signature model to
-/// replace the default without coupling editor features to the audio engine.
-const int defaultBeatsPerBar = 4;
+/// A single project-wide musical meter.
+class TimeSignature {
+  const TimeSignature({required this.numerator, required this.denominator})
+    : assert(numerator > 0),
+      assert(denominator > 0);
 
-double secondsPerBeat(double bpm) {
+  static const commonTime = TimeSignature(numerator: 4, denominator: 4);
+  static const threeFour = TimeSignature(numerator: 3, denominator: 4);
+  static const sixEight = TimeSignature(numerator: 6, denominator: 8);
+
+  static const supported = <TimeSignature>[commonTime, threeFour, sixEight];
+
+  final int numerator;
+  final int denominator;
+
+  String get label => '$numerator/$denominator';
+
+  bool get isSupported => supported.contains(this);
+
+  @override
+  bool operator ==(Object other) =>
+      other is TimeSignature &&
+      other.numerator == numerator &&
+      other.denominator == denominator;
+
+  @override
+  int get hashCode => Object.hash(numerator, denominator);
+
+  @override
+  String toString() => label;
+}
+
+const TimeSignature defaultTimeSignature = TimeSignature.commonTime;
+
+double secondsPerQuarterNote(double bpm) {
   if (!bpm.isFinite || bpm <= 0) {
     throw ArgumentError.value(bpm, 'bpm', 'Must be finite and greater than 0');
   }
@@ -33,23 +61,28 @@ class MusicalPosition {
 /// User-facing [MusicalPosition] values are one-based, so beat index zero is
 /// always bar 1, beat 1.
 class MusicalTiming {
-  MusicalTiming({required this.bpm, this.beatsPerBar = defaultBeatsPerBar}) {
-    secondsPerBeat(bpm);
-    if (beatsPerBar <= 0) {
-      throw ArgumentError.value(
-        beatsPerBar,
-        'beatsPerBar',
-        'Must be greater than 0',
-      );
-    }
+  MusicalTiming({
+    required this.bpm,
+    this.timeSignature = defaultTimeSignature,
+  }) {
+    secondsPerQuarterNote(bpm);
   }
 
   final double bpm;
-  final int beatsPerBar;
+  final TimeSignature timeSignature;
 
-  double get beatDurationSeconds => secondsPerBeat(bpm);
+  int get beatsPerBar => timeSignature.numerator;
 
-  double get barDurationSeconds => beatDurationSeconds * beatsPerBar;
+  double get quarterNoteSeconds => secondsPerQuarterNote(bpm);
+
+  double get beatSeconds =>
+      quarterNoteSeconds * (4 / timeSignature.denominator);
+
+  double get barSeconds => beatSeconds * beatsPerBar;
+
+  double get beatDurationSeconds => beatSeconds;
+
+  double get barDurationSeconds => barSeconds;
 
   double beatTimeSeconds(int beatIndex) {
     return math.max(0, beatIndex) * beatDurationSeconds;

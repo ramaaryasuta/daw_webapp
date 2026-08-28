@@ -14,7 +14,7 @@ class MusicalGridPainter extends CustomPainter {
     required this.bpm,
     required this.settings,
     required this.devicePixelRatio,
-    this.beatsPerBar = defaultBeatsPerBar,
+    this.timeSignature = defaultTimeSignature,
   });
 
   /// Bars remain readable rather than collapsing into a dense barcode.
@@ -32,11 +32,11 @@ class MusicalGridPainter extends CustomPainter {
   final double bpm;
   final SnapSettings settings;
   final double devicePixelRatio;
-  final int beatsPerBar;
+  final TimeSignature timeSignature;
 
   double get beatLineSpacing {
     return gridMetrics.transform.timeToContentX(
-      MusicalTiming(bpm: bpm, beatsPerBar: beatsPerBar).beatDurationSeconds,
+      MusicalTiming(bpm: bpm, timeSignature: timeSignature).beatDurationSeconds,
     );
   }
 
@@ -45,7 +45,7 @@ class MusicalGridPainter extends CustomPainter {
       TimelineSnapper.intervalSeconds(
         bpm: bpm,
         subdivision: settings.subdivision,
-        beatsPerBar: beatsPerBar,
+        timeSignature: timeSignature,
       ),
     );
   }
@@ -65,13 +65,13 @@ class MusicalGridPainter extends CustomPainter {
       return;
     }
 
-    final timing = MusicalTiming(bpm: bpm, beatsPerBar: beatsPerBar);
+    final timing = MusicalTiming(bpm: bpm, timeSignature: timeSignature);
     final beatSeconds = timing.beatDurationSeconds;
     final barSeconds = timing.barDurationSeconds;
     final subdivisionSeconds = TimelineSnapper.intervalSeconds(
       bpm: bpm,
       subdivision: settings.subdivision,
-      beatsPerBar: beatsPerBar,
+      timeSignature: timeSignature,
     );
     final clipBounds = canvas.getLocalClipBounds();
     final leftSeconds = math.max(
@@ -107,7 +107,7 @@ class MusicalGridPainter extends CustomPainter {
         leftSeconds: leftSeconds,
         rightSeconds: rightSeconds,
         intervalSeconds: beatSeconds,
-        skipEvery: beatsPerBar,
+        skipEvery: timing.beatsPerBar,
         paint: Paint()
           ..color = color.withValues(alpha: 0.34)
           ..strokeWidth = 1,
@@ -167,6 +167,6 @@ class MusicalGridPainter extends CustomPainter {
         oldDelegate.settings.enabled != settings.enabled ||
         oldDelegate.settings.subdivision != settings.subdivision ||
         oldDelegate.devicePixelRatio != devicePixelRatio ||
-        oldDelegate.beatsPerBar != beatsPerBar;
+        oldDelegate.timeSignature != timeSignature;
   }
 }

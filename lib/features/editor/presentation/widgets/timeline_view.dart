@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../../domain/audio_clip.dart';
 import '../../domain/clip_crossfade.dart';
 import '../../domain/daw_track.dart';
+import '../../domain/musical_timing.dart';
 import '../../domain/snap_settings.dart';
 import '../../domain/timeline_scale.dart';
 import '../controllers/timeline_clip_drag_controller.dart';
@@ -29,6 +30,7 @@ class TimelineTrackLane extends StatelessWidget {
     required this.maximumSelectedTrackIndex,
     required this.clipDragController,
     this.bpm = 120,
+    this.timeSignature = defaultTimeSignature,
     this.snapSettings = const SnapSettings(enabled: false),
     required this.onSeek,
     required this.onSelect,
@@ -63,6 +65,7 @@ class TimelineTrackLane extends StatelessWidget {
   final int maximumSelectedTrackIndex;
   final TimelineClipDragController clipDragController;
   final double bpm;
+  final TimeSignature timeSignature;
   final SnapSettings snapSettings;
   final ValueChanged<double> onSeek;
   final void Function(
@@ -136,6 +139,7 @@ class TimelineTrackLane extends StatelessWidget {
               maximumSelectedTrackIndex: maximumSelectedTrackIndex,
               clipDragController: clipDragController,
               bpm: bpm,
+              timeSignature: timeSignature,
               snapSettings: snapSettings,
               crossfades: allCrossfades,
               onSelect: (toggle, preserveExistingIfSelected) =>
@@ -428,6 +432,7 @@ class _TimelineAudioClip extends StatefulWidget {
     required this.maximumSelectedTrackIndex,
     required this.clipDragController,
     required this.bpm,
+    required this.timeSignature,
     required this.snapSettings,
     required this.crossfades,
     required this.onSelect,
@@ -458,6 +463,7 @@ class _TimelineAudioClip extends StatefulWidget {
   final int maximumSelectedTrackIndex;
   final TimelineClipDragController clipDragController;
   final double bpm;
+  final TimeSignature timeSignature;
   final SnapSettings snapSettings;
   final List<ClipCrossfadePair> crossfades;
   final void Function(bool toggle, bool preserveExistingIfSelected) onSelect;
@@ -495,6 +501,7 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
   TimelineClipDragController get clipDragController =>
       widget.clipDragController;
   double get bpm => widget.bpm;
+  TimeSignature get timeSignature => widget.timeSignature;
   SnapSettings get snapSettings => widget.snapSettings;
   void Function(bool toggle, bool preserveExistingIfSelected) get onSelect =>
       widget.onSelect;
@@ -580,6 +587,7 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
           sourceAudioDurationSeconds: clip.sourceAudioDurationSeconds,
           pixelsPerSecond: transform.scale.pixelsPerSecond,
           bpm: bpm,
+          timeSignature: timeSignature,
           snapSettings: snapSettings,
           minimumMoveAnchorStartSeconds:
               clip.timelineStartSeconds - widget.groupMinimumStartSeconds,
@@ -659,7 +667,7 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
                 elevation: const WidgetStatePropertyAll(8),
                 shape: WidgetStatePropertyAll(
                   RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(7),
                     side: BorderSide(
                       color: Theme.of(context).colorScheme.outlineVariant,
                     ),
@@ -848,6 +856,7 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
       sourceAudioDurationSeconds: clip.sourceAudioDurationSeconds,
       pixelsPerSecond: transform.scale.pixelsPerSecond,
       bpm: bpm,
+      timeSignature: timeSignature,
       snapSettings: snapSettings,
     );
   }

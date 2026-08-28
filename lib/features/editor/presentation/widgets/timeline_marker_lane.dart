@@ -232,7 +232,7 @@ class _TimelineMarkerFlagState extends State<_TimelineMarkerFlag> {
         elevation: const WidgetStatePropertyAll(8),
         shape: WidgetStatePropertyAll(
           RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(7),
             side: BorderSide(color: colorScheme.outlineVariant),
           ),
         ),

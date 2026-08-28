@@ -315,9 +315,11 @@ class _EditorPageState extends ConsumerState<EditorPage> {
 
   void _handleTimelineSeek(double positionSeconds) {
     _markTimelineUserInteraction();
+    final tempo = ref.read(tempoControllerProvider);
     final snappedPosition = TimelineSnapper.snapTime(
       candidateSeconds: positionSeconds,
-      bpm: ref.read(tempoControllerProvider).bpm,
+      bpm: tempo.bpm,
+      timeSignature: tempo.timeSignature,
       settings: ref.read(snapControllerProvider),
     );
     ref.read(editorControllerProvider.notifier).seek(snappedPosition);
@@ -384,9 +386,11 @@ class _EditorPageState extends ConsumerState<EditorPage> {
 
   FldawProjectSnapshot _createProjectSnapshot({String? projectName}) {
     final editor = ref.read(editorControllerProvider);
+    final tempo = ref.read(tempoControllerProvider);
     return FldawProjectSnapshot(
       name: projectName ?? editor.projectName,
-      bpm: ref.read(tempoControllerProvider).bpm,
+      bpm: tempo.bpm,
+      timeSignature: tempo.timeSignature,
       snapSettings: ref.read(snapControllerProvider),
       rulerMode: _rulerMode,
       isLoopEnabled: editor.isLoopEnabled,
@@ -1367,6 +1371,9 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   Widget build(BuildContext context) {
     final editorState = ref.watch(editorControllerProvider);
     final bpm = ref.watch(tempoControllerProvider.select((state) => state.bpm));
+    final timeSignature = ref.watch(
+      tempoControllerProvider.select((state) => state.timeSignature),
+    );
     final snapSettings = ref.watch(snapControllerProvider);
 
     final controller = ref.read(editorControllerProvider.notifier);
@@ -1689,6 +1696,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                                                                   mode:
                                                                       _rulerMode,
                                                                   bpm: bpm,
+                                                                  timeSignature:
+                                                                      timeSignature,
                                                                   loopRegion:
                                                                       effectiveLoopRegion,
                                                                   isLoopEnabled:
@@ -1752,6 +1761,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                                                                         editorState
                                                                             .isLoopEnabled,
                                                                     bpm: bpm,
+                                                                    timeSignature:
+                                                                        timeSignature,
                                                                     snapSettings:
                                                                         snapSettings,
                                                                     rulerMode:

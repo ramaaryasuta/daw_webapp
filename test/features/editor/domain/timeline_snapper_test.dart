@@ -1,3 +1,4 @@
+import 'package:daw_webapp/features/editor/domain/musical_timing.dart';
 import 'package:daw_webapp/features/editor/domain/snap_settings.dart';
 import 'package:daw_webapp/features/editor/domain/timeline_snapper.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -47,7 +48,26 @@ void main() {
         TimelineSnapper.intervalSeconds(
           bpm: 120,
           subdivision: SnapSubdivision.bar,
-          beatsPerBar: 3,
+          timeSignature: TimeSignature.threeFour,
+        ),
+        1.5,
+      );
+    });
+
+    test('derives beat and bar intervals for literal 6/8', () {
+      expect(
+        TimelineSnapper.intervalSeconds(
+          bpm: 120,
+          subdivision: SnapSubdivision.beat,
+          timeSignature: TimeSignature.sixEight,
+        ),
+        0.25,
+      );
+      expect(
+        TimelineSnapper.intervalSeconds(
+          bpm: 120,
+          subdivision: SnapSubdivision.bar,
+          timeSignature: TimeSignature.sixEight,
         ),
         1.5,
       );

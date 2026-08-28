@@ -61,4 +61,86 @@ void main() {
     expect(find.text('Undo'), findsOneWidget);
     expect(tester.widget<TextField>(search).controller!.text, isEmpty);
   });
+
+  testWidgets('combines category filters with live search', (tester) async {
+    await pumpCommands(tester);
+
+    await tester.tap(find.byKey(const ValueKey('commands-category-Editing')));
+    await tester.pump();
+    expect(find.text('Split Clip'), findsOneWidget);
+    expect(find.text('Play / Pause'), findsNothing);
+    expect(find.text('Save Project'), findsNothing);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('commands-search-field')),
+      'split',
+    );
+    await tester.pump();
+    expect(find.text('Split Clip'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('commands-category-Timeline')));
+    await tester.pump();
+    expect(find.text('No commands found'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('commands-search-clear')));
+    await tester.pump();
+    expect(find.text('Play / Pause'), findsOneWidget);
+    expect(find.text('Split Clip'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('commands-category-Mixer')));
+    await tester.pump();
+    expect(find.text('Track Mixer Controls'), findsOneWidget);
+    expect(find.text('Play / Pause'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('commands-category-Project')));
+    await tester.pump();
+    expect(find.text('Save Project'), findsOneWidget);
+    expect(find.text('Open Project'), findsOneWidget);
+  });
+
+  testWidgets('expands one command from centralized guidance metadata', (
+    tester,
+  ) async {
+    await pumpCommands(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('commands-search-field')),
+      'position the playhead before splitting',
+    );
+    await tester.pump();
+    expect(find.text('Split Clip'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('command-row-Split Clip')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('command-details-Split Clip')),
+      findsOneWidget,
+    );
+    expect(find.text('How to use'), findsOneWidget);
+    expect(find.text('1. Select one clip.'), findsOneWidget);
+    expect(find.textContaining('Snap can be used'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('command-row-Split Clip')));
+    await tester.pumpAndSettle();
+    expect(find.text('How to use'), findsNothing);
+  });
+
+  testWidgets('keeps search focused and stays compact at narrow widths', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(420, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await pumpCommands(tester);
+    await tester.pump();
+
+    final editable = tester.widget<EditableText>(find.byType(EditableText));
+    expect(editable.focusNode.hasFocus, isTrue);
+    expect(tester.takeException(), isNull);
+
+    final dialog = tester.widget<Dialog>(find.byType(Dialog));
+    final shape = dialog.shape! as RoundedRectangleBorder;
+    expect(shape.borderRadius, BorderRadius.circular(9));
+  });
 }

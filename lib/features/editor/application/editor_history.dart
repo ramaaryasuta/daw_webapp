@@ -1,6 +1,7 @@
 import 'dart:collection';
 
 import '../domain/daw_track.dart';
+import '../domain/musical_timing.dart';
 import '../domain/timeline_marker.dart';
 
 /// Maximum number of committed project edits retained for undo.
@@ -16,6 +17,7 @@ class ProjectSnapshot {
     required Iterable<DawTrack> tracks,
     Iterable<TimelineMarker> markers = const [],
     required this.bpm,
+    this.timeSignature = defaultTimeSignature,
     this.masterVolumeDb = 0,
     required this.selectedTrackId,
     Set<String> selectedClipIds = const {},
@@ -31,6 +33,7 @@ class ProjectSnapshot {
   final List<DawTrack> tracks;
   final List<TimelineMarker> markers;
   final double bpm;
+  final TimeSignature timeSignature;
   final double masterVolumeDb;
 
   /// Selection is a restoration hint, not an independently undoable edit.
@@ -43,6 +46,7 @@ class ProjectSnapshot {
 
   bool hasSameProjectState(ProjectSnapshot other) {
     if (bpm != other.bpm ||
+        timeSignature != other.timeSignature ||
         masterVolumeDb != other.masterVolumeDb ||
         tracks.length != other.tracks.length ||
         markers.length != other.markers.length) {

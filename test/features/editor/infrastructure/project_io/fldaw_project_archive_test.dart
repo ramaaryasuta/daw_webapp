@@ -6,6 +6,7 @@ import 'package:daw_webapp/features/editor/domain/audio_asset.dart';
 import 'package:daw_webapp/features/editor/domain/audio_clip.dart';
 import 'package:daw_webapp/features/editor/domain/daw_track.dart';
 import 'package:daw_webapp/features/editor/domain/loop_region.dart';
+import 'package:daw_webapp/features/editor/domain/musical_timing.dart';
 import 'package:daw_webapp/features/editor/domain/snap_settings.dart';
 import 'package:daw_webapp/features/editor/domain/timeline_marker.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/fldaw_project_archive.dart';
@@ -45,6 +46,7 @@ void main() {
     final snapshot = FldawProjectSnapshot(
       name: 'My Song',
       bpm: 137.5,
+      timeSignature: TimeSignature.sixEight,
       snapSettings: const SnapSettings(
         enabled: true,
         subdivision: SnapSubdivision.halfBeat,
@@ -128,6 +130,8 @@ void main() {
     });
     expect(restored.name, 'My Song');
     expect(restored.bpm, 137.5);
+    expect(restored.timeSignature, TimeSignature.sixEight);
+    expect(document.manifest.project.timeSignature, TimeSignature.sixEight);
     expect(restored.snapSettings.subdivision, SnapSubdivision.halfBeat);
     expect(restored.rulerMode, TimelineRulerMode.time);
     expect(restored.isLoopEnabled, isTrue);
@@ -164,6 +168,25 @@ void main() {
           contains('newer FLDAW project format'),
         ),
       ),
+    );
+  });
+
+  test('older V1 metadata without a time signature defaults to 4/4', () {
+    final manifest = FldawProjectManifest.fromJson(_emptyManifest());
+
+    expect(manifest.project.timeSignature, TimeSignature.commonTime);
+  });
+
+  test('manifest rejects unsupported time signatures', () {
+    final manifest = _emptyManifest();
+    (manifest['project']! as Map<String, Object?>)['timeSignature'] = {
+      'numerator': 5,
+      'denominator': 4,
+    };
+
+    expect(
+      () => FldawProjectManifest.fromJson(manifest),
+      throwsA(isA<FldawProjectException>()),
     );
   });
 

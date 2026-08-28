@@ -13,6 +13,19 @@ abstract final class AppTheme {
       ),
 
       appBarTheme: const AppBarTheme(centerTitle: false, elevation: 0),
+      dialogTheme: DialogThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+      ),
+      menuTheme: MenuThemeData(
+        style: MenuStyle(
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+          ),
+        ),
+      ),
     );
   }
 }

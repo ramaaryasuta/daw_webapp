@@ -6,18 +6,10 @@ import 'snap_settings.dart';
 abstract final class TimelineSnapper {
   static double subdivisionBeats(
     SnapSubdivision subdivision, {
-    int beatsPerBar = defaultBeatsPerBar,
+    TimeSignature timeSignature = defaultTimeSignature,
   }) {
-    if (beatsPerBar <= 0) {
-      throw ArgumentError.value(
-        beatsPerBar,
-        'beatsPerBar',
-        'Must be greater than 0',
-      );
-    }
-
     return switch (subdivision) {
-      SnapSubdivision.bar => beatsPerBar.toDouble(),
+      SnapSubdivision.bar => timeSignature.numerator.toDouble(),
       SnapSubdivision.beat => 1,
       SnapSubdivision.halfBeat => 1 / 2,
       SnapSubdivision.quarterBeat => 1 / 4,
@@ -28,13 +20,13 @@ abstract final class TimelineSnapper {
   static double intervalSeconds({
     required double bpm,
     required SnapSubdivision subdivision,
-    int beatsPerBar = defaultBeatsPerBar,
+    TimeSignature timeSignature = defaultTimeSignature,
   }) {
     return MusicalTiming(
           bpm: bpm,
-          beatsPerBar: beatsPerBar,
+          timeSignature: timeSignature,
         ).beatDurationSeconds *
-        subdivisionBeats(subdivision, beatsPerBar: beatsPerBar);
+        subdivisionBeats(subdivision, timeSignature: timeSignature);
   }
 
   /// Returns the nearest musical grid time using a direct grid index.
@@ -45,7 +37,7 @@ abstract final class TimelineSnapper {
     required double candidateSeconds,
     required double bpm,
     required SnapSettings settings,
-    int beatsPerBar = defaultBeatsPerBar,
+    TimeSignature timeSignature = defaultTimeSignature,
   }) {
     if (!candidateSeconds.isFinite) {
       return 0;
@@ -59,7 +51,7 @@ abstract final class TimelineSnapper {
     final interval = intervalSeconds(
       bpm: bpm,
       subdivision: settings.subdivision,
-      beatsPerBar: beatsPerBar,
+      timeSignature: timeSignature,
     );
     final gridIndex = (candidate / interval).round();
     final snapped = gridIndex * interval;

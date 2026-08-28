@@ -26,7 +26,7 @@ class TimelineRuler extends StatefulWidget {
     this.onLoopRegionPreviewChanged,
     this.mode = TimelineRulerMode.barsBeats,
     this.bpm = 120,
-    this.beatsPerBar = defaultBeatsPerBar,
+    this.timeSignature = defaultTimeSignature,
     this.markers = const [],
     this.selectedMarkerId,
     this.onAddMarker,
@@ -54,7 +54,7 @@ class TimelineRuler extends StatefulWidget {
   final ValueChanged<LoopRegion?>? onLoopRegionPreviewChanged;
   final TimelineRulerMode mode;
   final double bpm;
-  final int beatsPerBar;
+  final TimeSignature timeSignature;
   final List<TimelineMarker> markers;
   final String? selectedMarkerId;
   final ValueChanged<double>? onAddMarker;
@@ -95,7 +95,7 @@ class _TimelineRulerState extends State<TimelineRuler> {
       candidateSeconds: seconds,
       bpm: widget.bpm,
       settings: widget.snapSettings,
-      beatsPerBar: widget.beatsPerBar,
+      timeSignature: widget.timeSignature,
     );
   }
 
@@ -106,7 +106,7 @@ class _TimelineRulerState extends State<TimelineRuler> {
     return TimelineSnapper.intervalSeconds(
       bpm: widget.bpm,
       subdivision: widget.snapSettings.subdivision,
-      beatsPerBar: widget.beatsPerBar,
+      timeSignature: widget.timeSignature,
     );
   }
 
@@ -250,7 +250,7 @@ class _TimelineRulerState extends State<TimelineRuler> {
                     gridMetrics: widget.gridMetrics,
                     mode: widget.mode,
                     bpm: widget.bpm,
-                    beatsPerBar: widget.beatsPerBar,
+                    timeSignature: widget.timeSignature,
                     devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
                   ),
                   child: const SizedBox.expand(),
@@ -288,7 +288,7 @@ class TimelineRulerPainter extends CustomPainter {
     required this.gridMetrics,
     required this.mode,
     required this.bpm,
-    required this.beatsPerBar,
+    this.timeSignature = defaultTimeSignature,
     required this.devicePixelRatio,
     this.loopColor = Colors.blue,
     this.loopRegion,
@@ -308,7 +308,7 @@ class TimelineRulerPainter extends CustomPainter {
   final TimelineGridMetrics gridMetrics;
   final TimelineRulerMode mode;
   final double bpm;
-  final int beatsPerBar;
+  final TimeSignature timeSignature;
   final double devicePixelRatio;
 
   @override
@@ -388,7 +388,7 @@ class TimelineRulerPainter extends CustomPainter {
       return;
     }
 
-    final timing = MusicalTiming(bpm: bpm, beatsPerBar: beatsPerBar);
+    final timing = MusicalTiming(bpm: bpm, timeSignature: timeSignature);
     final transform = gridMetrics.transform;
     final clipBounds = canvas.getLocalClipBounds();
     final visibleStartSeconds = math.max(
@@ -680,7 +680,7 @@ class TimelineRulerPainter extends CustomPainter {
             gridMetrics.transform.horizontalScrollOffset ||
         oldDelegate.mode != mode ||
         oldDelegate.bpm != bpm ||
-        oldDelegate.beatsPerBar != beatsPerBar ||
+        oldDelegate.timeSignature != timeSignature ||
         oldDelegate.devicePixelRatio != devicePixelRatio;
   }
 }

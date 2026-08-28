@@ -4,6 +4,7 @@ import '../models/timeline_ruler_mode.dart';
 import '../controllers/audio_meter_controller.dart';
 import 'master_strip.dart';
 import 'tempo_controls.dart';
+import 'time_signature_control.dart';
 import 'snap_control.dart';
 import 'timeline_ruler_mode_control.dart';
 
@@ -165,7 +166,21 @@ class TransportBar extends StatelessWidget {
                         ),
                         const SizedBox(width: 20),
                         const TempoControls(),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 1,
+                          height: 20,
+                          color: colorScheme.outlineVariant,
+                        ),
+                        const SizedBox(width: 8),
+                        const TimeSignatureControl(),
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 1,
+                          height: 20,
+                          color: colorScheme.outlineVariant,
+                        ),
+                        const SizedBox(width: 8),
                         const SnapControl(),
                         const SizedBox(width: 10),
                         TimelineRulerModeControl(

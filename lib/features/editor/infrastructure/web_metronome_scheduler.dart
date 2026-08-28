@@ -26,6 +26,7 @@ class WebMetronomeScheduler {
 
   Timer? _lookAheadTimer;
   double _tempoBpm = 120;
+  TimeSignature _timeSignature = defaultTimeSignature;
   double _timelineStartSeconds = 0;
   double _contextStartTime = 0;
   double _passTimelineStartSeconds = 0;
@@ -57,6 +58,17 @@ class WebMetronomeScheduler {
 
     _tempoBpm = tempoBpm;
 
+    if (_enabled && _transportRunning) {
+      _restartScheduling();
+    }
+  }
+
+  void setTimeSignature(TimeSignature timeSignature) {
+    if (_timeSignature == timeSignature) {
+      return;
+    }
+
+    _timeSignature = timeSignature;
     if (_enabled && _transportRunning) {
       _restartScheduling();
     }
@@ -126,7 +138,8 @@ class WebMetronomeScheduler {
     _scheduledClicks.clear();
   }
 
-  MusicalTiming get _timing => MusicalTiming(bpm: _tempoBpm);
+  MusicalTiming get _timing =>
+      MusicalTiming(bpm: _tempoBpm, timeSignature: _timeSignature);
 
   double _currentTimelinePosition() {
     final elapsed = _audioContext.currentTime - _contextStartTime;

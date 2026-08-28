@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../domain/loop_region.dart';
+import '../../domain/musical_timing.dart';
 import '../../domain/snap_settings.dart';
 import '../../domain/timeline_scale.dart';
 import '../../domain/timeline_marker.dart';
@@ -21,6 +22,7 @@ class TimelineLoopOverlay extends StatelessWidget {
     required this.loopRegion,
     required this.isLoopEnabled,
     required this.bpm,
+    this.timeSignature = defaultTimeSignature,
     required this.snapSettings,
     required this.rulerMode,
     required this.verticalScrollController,
@@ -34,6 +36,7 @@ class TimelineLoopOverlay extends StatelessWidget {
   final LoopRegion? loopRegion;
   final bool isLoopEnabled;
   final double bpm;
+  final TimeSignature timeSignature;
   final SnapSettings snapSettings;
   final TimelineRulerMode rulerMode;
   final ScrollController verticalScrollController;
@@ -94,6 +97,7 @@ class TimelineLoopOverlay extends StatelessWidget {
                       color: colorScheme.outlineVariant,
                       gridMetrics: gridMetrics,
                       bpm: bpm,
+                      timeSignature: timeSignature,
                       settings: snapSettings,
                       devicePixelRatio: devicePixelRatio,
                     ),

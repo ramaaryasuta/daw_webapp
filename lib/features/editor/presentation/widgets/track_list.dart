@@ -277,6 +277,9 @@ class _TimelineTrackListState extends ConsumerState<TimelineTrackList> {
       editorControllerProvider.select((state) => state.selectedClipIds),
     );
     final bpm = ref.watch(tempoControllerProvider.select((state) => state.bpm));
+    final timeSignature = ref.watch(
+      tempoControllerProvider.select((state) => state.timeSignature),
+    );
     final snapSettings = ref.watch(snapControllerProvider);
     final controller = ref.read(editorControllerProvider.notifier);
     return ValueListenableBuilder<TrackReorderDragState?>(
@@ -361,6 +364,7 @@ class _TimelineTrackListState extends ConsumerState<TimelineTrackList> {
                     maximumSelectedTrackIndex: maximumSelectedTrackIndex,
                     clipDragController: widget.clipDragController,
                     bpm: bpm,
+                    timeSignature: timeSignature,
                     snapSettings: snapSettings,
                     onSeek: widget.onSeek,
                     onSelect: (clipId, toggle, preserveExistingIfSelected) {
