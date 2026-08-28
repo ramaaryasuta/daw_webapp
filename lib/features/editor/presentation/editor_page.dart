@@ -17,8 +17,10 @@ import '../domain/timeline_scale.dart';
 import '../domain/timeline_snapper.dart';
 import '../infrastructure/audio_import_service.dart';
 import '../infrastructure/audio_mixdown_service.dart';
+import '../infrastructure/browser_before_unload.dart';
 import '../infrastructure/project_io/fldaw_project_codec.dart';
 import '../infrastructure/project_io/fldaw_project_io_service.dart';
+import '../infrastructure/project_io/project_autosave_store.dart';
 import '../infrastructure/project_io/project_dto.dart';
 import '../infrastructure/web_audio_engine.dart';
 import 'controllers/audio_meter_controller.dart';
@@ -37,6 +39,8 @@ import 'widgets/commands_dialog.dart';
 import 'widgets/editor_menu_bar.dart';
 import 'widgets/export_dialog.dart';
 import 'widgets/project_progress_dialog.dart';
+import 'widgets/project_recovery_dialog.dart';
+import 'widgets/save_project_dialog.dart';
 import 'widgets/track_header.dart';
 import 'widgets/track_list.dart';
 import 'widgets/timeline_ruler.dart';
@@ -69,6 +73,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   bool _isSyncingVerticalScroll = false;
   bool _isProgrammaticTimelineScroll = false;
   bool _isTimelinePanning = false;
+  bool _isAutosaveWriting = false;
   int? _timelinePanPointer;
   double _timelinePanStartGlobalX = 0;
   double _timelinePanStartScrollOffset = 0;
@@ -76,6 +81,9 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   double? _lastPanZoomScale;
   DateTime? _lastTimelineInteraction;
   TimelineRulerMode _rulerMode = TimelineRulerMode.barsBeats;
+  _AutosaveStatus _autosaveStatus = _AutosaveStatus.idle;
+  String? _autosaveError;
+  Timer? _autosaveTimer;
 
   final GlobalKey _timelineViewportKey = GlobalKey();
   final GlobalKey _trackLaneViewportKey = GlobalKey();
@@ -87,6 +95,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   late final TrackReorderDragController _trackReorderController;
   late final ValueNotifier<LoopRegion?> _loopPreviewRegion;
   late final AudioMeterController _audioMeterController;
+  late final BrowserBeforeUnloadGuard _beforeUnloadGuard;
 
   @override
   void initState() {
@@ -99,6 +108,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     _audioMeterController = AudioMeterController(
       ref.read(webAudioEngineProvider),
     );
+    _beforeUnloadGuard = createBrowserBeforeUnloadGuard();
     _clipDragController = TimelineClipDragController(
       _horizontalTimelineController,
       _timelineViewportKey,
@@ -120,6 +130,22 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       ),
       _handlePlaybackFollowState,
     );
+    ref.listenManual<bool>(
+      editorControllerProvider.select((state) => state.hasUnsavedChanges),
+      (_, isDirty) => _beforeUnloadGuard.setDirty(isDirty),
+      fireImmediately: true,
+    );
+    ref.listenManual<int>(
+      editorControllerProvider.select((state) => state.projectRevision),
+      (previous, next) {
+        if (previous != null && previous != next) {
+          _scheduleAutosave();
+        }
+      },
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_checkForRecovery());
+    });
   }
 
   @override
@@ -133,6 +159,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     _trackLaneScrollController.dispose();
     _loopPreviewRegion.dispose();
     _audioMeterController.dispose();
+    _autosaveTimer?.cancel();
+    _beforeUnloadGuard.dispose();
 
     super.dispose();
   }
@@ -354,10 +382,10 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     );
   }
 
-  FldawProjectSnapshot _createProjectSnapshot() {
+  FldawProjectSnapshot _createProjectSnapshot({String? projectName}) {
     final editor = ref.read(editorControllerProvider);
     return FldawProjectSnapshot(
-      name: editor.projectName,
+      name: projectName ?? editor.projectName,
       bpm: ref.read(tempoControllerProvider).bpm,
       snapSettings: ref.read(snapControllerProvider),
       rulerMode: _rulerMode,
@@ -373,7 +401,15 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     if (_isProjectOperationInProgress) {
       return;
     }
-    final snapshot = _createProjectSnapshot();
+    final editor = ref.read(editorControllerProvider);
+    final projectName = await showSaveProjectDialog(
+      context,
+      initialName: editor.projectName,
+    );
+    if (projectName == null || !mounted) {
+      return;
+    }
+    final snapshot = _createProjectSnapshot(projectName: projectName);
     final io = ref.read(fldawProjectIoServiceProvider);
     final progress = ValueNotifier(
       ProjectOperationProgress(
@@ -407,6 +443,10 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       }
       final bytes = io.packageProject(snapshot);
       io.downloadProject(bytes, projectName: snapshot.name);
+      ref
+          .read(editorControllerProvider.notifier)
+          .markExplicitlySaved(projectName);
+      _scheduleAutosave();
     } catch (error, stackTrace) {
       debugPrint('Save Project failed: $error\n$stackTrace');
       if (dialogVisible && mounted) {
@@ -452,6 +492,10 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     }
     if (picked == null || !mounted) {
       return;
+    }
+    if (ref.read(editorControllerProvider).hasUnsavedChanges) {
+      final shouldContinue = await _confirmDiscardUnsavedChanges();
+      if (!shouldContinue || !mounted) return;
     }
 
     final progress = ValueNotifier(
@@ -502,6 +546,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
           );
       if (mounted) {
         setState(() => _rulerMode = restored.rulerMode);
+        _scheduleAutosave();
       }
     } catch (error, stackTrace) {
       debugPrint('Open Project failed: $error\n$stackTrace');
@@ -548,6 +593,215 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         ],
       ),
     );
+  }
+
+  void _scheduleAutosave() {
+    _autosaveTimer?.cancel();
+    _autosaveTimer = Timer(const Duration(seconds: 2), _performAutosave);
+  }
+
+  Future<void> _performAutosave() async {
+    if (_isAutosaveWriting || !mounted) {
+      _scheduleAutosave();
+      return;
+    }
+    _isAutosaveWriting = true;
+    setState(() {
+      _autosaveStatus = _AutosaveStatus.saving;
+      _autosaveError = null;
+    });
+    try {
+      final document = const FldawProjectCodec().encodeSnapshot(
+        _createProjectSnapshot(),
+      );
+      await ref.read(projectAutosaveStoreProvider).saveDocument(document);
+      if (mounted) {
+        setState(() => _autosaveStatus = _AutosaveStatus.saved);
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Autosave failed: $error\n$stackTrace');
+      if (mounted) {
+        setState(() {
+          _autosaveStatus = _AutosaveStatus.failed;
+          _autosaveError = error.toString();
+        });
+      }
+    } finally {
+      _isAutosaveWriting = false;
+    }
+  }
+
+  Future<void> _checkForRecovery() async {
+    AutosaveRecovery? recovery;
+    try {
+      recovery = await ref.read(projectAutosaveStoreProvider).readRecovery();
+    } catch (error, stackTrace) {
+      debugPrint('Recovery check failed: $error\n$stackTrace');
+      if (mounted) {
+        setState(() {
+          _autosaveStatus = _AutosaveStatus.failed;
+          _autosaveError = error.toString();
+        });
+      }
+      return;
+    }
+    if (recovery == null || !mounted) return;
+
+    final choice = await showProjectRecoveryDialog(context, recovery: recovery);
+    if (!mounted) return;
+    if (choice == ProjectRecoveryChoice.discard) {
+      try {
+        await ref.read(projectAutosaveStoreProvider).discardRecovery();
+      } catch (error, stackTrace) {
+        debugPrint('Discard recovery failed: $error\n$stackTrace');
+        if (mounted) {
+          setState(() {
+            _autosaveStatus = _AutosaveStatus.failed;
+            _autosaveError = error.toString();
+          });
+        }
+      }
+      return;
+    }
+    if (choice == ProjectRecoveryChoice.recover) {
+      await _recoverProject(recovery);
+    }
+  }
+
+  Future<void> _recoverProject(AutosaveRecovery recovery) async {
+    final progress = ValueNotifier(
+      ProjectOperationProgress(
+        title: 'Recovering Project',
+        status: 'Loading local audio sources...',
+        projectName: recovery.manifest.project.name,
+      ),
+    );
+    var dialogVisible = true;
+    setState(() => _isProjectOperationInProgress = true);
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => ProjectProgressDialog(progress: progress),
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 32));
+    try {
+      final document = await ref
+          .read(projectAutosaveStoreProvider)
+          .loadDocument(recovery);
+      final sourceCount = document.manifest.audioSources.length;
+      final restored = await ref
+          .read(editorControllerProvider.notifier)
+          .openProjectDocument(
+            document,
+            recoveredAutosave: true,
+            onSourceProgress: (completed, total) {
+              progress.value = ProjectOperationProgress(
+                title: 'Recovering Project',
+                status: total == 1
+                    ? 'Restoring audio source...'
+                    : 'Restoring $total audio sources...',
+                projectName: recovery.manifest.project.name,
+                value: total == 0 ? 1 : completed / total,
+              );
+            },
+          );
+      if (mounted) {
+        setState(() => _rulerMode = restored.rulerMode);
+      }
+      if (sourceCount == 0) {
+        progress.value = ProjectOperationProgress(
+          title: 'Recovering Project',
+          status: 'Restoring project state...',
+          projectName: recovery.manifest.project.name,
+          value: 1,
+        );
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Project recovery failed: $error\n$stackTrace');
+      if (dialogVisible && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        dialogVisible = false;
+      }
+      if (mounted) {
+        final discard = await _showRecoveryFailure(error);
+        if (discard) {
+          try {
+            await ref.read(projectAutosaveStoreProvider).discardRecovery();
+          } catch (discardError, discardStackTrace) {
+            debugPrint(
+              'Discard broken recovery failed: '
+              '$discardError\n$discardStackTrace',
+            );
+          }
+        }
+      }
+    } finally {
+      if (dialogVisible && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      progress.dispose();
+      if (mounted) {
+        setState(() => _isProjectOperationInProgress = false);
+      }
+    }
+  }
+
+  Future<bool> _showRecoveryFailure(Object error) async {
+    final message = switch (error) {
+      ProjectAutosaveException(:final message) => message,
+      FldawProjectException(:final userMessage) => userMessage,
+      _ => 'The autosaved project could not be restored.',
+    };
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Unable to Recover Project'),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 380),
+              child: Text('$message\n\nThe current editor was not changed.'),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Keep Recovery'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Discard Recovery'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Future<bool> _confirmDiscardUnsavedChanges() async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Unsaved Changes'),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 360),
+              child: const Text(
+                'This project has changes that have not been saved to a '
+                '.fldawproj file.',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Continue'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   Future<void> _splitSelectedClip() async {
@@ -1230,6 +1484,10 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             body: Column(
               children: [
                 EditorMenuBar(
+                  trailing: _AutosaveStatusView(
+                    status: _autosaveStatus,
+                    error: _autosaveError,
+                  ),
                   sections: _buildMenuSections(
                     isImporting: editorState.isImporting,
                     hasTracks: editorState.tracks.isNotEmpty,
@@ -1264,6 +1522,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                   onRulerModeChanged: (mode) {
                     if (mode != _rulerMode) {
                       setState(() => _rulerMode = mode);
+                      controller.markPersistentSettingsChanged();
                     }
                   },
                 ),
@@ -1542,6 +1801,63 @@ class _EditorPageState extends ConsumerState<EditorPage> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+enum _AutosaveStatus { idle, saving, saved, failed }
+
+class _AutosaveStatusView extends StatelessWidget {
+  const _AutosaveStatusView({required this.status, this.error});
+
+  final _AutosaveStatus status;
+  final String? error;
+
+  @override
+  Widget build(BuildContext context) {
+    if (status == _AutosaveStatus.idle) {
+      return const SizedBox.shrink();
+    }
+    final colors = Theme.of(context).colorScheme;
+    final (icon, label, color) = switch (status) {
+      _AutosaveStatus.saving => (
+        Icons.sync,
+        'Saving...',
+        colors.onSurfaceVariant,
+      ),
+      _AutosaveStatus.saved => (
+        Icons.check_circle_outline,
+        'Saved locally',
+        colors.onSurfaceVariant,
+      ),
+      _AutosaveStatus.failed => (
+        Icons.error_outline,
+        'Autosave failed',
+        colors.error,
+      ),
+      _AutosaveStatus.idle => (Icons.check, '', colors.onSurfaceVariant),
+    };
+    return Tooltip(
+      message: status == _AutosaveStatus.failed
+          ? (error ?? 'Browser-local autosave failed.')
+          : label,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
         ),
       ),
     );

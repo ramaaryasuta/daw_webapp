@@ -10,6 +10,7 @@ import 'package:daw_webapp/features/editor/domain/snap_settings.dart';
 import 'package:daw_webapp/features/editor/domain/timeline_marker.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/fldaw_project_archive.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/fldaw_project_codec.dart';
+import 'package:daw_webapp/features/editor/infrastructure/project_io/fldaw_project_io_service.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/project_dto.dart';
 import 'package:daw_webapp/features/editor/presentation/models/timeline_ruler_mode.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,6 +18,15 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   const codec = FldawProjectCodec();
   const projectArchive = FldawProjectArchive();
+
+  test('project download name is readable, safe, and has one extension', () {
+    expect(projectDownloadName('My Demo'), 'My Demo.fldawproj');
+    expect(
+      projectDownloadName(r'  ../My:Demo?.fldawproj.fldawproj  '),
+      '__My_Demo_.fldawproj',
+    );
+    expect(projectDownloadName('   '), 'Untitled.fldawproj');
+  });
 
   test('V1 archive round-trips all project fields and deduplicates audio', () {
     final sourceBytes = Uint8List.fromList([82, 73, 70, 70, 1, 2, 3, 4]);

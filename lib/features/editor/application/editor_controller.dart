@@ -27,6 +27,8 @@ import 'tempo_controller.dart';
 class EditorState {
   EditorState({
     this.projectName = 'Untitled',
+    this.projectRevision = 0,
+    this.lastExplicitlySavedRevision = 0,
     this.isPlaying = false,
     this.isImporting = false,
     this.playheadSeconds = 0,
@@ -52,6 +54,10 @@ class EditorState {
   final bool isPlaying;
   final bool isImporting;
   final String projectName;
+  final int projectRevision;
+  final int lastExplicitlySavedRevision;
+
+  bool get hasUnsavedChanges => projectRevision != lastExplicitlySavedRevision;
 
   final double playheadSeconds;
   final double pixelsPerSecond;
@@ -132,6 +138,8 @@ class EditorState {
 
   EditorState copyWith({
     String? projectName,
+    int? projectRevision,
+    int? lastExplicitlySavedRevision,
     bool? isPlaying,
     bool? isImporting,
     double? playheadSeconds,
@@ -153,6 +161,9 @@ class EditorState {
   }) {
     return EditorState(
       projectName: projectName ?? this.projectName,
+      projectRevision: projectRevision ?? this.projectRevision,
+      lastExplicitlySavedRevision:
+          lastExplicitlySavedRevision ?? this.lastExplicitlySavedRevision,
       isPlaying: isPlaying ?? this.isPlaying,
       isImporting: isImporting ?? this.isImporting,
       playheadSeconds: playheadSeconds ?? this.playheadSeconds,
@@ -250,7 +261,10 @@ class EditorController extends Notifier<EditorState> {
       after: _captureProjectSnapshot(),
     );
     if (!identical(history, state.history)) {
-      state = state.copyWith(history: history);
+      state = state.copyWith(
+        history: history,
+        projectRevision: state.projectRevision + 1,
+      );
     }
   }
 
@@ -336,6 +350,8 @@ class EditorController extends Notifier<EditorState> {
 
     state = EditorState(
       projectName: state.projectName,
+      projectRevision: state.projectRevision + 1,
+      lastExplicitlySavedRevision: state.lastExplicitlySavedRevision,
       isPlaying: state.isPlaying,
       isImporting: state.isImporting,
       playheadSeconds: state.playheadSeconds,
@@ -555,6 +571,7 @@ class EditorController extends Notifier<EditorState> {
   Future<RestoredFldawProject> openProjectDocument(
     FldawProjectDocument document, {
     void Function(int completed, int total)? onSourceProgress,
+    bool recoveredAutosave = false,
   }) async {
     final prepared = await _audioEngine.prepareAudioSources(
       document.audioBytesBySourceId,
@@ -606,8 +623,13 @@ class EditorController extends Notifier<EditorState> {
     ref
         .read(snapControllerProvider.notifier)
         .replaceSettings(restored.snapSettings);
+    final replacementRevision = state.projectRevision + 1;
     state = EditorState(
       projectName: restored.name,
+      projectRevision: replacementRevision,
+      lastExplicitlySavedRevision: recoveredAutosave
+          ? replacementRevision - 1
+          : replacementRevision,
       isPlaying: false,
       isImporting: false,
       playheadSeconds: 0,
@@ -622,6 +644,25 @@ class EditorController extends Notifier<EditorState> {
       history: EditorHistory(),
     );
     return restored;
+  }
+
+  /// Commits portable-save metadata without adding an Undo entry.
+  void markExplicitlySaved(String projectName) {
+    final normalizedName = projectName.trim().isEmpty
+        ? 'Untitled'
+        : projectName.trim();
+    final revision =
+        state.projectRevision + (normalizedName == state.projectName ? 0 : 1);
+    state = state.copyWith(
+      projectName: normalizedName,
+      projectRevision: revision,
+      lastExplicitlySavedRevision: revision,
+    );
+  }
+
+  /// Records persistent settings managed outside EditorState history.
+  void markPersistentSettingsChanged() {
+    state = state.copyWith(projectRevision: state.projectRevision + 1);
   }
 
   String _nextAssetId() {
@@ -838,7 +879,10 @@ class EditorController extends Notifier<EditorState> {
     final currentPosition = wasPlaying
         ? _audioEngine.currentPositionSeconds
         : state.playheadSeconds;
-    state = state.copyWith(loopRegion: region);
+    state = state.copyWith(
+      loopRegion: region,
+      projectRevision: state.projectRevision + 1,
+    );
 
     if (!wasPlaying || !state.isLoopEnabled) {
       return;
@@ -864,7 +908,11 @@ class EditorController extends Notifier<EditorState> {
     final currentPosition = wasPlaying
         ? _audioEngine.currentPositionSeconds
         : state.playheadSeconds;
-    state = state.copyWith(isLoopEnabled: enabled, loopRegion: region);
+    state = state.copyWith(
+      isLoopEnabled: enabled,
+      loopRegion: region,
+      projectRevision: state.projectRevision + 1,
+    );
 
     if (!wasPlaying) {
       return;
@@ -1911,6 +1959,7 @@ class EditorController extends Notifier<EditorState> {
       tracks: tracks,
       clearSelectedClip: true,
       history: history,
+      projectRevision: state.projectRevision + 1,
     );
     await _resynchronizeArrangement(
       requestId: requestId,

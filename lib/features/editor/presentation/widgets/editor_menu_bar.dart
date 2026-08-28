@@ -26,9 +26,10 @@ class EditorMenuAction {
 }
 
 class EditorMenuBar extends StatelessWidget {
-  const EditorMenuBar({super.key, required this.sections});
+  const EditorMenuBar({super.key, required this.sections, this.trailing});
 
   final List<EditorMenuSection> sections;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -41,60 +42,62 @@ class EditorMenuBar extends StatelessWidget {
         color: colorScheme.surface,
         border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
       ),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: MenuBar(
-          style: MenuStyle(
-            backgroundColor: WidgetStatePropertyAll(colorScheme.surface),
-            elevation: const WidgetStatePropertyAll(0),
-            padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-          ),
-          children: [
-            for (final section in sections)
-              SubmenuButton(
-                style: const ButtonStyle(
-                  minimumSize: WidgetStatePropertyAll(Size(0, 30)),
-                  padding: WidgetStatePropertyAll(
-                    EdgeInsets.symmetric(horizontal: 10),
+      child: Row(
+        children: [
+          MenuBar(
+            style: MenuStyle(
+              backgroundColor: WidgetStatePropertyAll(colorScheme.surface),
+              elevation: const WidgetStatePropertyAll(0),
+              padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+            ),
+            children: [
+              for (final section in sections)
+                SubmenuButton(
+                  style: const ButtonStyle(
+                    minimumSize: WidgetStatePropertyAll(Size(0, 30)),
+                    padding: WidgetStatePropertyAll(
+                      EdgeInsets.symmetric(horizontal: 10),
+                    ),
+                    visualDensity: VisualDensity.compact,
                   ),
-                  visualDensity: VisualDensity.compact,
-                ),
-                menuChildren: [
-                  for (final action in section.actions) ...[
-                    if (action.separatorBefore) const Divider(height: 1),
-                    if (action.children.isEmpty)
-                      MenuItemButton(
-                        leadingIcon: action.icon == null
-                            ? null
-                            : Icon(action.icon, size: 18),
-                        onPressed: action.onSelected,
-                        shortcut: action.shortcut,
-                        child: Text(action.label),
-                      )
-                    else
-                      SubmenuButton(
-                        leadingIcon: action.icon == null
-                            ? null
-                            : Icon(action.icon, size: 18),
-                        menuChildren: [
-                          for (final child in action.children)
-                            MenuItemButton(
-                              leadingIcon: child.icon == null
-                                  ? null
-                                  : Icon(child.icon, size: 18),
-                              onPressed: child.onSelected,
-                              shortcut: child.shortcut,
-                              child: Text(child.label),
-                            ),
-                        ],
-                        child: Text(action.label),
-                      ),
+                  menuChildren: [
+                    for (final action in section.actions) ...[
+                      if (action.separatorBefore) const Divider(height: 1),
+                      if (action.children.isEmpty)
+                        MenuItemButton(
+                          leadingIcon: action.icon == null
+                              ? null
+                              : Icon(action.icon, size: 18),
+                          onPressed: action.onSelected,
+                          shortcut: action.shortcut,
+                          child: Text(action.label),
+                        )
+                      else
+                        SubmenuButton(
+                          leadingIcon: action.icon == null
+                              ? null
+                              : Icon(action.icon, size: 18),
+                          menuChildren: [
+                            for (final child in action.children)
+                              MenuItemButton(
+                                leadingIcon: child.icon == null
+                                    ? null
+                                    : Icon(child.icon, size: 18),
+                                onPressed: child.onSelected,
+                                shortcut: child.shortcut,
+                                child: Text(child.label),
+                              ),
+                          ],
+                          child: Text(action.label),
+                        ),
+                    ],
                   ],
-                ],
-                child: Text(section.label),
-              ),
-          ],
-        ),
+                  child: Text(section.label),
+                ),
+            ],
+          ),
+          if (trailing != null) ...[const Spacer(), trailing!],
+        ],
       ),
     );
   }

@@ -8,6 +8,30 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('persistent revisions distinguish portable saves from later edits', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final controller = container.read(editorControllerProvider.notifier);
+
+    expect(container.read(editorControllerProvider).hasUnsavedChanges, isFalse);
+    controller.addMarker(1);
+    var state = container.read(editorControllerProvider);
+    expect(state.hasUnsavedChanges, isTrue);
+
+    controller.markExplicitlySaved('Revision Test');
+    state = container.read(editorControllerProvider);
+    expect(state.projectName, 'Revision Test');
+    expect(state.hasUnsavedChanges, isFalse);
+
+    controller.renameMarker(state.markers.single.id, 'Changed');
+    state = container.read(editorControllerProvider);
+    expect(state.hasUnsavedChanges, isTrue);
+    expect(
+      state.projectRevision,
+      greaterThan(state.lastExplicitlySavedRevision),
+    );
+  });
+
   test(
     'marker edits are snapped and recorded as atomic project history',
     () async {

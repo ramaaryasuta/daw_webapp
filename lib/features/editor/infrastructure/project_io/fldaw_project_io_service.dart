@@ -50,13 +50,15 @@ class FldawProjectIoService {
 
 String projectDownloadName(String projectName) {
   var name = projectName.trim();
-  if (name.toLowerCase().endsWith('.fldawproj')) {
+  while (name.toLowerCase().endsWith('.fldawproj')) {
     name = name.substring(0, name.length - '.fldawproj'.length);
   }
   name = name
       .replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1F]'), '_')
+      .replaceAll(RegExp(r'\.{2,}'), '_')
       .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
+      .trim()
+      .replaceAll(RegExp(r'[. ]+$'), '');
   if (name.isEmpty) {
     name = 'Untitled';
   }

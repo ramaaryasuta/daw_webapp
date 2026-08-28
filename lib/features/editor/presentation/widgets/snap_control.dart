@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/snap_controller.dart';
+import '../../application/editor_controller.dart';
 import '../../domain/snap_settings.dart';
 
 class SnapControl extends ConsumerWidget {
@@ -37,7 +38,12 @@ class SnapControl extends ConsumerWidget {
             color: settings.enabled
                 ? colorScheme.primary
                 : colorScheme.onSurfaceVariant,
-            onPressed: controller.toggleEnabled,
+            onPressed: () {
+              controller.toggleEnabled();
+              ref
+                  .read(editorControllerProvider.notifier)
+                  .markPersistentSettingsChanged();
+            },
             icon: Icon(
               settings.enabled ? Icons.grid_4x4 : Icons.grid_off,
               size: 18,
@@ -47,7 +53,13 @@ class SnapControl extends ConsumerWidget {
           PopupMenuButton<SnapSubdivision>(
             tooltip: 'Snap resolution',
             initialValue: settings.subdivision,
-            onSelected: controller.setSubdivision,
+            onSelected: (subdivision) {
+              if (subdivision == settings.subdivision) return;
+              controller.setSubdivision(subdivision);
+              ref
+                  .read(editorControllerProvider.notifier)
+                  .markPersistentSettingsChanged();
+            },
             itemBuilder: (context) => [
               for (final subdivision in SnapSubdivision.values)
                 PopupMenuItem(
