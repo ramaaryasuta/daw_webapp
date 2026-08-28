@@ -28,6 +28,7 @@ void main() {
     var moveCommitCount = 0;
     var seekCount = 0;
     var selectCount = 0;
+    var reverseToggleCount = 0;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -61,6 +62,7 @@ void main() {
                       gainDb: -6,
                       fadeInDurationSeconds: 0.5,
                       fadeOutDurationSeconds: 0.75,
+                      isReversed: true,
                     ),
                   ],
                   gridMetrics: const TimelineGridMetrics(
@@ -89,6 +91,7 @@ void main() {
                   onFadeOutChanged: (_, _) {},
                   onFadeOutChangeEnd: (_) {},
                   onFadeOutReset: (_) {},
+                  onReverseToggle: (_) => reverseToggleCount++,
                 ),
               ),
             ),
@@ -126,6 +129,14 @@ void main() {
     expect(find.text('-6.0 dB'), findsWidgets);
     expect(find.byKey(const ValueKey('clip-fade-in-slider')), findsOneWidget);
     expect(find.byKey(const ValueKey('clip-fade-out-slider')), findsOneWidget);
+    expect(find.byKey(const ValueKey('clip-reverse-toggle')), findsOneWidget);
+    expect(find.text('ON'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('clip-reverse-indicator')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey('clip-reverse-toggle')));
+    expect(reverseToggleCount, 1);
     expect(selectCount, greaterThan(1));
     expect(seekCount, 0);
     expect(tester.takeException(), isNull);

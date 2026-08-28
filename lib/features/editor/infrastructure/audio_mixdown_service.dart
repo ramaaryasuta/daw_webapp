@@ -91,7 +91,7 @@ class AudioMixdownService implements AudioExportGenerator {
       panner.connect(masterGain);
 
       for (final clip in track.clips) {
-        final buffer = _audioEngine.decodedBufferForAsset(clip.audio.id);
+        final buffer = _audioEngine.playbackBufferForClip(clip);
         if (buffer == null) {
           throw AudioMixdownException(
             'Audio data for ${clip.audio.name} is unavailable.',
@@ -123,7 +123,7 @@ class AudioMixdownService implements AudioExportGenerator {
         }
         source.start(
           clip.timelineStartSeconds,
-          clip.sourceStartSeconds,
+          clip.playbackBufferOffsetSeconds(),
           clip.clipDurationSeconds,
         );
       }

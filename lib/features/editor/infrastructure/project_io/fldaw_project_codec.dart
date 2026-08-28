@@ -185,6 +185,7 @@ class FldawProjectCodec {
               gainDb: track.clips[index].gainDb,
               fadeInDurationSeconds: track.clips[index].fadeInDurationSeconds,
               fadeOutDurationSeconds: track.clips[index].fadeOutDurationSeconds,
+              isReversed: track.clips[index].isReversed,
             ),
       ],
       markers: [
@@ -264,6 +265,7 @@ class FldawProjectCodec {
             gainDb: clip.gainDb,
             fadeInDurationSeconds: clip.fadeInDurationSeconds,
             fadeOutDurationSeconds: clip.fadeOutDurationSeconds,
+            isReversed: clip.isReversed,
           ),
         );
       }

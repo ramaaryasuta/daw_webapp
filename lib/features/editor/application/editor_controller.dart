@@ -447,6 +447,7 @@ class EditorController extends Notifier<EditorState> {
             leftClip.timelineStartSeconds != rightClip.timelineStartSeconds ||
             leftClip.sourceStartSeconds != rightClip.sourceStartSeconds ||
             leftClip.clipDurationSeconds != rightClip.clipDurationSeconds ||
+            leftClip.isReversed != rightClip.isReversed ||
             leftClip.fadeInDurationSeconds != rightClip.fadeInDurationSeconds ||
             leftClip.fadeOutDurationSeconds !=
                 rightClip.fadeOutDurationSeconds) {
@@ -1965,6 +1966,36 @@ class EditorController extends Notifier<EditorState> {
       selectedClipId: rightClipId,
     );
     _recordEdit('Split Clip', before);
+    await _resynchronizeArrangement(
+      requestId: requestId,
+      positionSeconds: previousPosition,
+    );
+  }
+
+  Future<void> toggleClipReverse(String clipId) async {
+    final clip = _findClip(clipId);
+    if (clip == null) {
+      return;
+    }
+
+    final before = _captureProjectSnapshot();
+    final requestId = ++_clipEditRequestId;
+    final previousPosition = _audioEngine.currentPositionSeconds;
+    state = state.copyWith(
+      tracks: [
+        for (final track in state.tracks)
+          track.copyWith(
+            clips: [
+              for (final candidate in track.clips)
+                candidate.id == clipId
+                    ? candidate.copyWith(isReversed: !candidate.isReversed)
+                    : candidate,
+            ],
+          ),
+      ],
+      selectedClipId: clipId,
+    );
+    _recordEdit('Reverse Clip', before);
     await _resynchronizeArrangement(
       requestId: requestId,
       positionSeconds: previousPosition,

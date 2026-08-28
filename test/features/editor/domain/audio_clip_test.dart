@@ -189,6 +189,27 @@ void main() {
     expect(clip.playbackTimingFrom(12.5), isNull);
   });
 
+  test('reversed playback maps the visible range and seek offset', () {
+    const clip = AudioClip(
+      id: 'clip-reversed',
+      audio: asset,
+      timelineStartSeconds: 10,
+      sourceStartSeconds: 1,
+      clipDurationSeconds: 2.5,
+      isReversed: true,
+    );
+
+    final beforeClip = clip.playbackTimingFrom(8)!;
+    expect(beforeClip.delaySeconds, 2);
+    expect(beforeClip.bufferOffsetSeconds, 1);
+    expect(beforeClip.playbackDurationSeconds, 2.5);
+
+    final insideClip = clip.playbackTimingFrom(11.5)!;
+    expect(insideClip.delaySeconds, 0);
+    expect(insideClip.bufferOffsetSeconds, 2.5);
+    expect(insideClip.playbackDurationSeconds, 1);
+  });
+
   test('moving a trimmed clip preserves its source range', () {
     const clip = AudioClip(
       id: 'clip-1',
@@ -242,6 +263,36 @@ void main() {
     expect(split.left.fadeOutDurationSeconds, 0);
     expect(split.right.fadeInDurationSeconds, 0);
     expect(split.right.fadeOutDurationSeconds, 1);
+  });
+
+  test('splitting a reversed clip preserves audible source continuity', () {
+    const clip = AudioClip(
+      id: 'clip-reversed',
+      audio: asset,
+      timelineStartSeconds: 10,
+      sourceStartSeconds: 0.5,
+      clipDurationSeconds: 3,
+      isReversed: true,
+    );
+
+    final split = splitAudioClip(
+      clip: clip,
+      rightClipId: 'clip-right',
+      timelineSeconds: 11,
+    )!;
+
+    expect(split.left.isReversed, isTrue);
+    expect(split.right.isReversed, isTrue);
+    expect(split.left.sourceStartSeconds, 2.5);
+    expect(split.left.clipDurationSeconds, 1);
+    expect(split.right.sourceStartSeconds, 0.5);
+    expect(split.right.clipDurationSeconds, 2);
+    expect(split.left.playbackBufferOffsetSeconds(), 1);
+    expect(split.right.playbackBufferOffsetSeconds(), 2);
+    expect(
+      split.left.playbackBufferOffsetSeconds() + split.left.clipDurationSeconds,
+      split.right.playbackBufferOffsetSeconds(),
+    );
   });
 
   test('rejects splits at or within the minimum duration from an edge', () {

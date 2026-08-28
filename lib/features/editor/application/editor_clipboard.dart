@@ -12,6 +12,7 @@ class CopiedClipData {
     required this.gainDb,
     required this.fadeInDurationSeconds,
     required this.fadeOutDurationSeconds,
+    required this.isReversed,
   });
 
   factory CopiedClipData.fromClip({
@@ -30,6 +31,7 @@ class CopiedClipData {
       gainDb: clip.gainDb,
       fadeInDurationSeconds: clip.fadeInDurationSeconds,
       fadeOutDurationSeconds: clip.fadeOutDurationSeconds,
+      isReversed: clip.isReversed,
     );
   }
 
@@ -44,6 +46,7 @@ class CopiedClipData {
   final double gainDb;
   final double fadeInDurationSeconds;
   final double fadeOutDurationSeconds;
+  final bool isReversed;
 
   AudioClip createClip({
     required String id,
@@ -58,6 +61,7 @@ class CopiedClipData {
       gainDb: gainDb,
       fadeInDurationSeconds: fadeInDurationSeconds,
       fadeOutDurationSeconds: fadeOutDurationSeconds,
+      isReversed: isReversed,
     );
   }
 }

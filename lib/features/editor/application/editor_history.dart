@@ -103,6 +103,7 @@ class ProjectSnapshot {
             leftClip.timelineStartSeconds != rightClip.timelineStartSeconds ||
             leftClip.sourceStartSeconds != rightClip.sourceStartSeconds ||
             leftClip.clipDurationSeconds != rightClip.clipDurationSeconds ||
+            leftClip.isReversed != rightClip.isReversed ||
             leftClip.gainDb != rightClip.gainDb ||
             leftClip.fadeInDurationSeconds != rightClip.fadeInDurationSeconds ||
             leftClip.fadeOutDurationSeconds !=

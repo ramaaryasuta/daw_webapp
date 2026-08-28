@@ -14,6 +14,8 @@ import '../controllers/timeline_clip_drag_controller.dart';
 import 'clip_properties_popover.dart';
 import 'track_header.dart';
 
+void _ignoreClipId(String _) {}
+
 class TimelineTrackLane extends StatelessWidget {
   const TimelineTrackLane({
     super.key,
@@ -48,6 +50,7 @@ class TimelineTrackLane extends StatelessWidget {
     required this.onFadeOutChanged,
     required this.onFadeOutChangeEnd,
     required this.onFadeOutReset,
+    this.onReverseToggle = _ignoreClipId,
     this.onCreateCrossfade,
     this.onRemoveCrossfade,
   });
@@ -90,6 +93,7 @@ class TimelineTrackLane extends StatelessWidget {
   final void Function(String clipId, double value) onFadeOutChanged;
   final ValueChanged<String> onFadeOutChangeEnd;
   final ValueChanged<String> onFadeOutReset;
+  final ValueChanged<String> onReverseToggle;
   final VoidCallback? onCreateCrossfade;
   final VoidCallback? onRemoveCrossfade;
 
@@ -158,6 +162,7 @@ class TimelineTrackLane extends StatelessWidget {
               onFadeOutChanged: (value) => onFadeOutChanged(clip.id, value),
               onFadeOutChangeEnd: () => onFadeOutChangeEnd(clip.id),
               onFadeOutReset: () => onFadeOutReset(clip.id),
+              onReverseToggle: () => onReverseToggle(clip.id),
             ),
           ValueListenableBuilder<TimelineClipDragState?>(
             valueListenable: clipDragController,
@@ -450,6 +455,7 @@ class _TimelineAudioClip extends StatefulWidget {
     required this.onFadeOutChanged,
     required this.onFadeOutChangeEnd,
     required this.onFadeOutReset,
+    required this.onReverseToggle,
   });
 
   final AudioClip clip;
@@ -481,6 +487,7 @@ class _TimelineAudioClip extends StatefulWidget {
   final ValueChanged<double> onFadeOutChanged;
   final VoidCallback onFadeOutChangeEnd;
   final VoidCallback onFadeOutReset;
+  final VoidCallback onReverseToggle;
 
   @override
   State<_TimelineAudioClip> createState() => _TimelineAudioClipState();
@@ -521,6 +528,7 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
   ValueChanged<double> get onFadeOutChanged => widget.onFadeOutChanged;
   VoidCallback get onFadeOutChangeEnd => widget.onFadeOutChangeEnd;
   VoidCallback get onFadeOutReset => widget.onFadeOutReset;
+  VoidCallback get onReverseToggle => widget.onReverseToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -690,6 +698,7 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
                   onFadeOutChanged: onFadeOutChanged,
                   onFadeOutChangeEnd: (_) => onFadeOutChangeEnd(),
                   onFadeOutReset: onFadeOutReset,
+                  onReverseToggle: onReverseToggle,
                 ),
               ],
               builder: (context, menuController, child) => Stack(
@@ -750,6 +759,8 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
                             sourceAudioDurationSeconds:
                                 clip.sourceAudioDurationSeconds,
                             waveformPeaks: clip.audio.waveformPeaks,
+                            isReversed: clip.isReversed,
+                            showReverseIndicator: renderedClipWidth >= 54,
                             gainDb: clip.gainDb,
                             showGainIndicator: renderedClipWidth >= 135,
                             fadeInDurationSeconds: visualFadeInDurationSeconds,
@@ -934,6 +945,8 @@ class _AudioClipSurface extends StatelessWidget {
     required this.sourceStartSeconds,
     required this.sourceAudioDurationSeconds,
     required this.waveformPeaks,
+    required this.isReversed,
+    required this.showReverseIndicator,
     required this.gainDb,
     required this.showGainIndicator,
     required this.fadeInDurationSeconds,
@@ -948,6 +961,8 @@ class _AudioClipSurface extends StatelessWidget {
   final double sourceStartSeconds;
   final double sourceAudioDurationSeconds;
   final List<double> waveformPeaks;
+  final bool isReversed;
+  final bool showReverseIndicator;
   final double gainDb;
   final bool showGainIndicator;
   final double fadeInDurationSeconds;
@@ -1018,6 +1033,7 @@ class _AudioClipSurface extends StatelessWidget {
                     sourceStartSeconds: sourceStartSeconds,
                     clipDurationSeconds: clipDurationSeconds,
                     sourceAudioDurationSeconds: sourceAudioDurationSeconds,
+                    isReversed: isReversed,
                     color: waveformColor,
                   ),
                 ),
@@ -1059,6 +1075,15 @@ class _AudioClipSurface extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
+                    if (isReversed && showReverseIndicator) ...[
+                      Icon(
+                        Icons.swap_horiz_rounded,
+                        key: const ValueKey('clip-reverse-indicator'),
+                        size: 14,
+                        color: colorScheme.tertiary,
+                      ),
+                      const SizedBox(width: 3),
+                    ],
                     Expanded(
                       child: Text(
                         fileName,
@@ -1217,6 +1242,7 @@ class _WaveformPainter extends CustomPainter {
     required this.sourceStartSeconds,
     required this.clipDurationSeconds,
     required this.sourceAudioDurationSeconds,
+    required this.isReversed,
     required this.color,
   });
 
@@ -1224,6 +1250,7 @@ class _WaveformPainter extends CustomPainter {
   final double sourceStartSeconds;
   final double clipDurationSeconds;
   final double sourceAudioDurationSeconds;
+  final bool isReversed;
   final Color color;
 
   @override
@@ -1258,11 +1285,13 @@ class _WaveformPainter extends CustomPainter {
     );
 
     for (var column = 0; column < columnCount; column++) {
+      final sourceColumn = isReversed ? columnCount - column - 1 : column;
       final startIndex =
-          visibleStartIndex + (column * visiblePeakCount / columnCount).floor();
+          visibleStartIndex +
+          (sourceColumn * visiblePeakCount / columnCount).floor();
       final endIndex = math.min(
         visibleStartIndex +
-            (((column + 1) * visiblePeakCount / columnCount).ceil()),
+            (((sourceColumn + 1) * visiblePeakCount / columnCount).ceil()),
         visibleEndIndex,
       );
       var peak = 0.0;
@@ -1291,6 +1320,7 @@ class _WaveformPainter extends CustomPainter {
         oldDelegate.sourceStartSeconds != sourceStartSeconds ||
         oldDelegate.clipDurationSeconds != clipDurationSeconds ||
         oldDelegate.sourceAudioDurationSeconds != sourceAudioDurationSeconds ||
+        oldDelegate.isReversed != isReversed ||
         oldDelegate.color != color;
   }
 }

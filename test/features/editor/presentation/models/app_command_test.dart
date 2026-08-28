@@ -163,6 +163,16 @@ void main() {
     );
   });
 
+  test('Help commands describe non-destructive clip reverse', () {
+    final command = EditorCommands.all.singleWhere(
+      (command) => command.title == 'Reverse Clip',
+    );
+
+    expect(command.shortcutParts, ['Clip Properties', 'Reverse Audio']);
+    expect(command.description, contains('visible source range backwards'));
+    expect(command.searchTerms, containsAll(['reverse', 'backwards', 'flip']));
+  });
+
   test('Help commands describe two-dimensional clip movement', () {
     final command = EditorCommands.all.singleWhere(
       (command) => command.title == 'Move Clip(s)',

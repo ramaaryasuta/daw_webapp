@@ -186,10 +186,79 @@ void main() {
       closeTo(clipGainDbToLinear(-6) * math.sqrt(1 / 3), 0.025),
     );
   });
+
+  test('offline WAV reverses only the trimmed visible source range', () async {
+    final frameCount = sampleRate * durationSeconds ~/ 1;
+    final ramp = Float32List(frameCount);
+    for (var index = 0; index < frameCount; index++) {
+      ramp[index] = -0.8 + (1.6 * index / (frameCount - 1));
+    }
+    final bytes = WavEncoder.encodePcm16(
+      channels: [ramp, ramp],
+      sampleRate: sampleRate,
+    );
+    final decoded = await engine.decode(assetId: 'asset-ramp', bytes: bytes);
+    final rampAsset = AudioAsset(
+      id: 'asset-ramp',
+      name: 'ramp.wav',
+      extension: 'wav',
+      size: bytes.length,
+      durationSeconds: decoded.durationSeconds,
+      sampleRate: decoded.sampleRate,
+      numberOfChannels: decoded.numberOfChannels,
+      waveformPeaks: decoded.waveformPeaks,
+    );
+    const sourceStart = 0.02;
+    const clipDuration = 0.06;
+    DawTrack arrangement(bool reversed) => DawTrack(
+      id: reversed ? 'reversed' : 'normal',
+      name: 'Ramp',
+      clips: [
+        AudioClip(
+          id: reversed ? 'clip-reversed' : 'clip-normal',
+          audio: rampAsset,
+          sourceStartSeconds: sourceStart,
+          clipDurationSeconds: clipDuration,
+          isReversed: reversed,
+        ),
+      ],
+    );
+
+    final reversedClip = arrangement(true).clips.single;
+    final firstBuffer = engine.playbackBufferForClip(reversedClip);
+    expect(engine.playbackBufferForClip(reversedClip), same(firstBuffer));
+
+    final normalSamples = _leftChannelSamples(
+      (await mixdown.generateWavExport([arrangement(false)])).wavBytes,
+    );
+    final reversedSamples = _leftChannelSamples(
+      (await mixdown.generateWavExport([arrangement(true)])).wavBytes,
+    );
+
+    expect(reversedSamples, hasLength(normalSamples.length));
+    for (final index in [100, 700, 1400, 2200]) {
+      expect(
+        reversedSamples[index],
+        closeTo(normalSamples[normalSamples.length - index - 1], 0.003),
+      );
+    }
+  });
 }
 
 double _leftChannelRms(Uint8List wavBytes) {
   return _stereoChannelRms(wavBytes).left;
+}
+
+List<double> _leftChannelSamples(Uint8List wavBytes) {
+  final data = ByteData.sublistView(wavBytes);
+  const headerLength = 44;
+  const stereoFrameBytes = 4;
+  final frameCount = (wavBytes.length - headerLength) ~/ stereoFrameBytes;
+  return [
+    for (var frame = 0; frame < frameCount; frame++)
+      data.getInt16(headerLength + frame * stereoFrameBytes, Endian.little) /
+          32768,
+  ];
 }
 
 ({double left, double right}) _stereoChannelRms(Uint8List wavBytes) {

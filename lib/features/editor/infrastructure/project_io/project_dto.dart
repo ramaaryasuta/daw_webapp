@@ -318,6 +318,7 @@ class ProjectClipDto {
     required this.gainDb,
     required this.fadeInDurationSeconds,
     required this.fadeOutDurationSeconds,
+    this.isReversed = false,
   });
 
   final String id;
@@ -330,6 +331,7 @@ class ProjectClipDto {
   final double gainDb;
   final double fadeInDurationSeconds;
   final double fadeOutDurationSeconds;
+  final bool isReversed;
 
   Map<String, Object?> toJson() => {
     'id': id,
@@ -342,6 +344,7 @@ class ProjectClipDto {
     'gainDb': gainDb,
     'fadeInDurationSeconds': fadeInDurationSeconds,
     'fadeOutDurationSeconds': fadeOutDurationSeconds,
+    'isReversed': isReversed,
   };
 
   factory ProjectClipDto.fromJson(Map<String, Object?> json) {
@@ -364,6 +367,7 @@ class ProjectClipDto {
       gainDb: _boundedNumber(json, 'gainDb', -24, 12),
       fadeInDurationSeconds: fadeIn,
       fadeOutDurationSeconds: fadeOut,
+      isReversed: _optionalBool(json, 'isReversed', fallback: false),
     );
   }
 }
@@ -600,6 +604,17 @@ bool _requiredBool(Map<String, Object?> json, String key) {
     _invalid('$key must be a boolean.');
   }
   return value;
+}
+
+bool _optionalBool(
+  Map<String, Object?> json,
+  String key, {
+  required bool fallback,
+}) {
+  if (!json.containsKey(key)) {
+    return fallback;
+  }
+  return _requiredBool(json, key);
 }
 
 int _requiredInt(Map<String, Object?> json, String key) {

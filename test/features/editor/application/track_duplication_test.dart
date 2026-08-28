@@ -66,6 +66,7 @@ void main() {
             gainDb: -3,
             fadeInDurationSeconds: 0.5,
             fadeOutDurationSeconds: 1.25,
+            isReversed: true,
           ),
           AudioClip(
             id: 'clip-b',
@@ -114,6 +115,7 @@ void main() {
           originalClip.clipDurationSeconds,
         );
         expect(copiedClip.gainDb, originalClip.gainDb);
+        expect(copiedClip.isReversed, originalClip.isReversed);
         expect(
           copiedClip.fadeInDurationSeconds,
           originalClip.fadeInDurationSeconds,

@@ -180,6 +180,15 @@ abstract final class EditorCommands {
     category: AppCommandCategory.editing,
   );
 
+  static const reverseClip = AppCommand(
+    title: 'Reverse Clip',
+    description:
+        "Play the selected clip's visible source range backwards without changing the original audio file.",
+    shortcutParts: ['Clip Properties', 'Reverse Audio'],
+    category: AppCommandCategory.editing,
+    searchTerms: ['reverse', 'backwards', 'flip', 'clip', 'audio'],
+  );
+
   static const multiSelectClip = AppCommand(
     title: 'Multi-Select Clip',
     description: 'Add or remove an audio clip from the current selection.',
@@ -391,6 +400,7 @@ abstract final class EditorCommands {
     removeCrossfade,
     multiSelectClip,
     clipProperties,
+    reverseClip,
     renameTrack,
     changeTrackColor,
     addAudioTrack,

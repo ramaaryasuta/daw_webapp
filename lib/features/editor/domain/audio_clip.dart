@@ -33,6 +33,7 @@ class AudioClip {
     this.gainDb = defaultClipGainDb,
     this.fadeInDurationSeconds = 0,
     this.fadeOutDurationSeconds = 0,
+    this.isReversed = false,
   }) : assert(
          timelineStartSeconds >= 0 && timelineStartSeconds < double.infinity,
        ),
@@ -53,6 +54,7 @@ class AudioClip {
   final double gainDb;
   final double fadeInDurationSeconds;
   final double fadeOutDurationSeconds;
+  final bool isReversed;
 
   double get sourceAudioDurationSeconds => audio.durationSeconds;
 
@@ -70,7 +72,7 @@ class AudioClip {
     if (timelineSeconds <= timelineStartSeconds) {
       return ClipPlaybackTiming(
         delaySeconds: timelineStartSeconds - timelineSeconds,
-        bufferOffsetSeconds: sourceStartSeconds,
+        bufferOffsetSeconds: playbackBufferOffsetSeconds(),
         playbackDurationSeconds: clipDurationSeconds,
       );
     }
@@ -78,8 +80,21 @@ class AudioClip {
     final clipLocalSeconds = timelineSeconds - timelineStartSeconds;
     return ClipPlaybackTiming(
       delaySeconds: 0,
-      bufferOffsetSeconds: sourceStartSeconds + clipLocalSeconds,
+      bufferOffsetSeconds: playbackBufferOffsetSeconds(
+        clipLocalSeconds: clipLocalSeconds,
+      ),
       playbackDurationSeconds: clipDurationSeconds - clipLocalSeconds,
+    );
+  }
+
+  /// Offset into the original or full-source reversed playback buffer.
+  double playbackBufferOffsetSeconds({double clipLocalSeconds = 0}) {
+    return clipSourceBufferOffsetSeconds(
+      sourceDurationSeconds: sourceAudioDurationSeconds,
+      sourceStartSeconds: sourceStartSeconds,
+      clipDurationSeconds: clipDurationSeconds,
+      clipLocalSeconds: clipLocalSeconds,
+      isReversed: isReversed,
     );
   }
 
@@ -92,6 +107,7 @@ class AudioClip {
     double? gainDb,
     double? fadeInDurationSeconds,
     double? fadeOutDurationSeconds,
+    bool? isReversed,
   }) {
     final duration = clipDurationSeconds ?? this.clipDurationSeconds;
     final fades = clampClipFadeDurations(
@@ -110,8 +126,27 @@ class AudioClip {
       gainDb: clampClipGainDb(gainDb ?? this.gainDb),
       fadeInDurationSeconds: fades.fadeInDurationSeconds,
       fadeOutDurationSeconds: fades.fadeOutDurationSeconds,
+      isReversed: isReversed ?? this.isReversed,
     );
   }
+}
+
+/// Maps clip-local time to the appropriate full-source playback buffer.
+///
+/// Reversed clips use a cached full-source reversed buffer, so their visible
+/// range starts at `sourceDuration - sourceEnd`. Local timeline time then
+/// advances normally through that reversed representation.
+double clipSourceBufferOffsetSeconds({
+  required double sourceDurationSeconds,
+  required double sourceStartSeconds,
+  required double clipDurationSeconds,
+  required double clipLocalSeconds,
+  required bool isReversed,
+}) {
+  final visibleBufferStart = isReversed
+      ? sourceDurationSeconds - (sourceStartSeconds + clipDurationSeconds)
+      : sourceStartSeconds;
+  return visibleBufferStart + clipLocalSeconds;
 }
 
 class ClipFadeDurations {
@@ -248,6 +283,23 @@ AudioClipSplit? splitAudioClip({
   if (leftDuration < minimumClipDurationSeconds ||
       rightDuration < minimumClipDurationSeconds) {
     return null;
+  }
+
+  if (clip.isReversed) {
+    return AudioClipSplit(
+      left: clip.copyWith(
+        sourceStartSeconds: clip.sourceStartSeconds + rightDuration,
+        clipDurationSeconds: leftDuration,
+        fadeOutDurationSeconds: 0,
+      ),
+      right: clip.copyWith(
+        id: rightClipId,
+        timelineStartSeconds: timelineSeconds,
+        sourceStartSeconds: clip.sourceStartSeconds,
+        clipDurationSeconds: rightDuration,
+        fadeInDurationSeconds: 0,
+      ),
+    );
   }
 
   return AudioClipSplit(

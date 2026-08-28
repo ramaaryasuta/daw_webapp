@@ -58,6 +58,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
   late final WebMetronomeScheduler _metronomeScheduler;
 
   final Map<String, web.AudioBuffer> _buffers = {};
+  final Map<String, web.AudioBuffer> _reversedBuffers = {};
 
   final Map<String, List<_ScheduledSource>> _activeSources = {};
 
@@ -110,6 +111,21 @@ class WebAudioEngine implements AudioMeterPeakSource {
     return _buffers[assetId];
   }
 
+  /// Returns the reusable playback buffer appropriate for [clip].
+  ///
+  /// A reversed representation is built at most once per source asset and is
+  /// deliberately kept out of editor/project state.
+  web.AudioBuffer? playbackBufferForClip(AudioClip clip) {
+    final original = _buffers[clip.audio.id];
+    if (original == null || !clip.isReversed) {
+      return original;
+    }
+    return _reversedBuffers.putIfAbsent(
+      clip.audio.id,
+      () => _createReversedBuffer(original),
+    );
+  }
+
   double get currentPositionSeconds {
     if (!_isPlaying) {
       return _timelineStartSeconds;
@@ -140,6 +156,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
   }) async {
     final decoded = await _decodeSource(bytes);
     _buffers[assetId] = decoded.buffer;
+    _reversedBuffers.remove(assetId);
     return decoded.info;
   }
 
@@ -173,6 +190,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
     _buffers
       ..clear()
       ..addAll(prepared._buffers);
+    _reversedBuffers.clear();
   }
 
   Future<({web.AudioBuffer buffer, DecodedAudioInfo info})> _decodeSource(
@@ -303,7 +321,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
         continue;
       }
       for (final clip in track.clips) {
-        final buffer = _buffers[clip.audio.id];
+        final buffer = playbackBufferForClip(clip);
         if (buffer == null) {
           continue;
         }
@@ -676,6 +694,23 @@ class WebAudioEngine implements AudioMeterPeakSource {
     return peaks;
   }
 
+  web.AudioBuffer _createReversedBuffer(web.AudioBuffer original) {
+    final reversed = _audioContext.createBuffer(
+      original.numberOfChannels,
+      original.length,
+      original.sampleRate,
+    );
+    for (var channel = 0; channel < original.numberOfChannels; channel++) {
+      final source = original.getChannelData(channel).toDart;
+      final samples = Float32List(source.length);
+      for (var index = 0; index < source.length; index++) {
+        samples[index] = source[source.length - index - 1];
+      }
+      reversed.copyToChannel(samples.toJS, channel);
+    }
+    return reversed;
+  }
+
   void _scheduleClipFadeEnvelope(
     web.AudioParam gain, {
     required AudioClip clip,
@@ -709,6 +744,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
       _masterGain.disconnect();
     } catch (_) {}
     _buffers.clear();
+    _reversedBuffers.clear();
 
     await _audioContext.close().toDart;
   }

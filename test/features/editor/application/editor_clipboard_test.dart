@@ -23,6 +23,7 @@ void main() {
     gainDb: -5,
     fadeInDurationSeconds: 0.5,
     fadeOutDurationSeconds: 1,
+    isReversed: true,
   );
 
   test('recreates clip metadata with a new placement and shared source', () {
@@ -37,6 +38,7 @@ void main() {
     expect(pasted.gainDb, -5);
     expect(pasted.fadeInDurationSeconds, 0.5);
     expect(pasted.fadeOutDurationSeconds, 1);
+    expect(pasted.isReversed, isTrue);
     expect(identical(pasted.audio, original.audio), isTrue);
     expect(
       identical(pasted.audio.waveformPeaks, original.audio.waveformPeaks),

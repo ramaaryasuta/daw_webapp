@@ -92,6 +92,7 @@ void main() {
     double gainDb = 0,
     double fadeIn = 0,
     double fadeOut = 0,
+    bool isReversed = false,
   }) {
     final original = AudioClip(
       id: 'clip-1',
@@ -102,6 +103,7 @@ void main() {
       gainDb: gainDb,
       fadeInDurationSeconds: fadeIn,
       fadeOutDurationSeconds: fadeOut,
+      isReversed: isReversed,
     );
     return ProjectSnapshot(
       tracks: [
@@ -132,6 +134,23 @@ void main() {
       selectedClipId: split ? 'clip-2' : 'clip-1',
     );
   }
+
+  test('records clip reverse as persistent project state', () {
+    final normal = snapshot(start: 0);
+    final reversed = snapshot(start: 0, isReversed: true);
+
+    final history = EditorHistory().record(
+      label: 'Reverse Clip',
+      before: normal,
+      after: reversed,
+    );
+
+    expect(history.past.single.label, 'Reverse Clip');
+    expect(
+      history.undo(reversed)!.snapshot.hasSameProjectState(normal),
+      isTrue,
+    );
+  });
 
   test('undoes and redoes multi-step edits in order', () {
     final initial = snapshot(start: 0);

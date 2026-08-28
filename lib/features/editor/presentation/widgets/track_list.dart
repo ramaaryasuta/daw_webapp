@@ -407,6 +407,7 @@ class _TimelineTrackListState extends ConsumerState<TimelineTrackList> {
                     onFadeOutChanged: controller.previewFadeOut,
                     onFadeOutChangeEnd: controller.commitFadeOutChange,
                     onFadeOutReset: controller.resetFadeOut,
+                    onReverseToggle: controller.toggleClipReverse,
                     onCreateCrossfade: controller.createCrossfade,
                     onRemoveCrossfade: controller.removeCrossfade,
                   );

@@ -19,6 +19,7 @@ class ClipPropertiesPopover extends StatelessWidget {
     required this.onFadeOutChanged,
     required this.onFadeOutChangeEnd,
     required this.onFadeOutReset,
+    required this.onReverseToggle,
   });
 
   final AudioClip clip;
@@ -34,6 +35,7 @@ class ClipPropertiesPopover extends StatelessWidget {
   final ValueChanged<double> onFadeOutChanged;
   final ValueChanged<double> onFadeOutChangeEnd;
   final VoidCallback onFadeOutReset;
+  final VoidCallback onReverseToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -87,11 +89,78 @@ class ClipPropertiesPopover extends StatelessWidget {
                   onChangeEnd: onFadeOutChangeEnd,
                   onReset: onFadeOutReset,
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 8),
+                _ReverseAudioControl(
+                  isReversed: clip.isReversed,
+                  onPressed: onReverseToggle,
+                ),
+                const SizedBox(height: 7),
                 Text(
                   'Double-click a clip to reopen',
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReverseAudioControl extends StatelessWidget {
+  const _ReverseAudioControl({
+    required this.isReversed,
+    required this.onPressed,
+  });
+
+  final bool isReversed;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final accent = colors.tertiary;
+    return Semantics(
+      button: true,
+      toggled: isReversed,
+      label: 'Reverse Audio',
+      child: Material(
+        color: isReversed
+            ? accent.withValues(alpha: 0.16)
+            : colors.surfaceContainerHighest.withValues(alpha: 0.48),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(5),
+          side: BorderSide(
+            color: isReversed
+                ? accent.withValues(alpha: 0.8)
+                : colors.outlineVariant,
+          ),
+        ),
+        child: InkWell(
+          key: const ValueKey('clip-reverse-toggle'),
+          borderRadius: BorderRadius.circular(5),
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.swap_horiz_rounded,
+                  size: 17,
+                  color: isReversed ? accent : colors.onSurfaceVariant,
+                ),
+                const SizedBox(width: 7),
+                const Expanded(child: Text('Reverse Audio')),
+                Text(
+                  isReversed ? 'ON' : 'OFF',
+                  key: const ValueKey('clip-reverse-state'),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: isReversed ? accent : colors.onSurfaceVariant,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.7,
                   ),
                 ),
               ],

@@ -75,6 +75,7 @@ void main() {
               gainDb: 2,
               fadeInDurationSeconds: 0.2,
               fadeOutDurationSeconds: 0.3,
+              isReversed: true,
             ),
             AudioClip(
               id: 'clip-b',
@@ -162,10 +163,29 @@ void main() {
     expect(restored.tracks.single.clips.last.gainDb, -1);
     expect(restored.tracks.single.clips.last.fadeInDurationSeconds, 0.4);
     expect(restored.tracks.single.clips.last.fadeOutDurationSeconds, 0.5);
+    expect(restored.tracks.single.clips.first.isReversed, isTrue);
+    expect(restored.tracks.single.clips.last.isReversed, isFalse);
     expect(restored.markers.single.id, 'marker-9');
     expect(restored.sections.single.id, 'section-4');
     expect(restored.sections.single.startTime, 1.25);
     expect(restored.sections.single.endTime, 3.75);
+  });
+
+  test('older clip metadata defaults reverse to off', () {
+    final clip = ProjectClipDto.fromJson({
+      'id': 'clip-old',
+      'trackId': 'track-1',
+      'order': 0,
+      'sourceId': 'source-1',
+      'timelineStartSeconds': 0,
+      'sourceStartSeconds': 0,
+      'clipDurationSeconds': 1,
+      'gainDb': 0,
+      'fadeInDurationSeconds': 0,
+      'fadeOutDurationSeconds': 0,
+    });
+
+    expect(clip.isReversed, isFalse);
   });
 
   test('archive rejects a newer project version', () {
