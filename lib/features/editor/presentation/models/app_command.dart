@@ -222,6 +222,15 @@ abstract final class EditorCommands {
     category: AppCommandCategory.editing,
   );
 
+  static const duplicateTrack = AppCommand(
+    title: 'Duplicate Track',
+    description:
+        'Create a copy of the track, its mixer settings, and all of its audio clips.',
+    shortcutParts: ['Track Actions', 'Duplicate Track'],
+    category: AppCommandCategory.editing,
+    searchTerms: ['duplicate', 'copy track', 'clone'],
+  );
+
   static const reorderTrack = AppCommand(
     title: 'Reorder Track',
     description: 'Change the vertical order of an audio track.',
@@ -321,6 +330,7 @@ abstract final class EditorCommands {
     renameTrack,
     changeTrackColor,
     addAudioTrack,
+    duplicateTrack,
     deleteTrack,
     reorderTrack,
     trackMixerControls,

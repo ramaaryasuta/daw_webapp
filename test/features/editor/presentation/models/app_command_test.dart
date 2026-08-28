@@ -189,6 +189,22 @@ void main() {
     expect(delete.description, contains('clips'));
   });
 
+  test('Help commands describe Duplicate Track and its search aliases', () {
+    final command = EditorCommands.all.singleWhere(
+      (command) => command.title == 'Duplicate Track',
+    );
+
+    expect(command.shortcutParts, ['Track Actions', 'Duplicate Track']);
+    expect(
+      command.description,
+      'Create a copy of the track, its mixer settings, and all of its audio clips.',
+    );
+    expect(
+      command.searchTerms,
+      containsAll(['duplicate', 'copy track', 'clone']),
+    );
+  });
+
   test('Help commands define the track reorder handle gesture once', () {
     final matches = EditorCommands.all.where(
       (command) => command.title == 'Reorder Track',

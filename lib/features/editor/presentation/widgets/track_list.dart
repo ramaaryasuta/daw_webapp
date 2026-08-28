@@ -104,6 +104,9 @@ class _TrackHeaderListState extends ConsumerState<TrackHeaderList> {
                   controller.setTrackColor(track.id, colorValue),
               onMutePressed: () => controller.toggleMute(track.id),
               onSoloPressed: () => controller.toggleSolo(track.id),
+              onDuplicatePressed: () async {
+                await controller.duplicateTrack(track.id);
+              },
               onDeletePressed: () async {
                 if (track.clips.isNotEmpty) {
                   final confirmed = await showDeleteTrackConfirmation(

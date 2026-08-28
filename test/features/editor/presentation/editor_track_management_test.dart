@@ -161,6 +161,80 @@ void main() {
     },
   );
 
+  testWidgets(
+    'duplicate track inserts below with a stable ID and one undo entry',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: ThemeData.dark(useMaterial3: true),
+            home: const EditorPage(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final controller = container.read(editorControllerProvider.notifier);
+      final firstId = controller.addTrack();
+      final sourceId = controller.addTrack();
+      final lastId = controller.addTrack();
+      controller.renameTrack(sourceId, 'Vocals');
+      final historyLength = container
+          .read(editorControllerProvider)
+          .history
+          .past
+          .length;
+      final clipboard = container.read(editorControllerProvider).clipClipboard;
+
+      final duplicateId = await controller.duplicateTrack(sourceId);
+      await tester.pumpAndSettle();
+
+      var state = container.read(editorControllerProvider);
+      expect(duplicateId, isNotNull);
+      expect(duplicateId, isNot(sourceId));
+      expect(state.tracks.map((track) => track.id), [
+        firstId,
+        sourceId,
+        duplicateId,
+        lastId,
+      ]);
+      expect(state.tracks[2].name, 'Vocals Copy');
+      expect(state.selectedTrackId, duplicateId);
+      expect(state.selectedClipIds, isEmpty);
+      expect(identical(state.clipClipboard, clipboard), isTrue);
+      expect(state.history.past, hasLength(historyLength + 1));
+      expect(state.history.past.last.label, 'Duplicate Track');
+
+      await controller.undo();
+      state = container.read(editorControllerProvider);
+      expect(state.tracks.map((track) => track.id), [
+        firstId,
+        sourceId,
+        lastId,
+      ]);
+
+      await controller.redo();
+      state = container.read(editorControllerProvider);
+      expect(state.tracks.map((track) => track.id), [
+        firstId,
+        sourceId,
+        duplicateId,
+        lastId,
+      ]);
+      expect(state.tracks[2].id, duplicateId);
+      expect(state.history.past.last.label, 'Duplicate Track');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('dropping a track handle in its current row is a history no-op', (
     tester,
   ) async {

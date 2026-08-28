@@ -18,6 +18,7 @@ class TrackPropertiesPopover extends StatelessWidget {
     required this.onPanChanged,
     required this.onPanChangeEnd,
     required this.onPanReset,
+    required this.onDuplicate,
     required this.onDelete,
   });
 
@@ -30,6 +31,7 @@ class TrackPropertiesPopover extends StatelessWidget {
   final ValueChanged<double> onPanChanged;
   final ValueChanged<double> onPanChangeEnd;
   final VoidCallback onPanReset;
+  final VoidCallback onDuplicate;
   final VoidCallback onDelete;
 
   @override
@@ -50,7 +52,7 @@ class TrackPropertiesPopover extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        'Track Properties',
+                        'Track Actions',
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
@@ -164,6 +166,21 @@ class TrackPropertiesPopover extends StatelessWidget {
                 const SizedBox(height: 10),
                 const Divider(height: 1),
                 const SizedBox(height: 6),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    key: const ValueKey('track-properties-duplicate'),
+                    style: TextButton.styleFrom(
+                      alignment: Alignment.centerLeft,
+                    ),
+                    onPressed: onDuplicate,
+                    icon: const Icon(Icons.copy_outlined, size: 18),
+                    label: const Text('Duplicate Track'),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                const Divider(height: 1),
+                const SizedBox(height: 2),
                 SizedBox(
                   width: double.infinity,
                   child: TextButton.icon(

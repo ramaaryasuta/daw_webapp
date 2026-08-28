@@ -23,6 +23,7 @@ import 'editor_clipboard.dart';
 import 'editor_history.dart';
 import 'snap_controller.dart';
 import 'tempo_controller.dart';
+import 'track_duplication.dart';
 
 class EditorState {
   EditorState({
@@ -700,6 +701,40 @@ class EditorController extends Notifier<EditorState> {
     );
     _recordEdit('Add Track', before);
     return track.id;
+  }
+
+  Future<String?> duplicateTrack(String trackId) async {
+    final sourceIndex = state.tracks.indexWhere((track) => track.id == trackId);
+    if (sourceIndex < 0 || state.isImporting) {
+      return null;
+    }
+
+    final before = _captureProjectSnapshot();
+    final previousPosition = _audioEngine.currentPositionSeconds;
+    final requestId = ++_clipEditRequestId;
+    final source = state.tracks[sourceIndex];
+    final duplicate = cloneTrackWithClips(
+      source: source,
+      newTrackId: _nextTrackId(),
+      newName: nextDuplicateTrackName(
+        sourceName: source.name,
+        existingNames: state.tracks.map((track) => track.name),
+      ),
+      nextClipId: _nextClipId,
+    );
+    final tracks = [...state.tracks]..insert(sourceIndex + 1, duplicate);
+
+    state = state.copyWith(
+      tracks: tracks,
+      selectedTrackId: duplicate.id,
+      clearSelectedClip: true,
+    );
+    _recordEdit('Duplicate Track', before);
+    await _resynchronizeArrangement(
+      requestId: requestId,
+      positionSeconds: previousPosition,
+    );
+    return duplicate.id;
   }
 
   void reorderTracks(List<String> orderedTrackIds) {

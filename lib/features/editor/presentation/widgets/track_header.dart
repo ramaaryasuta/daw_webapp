@@ -30,6 +30,7 @@ class TrackHeader extends StatefulWidget {
     required this.onColorSelected,
     required this.onMutePressed,
     required this.onSoloPressed,
+    required this.onDuplicatePressed,
     required this.onDeletePressed,
     required this.onVolumeChangeStart,
     required this.onVolumeChanged,
@@ -67,6 +68,7 @@ class TrackHeader extends StatefulWidget {
   final ValueChanged<int> onColorSelected;
   final VoidCallback onMutePressed;
   final VoidCallback onSoloPressed;
+  final VoidCallback onDuplicatePressed;
   final VoidCallback onDeletePressed;
 
   final ValueChanged<double> onVolumeChanged;
@@ -211,6 +213,15 @@ class _TrackHeaderState extends State<TrackHeader> {
     });
   }
 
+  void _duplicateFromProperties() {
+    _propertiesMenuController.close();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        widget.onDuplicatePressed();
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -348,12 +359,13 @@ class _TrackHeaderState extends State<TrackHeader> {
                                 onPanChanged: widget.onPanChanged,
                                 onPanChangeEnd: widget.onPanChangeEnd,
                                 onPanReset: widget.onPanReset,
+                                onDuplicate: _duplicateFromProperties,
                                 onDelete: _deleteFromProperties,
                               ),
                             ],
                             builder: (context, controller, child) => IconButton(
                               key: const ValueKey('track-properties-button'),
-                              tooltip: 'Track properties',
+                              tooltip: 'Track actions',
                               iconSize: 18,
                               visualDensity: VisualDensity.compact,
                               padding: EdgeInsets.zero,
