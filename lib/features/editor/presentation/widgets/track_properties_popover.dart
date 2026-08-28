@@ -19,6 +19,7 @@ class TrackPropertiesPopover extends StatelessWidget {
     required this.onPanChangeEnd,
     required this.onPanReset,
     required this.onDuplicate,
+    this.onTrackFx,
     required this.onDelete,
   });
 
@@ -32,6 +33,7 @@ class TrackPropertiesPopover extends StatelessWidget {
   final ValueChanged<double> onPanChangeEnd;
   final VoidCallback onPanReset;
   final VoidCallback onDuplicate;
+  final VoidCallback? onTrackFx;
   final VoidCallback onDelete;
 
   @override
@@ -166,6 +168,19 @@ class TrackPropertiesPopover extends StatelessWidget {
                 const SizedBox(height: 10),
                 const Divider(height: 1),
                 const SizedBox(height: 6),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    key: const ValueKey('track-properties-fx'),
+                    style: TextButton.styleFrom(
+                      alignment: Alignment.centerLeft,
+                    ),
+                    onPressed: onTrackFx,
+                    icon: const Icon(Icons.tune, size: 18),
+                    label: const Text('Track FX'),
+                  ),
+                ),
+                const SizedBox(height: 2),
                 SizedBox(
                   width: double.infinity,
                   child: TextButton.icon(

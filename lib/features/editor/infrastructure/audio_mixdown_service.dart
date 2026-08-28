@@ -85,8 +85,27 @@ class AudioMixdownService implements AudioExportGenerator {
 
       final gain = offlineContext.createGain();
       final panner = offlineContext.createStereoPanner();
+      final filterInput = offlineContext.createGain();
+      web.AudioNode filterTail = filterInput;
+      if (track.filterFx.enabled && track.filterFx.highPass.enabled) {
+        final highPass = offlineContext.createBiquadFilter()
+          ..type = 'highpass'
+          ..frequency.value = track.filterFx.highPass.frequencyHz
+          ..Q.value = track.filterFx.highPass.q;
+        filterTail.connect(highPass);
+        filterTail = highPass;
+      }
+      if (track.filterFx.enabled && track.filterFx.lowPass.enabled) {
+        final lowPass = offlineContext.createBiquadFilter()
+          ..type = 'lowpass'
+          ..frequency.value = track.filterFx.lowPass.frequencyHz
+          ..Q.value = track.filterFx.lowPass.q;
+        filterTail.connect(lowPass);
+        filterTail = lowPass;
+      }
       gain.gain.value = gainValue;
       panner.pan.value = clampTrackPan(track.pan);
+      filterTail.connect(gain);
       gain.connect(panner);
       panner.connect(masterGain);
 
@@ -104,7 +123,7 @@ class AudioMixdownService implements AudioExportGenerator {
         source.buffer = buffer;
         source.connect(fadeGain);
         fadeGain.connect(clipGain);
-        clipGain.connect(gain);
+        clipGain.connect(filterInput);
         clipGain.gain.value = clipGainDbToLinear(clip.gainDb);
         final fadePoints = clipFadeEnvelopeForSegment(
           clip: clip,

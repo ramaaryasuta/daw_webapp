@@ -4,6 +4,7 @@ import 'package:daw_webapp/features/editor/domain/audio_clip.dart';
 import 'package:daw_webapp/features/editor/domain/daw_track.dart';
 import 'package:daw_webapp/features/editor/domain/musical_timing.dart';
 import 'package:daw_webapp/features/editor/domain/track_color.dart';
+import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/domain/timeline_marker.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -19,6 +20,43 @@ void main() {
     numberOfChannels: 2,
     waveformPeaks: waveform,
   );
+
+  test('Filter FX metadata participates in project history', () {
+    const track = DawTrack(id: 'track-1', name: 'Vocals', clips: []);
+    final before = ProjectSnapshot(
+      tracks: const [track],
+      bpm: 120,
+      selectedTrackId: track.id,
+    );
+    final after = ProjectSnapshot(
+      tracks: [
+        track.copyWith(
+          filterFx: const TrackFilterFx(
+            enabled: true,
+            highPass: TrackFilterModule(
+              enabled: true,
+              frequencyHz: 240,
+              q: 1.25,
+            ),
+          ),
+        ),
+      ],
+      bpm: 120,
+      selectedTrackId: track.id,
+    );
+
+    final history = EditorHistory().record(
+      label: 'Change HP Cutoff',
+      before: before,
+      after: after,
+    );
+
+    expect(history.past.single.label, 'Change HP Cutoff');
+    expect(
+      history.undo(after)!.snapshot.tracks.single.filterFx.enabled,
+      isFalse,
+    );
+  });
 
   test('marker project state records metadata in history', () {
     const marker = TimelineMarker(

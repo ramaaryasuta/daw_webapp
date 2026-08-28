@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:daw_webapp/features/editor/domain/audio_asset.dart';
 import 'package:daw_webapp/features/editor/domain/audio_clip.dart';
 import 'package:daw_webapp/features/editor/domain/daw_track.dart';
+import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/infrastructure/audio_mixdown_service.dart';
 import 'package:daw_webapp/features/editor/infrastructure/wav_encoder.dart';
 import 'package:daw_webapp/features/editor/infrastructure/web_audio_engine.dart';
@@ -54,6 +55,7 @@ void main() {
     double gainDb = 0,
     double fadeIn = 0,
     double fadeOut = 0,
+    TrackFilterFx filterFx = const TrackFilterFx(),
   }) {
     return DawTrack(
       id: id,
@@ -62,6 +64,7 @@ void main() {
       pan: pan,
       isMuted: isMuted,
       isSolo: isSolo,
+      filterFx: filterFx,
       clips: [
         AudioClip(
           id: 'clip-$id',
@@ -186,6 +189,98 @@ void main() {
       closeTo(clipGainDbToLinear(-6) * math.sqrt(1 / 3), 0.025),
     );
   });
+
+  test('offline WAV applies HP, LP, and global Filter FX bypass', () async {
+    final dryDc = _leftChannelRms(
+      (await mixdown.generateWavExport([track('dc-dry')])).wavBytes,
+    );
+    const highPass = TrackFilterFx(
+      enabled: true,
+      highPass: TrackFilterModule(enabled: true, frequencyHz: 5000),
+    );
+    final filteredDc = _leftChannelRms(
+      (await mixdown.generateWavExport([
+        track('dc-hp', filterFx: highPass),
+      ])).wavBytes,
+    );
+    final bypassedDc = _leftChannelRms(
+      (await mixdown.generateWavExport([
+        track('dc-bypass', filterFx: highPass.copyWith(enabled: false)),
+      ])).wavBytes,
+    );
+    expect(filteredDc / dryDc, lessThan(0.08));
+    expect(bypassedDc / dryDc, closeTo(1, 0.01));
+
+    final frameCount = sampleRate * durationSeconds ~/ 1;
+    final highTone = Float32List(frameCount);
+    for (var index = 0; index < frameCount; index++) {
+      highTone[index] =
+          0.2 * math.sin(2 * math.pi * 10000 * index / sampleRate);
+    }
+    final bytes = WavEncoder.encodePcm16(
+      channels: [highTone, highTone],
+      sampleRate: sampleRate,
+    );
+    final decoded = await engine.decode(assetId: 'asset-high', bytes: bytes);
+    asset = AudioAsset(
+      id: 'asset-high',
+      name: 'high.wav',
+      extension: 'wav',
+      size: bytes.length,
+      durationSeconds: decoded.durationSeconds,
+      sampleRate: decoded.sampleRate,
+      numberOfChannels: decoded.numberOfChannels,
+      waveformPeaks: decoded.waveformPeaks,
+    );
+    final dryHigh = _leftChannelRms(
+      (await mixdown.generateWavExport([track('high-dry')])).wavBytes,
+    );
+    final filteredHigh = _leftChannelRms(
+      (await mixdown.generateWavExport([
+        track(
+          'high-lp',
+          filterFx: const TrackFilterFx(
+            enabled: true,
+            lowPass: TrackFilterModule(enabled: true, frequencyHz: 1000),
+          ),
+        ),
+      ])).wavBytes,
+    );
+    expect(filteredHigh / dryHigh, lessThan(0.08));
+  });
+
+  test(
+    'live Filter FX changes keep transport running at its playhead',
+    () async {
+      final dryTrack = track('live');
+      await engine.play(tracks: [dryTrack], fromSeconds: 0);
+      await Future<void>.delayed(const Duration(milliseconds: 15));
+      final before = engine.currentPositionSeconds;
+
+      engine.syncTrackFilterFx([
+        dryTrack.copyWith(
+          filterFx: const TrackFilterFx(
+            enabled: true,
+            highPass: TrackFilterModule(
+              enabled: true,
+              frequencyHz: 240,
+              q: 1.25,
+            ),
+            lowPass: TrackFilterModule(
+              enabled: true,
+              frequencyHz: 12000,
+              q: 0.9,
+            ),
+          ),
+        ),
+      ]);
+      final after = engine.currentPositionSeconds;
+
+      expect(engine.isPlaying, isTrue);
+      expect(after, greaterThanOrEqualTo(before));
+      engine.pause();
+    },
+  );
 
   test('offline WAV reverses only the trimmed visible source range', () async {
     final frameCount = sampleRate * durationSeconds ~/ 1;

@@ -16,6 +16,7 @@ import '../domain/timeline_marker.dart';
 import '../domain/timeline_section.dart';
 import '../domain/track_color.dart';
 import '../domain/track_mixer.dart';
+import '../domain/track_filter_fx.dart';
 import '../domain/timeline_snapper.dart';
 import '../infrastructure/web_audio_engine.dart';
 import '../infrastructure/project_io/fldaw_project_codec.dart';
@@ -239,6 +240,9 @@ class EditorController extends Notifier<EditorState> {
   ProjectSnapshot? _masterVolumeEditStartSnapshot;
   ProjectSnapshot? _panEditStartSnapshot;
   String? _panEditTrackId;
+  ProjectSnapshot? _filterEditStartSnapshot;
+  String? _filterEditTrackId;
+  TrackFilterParameter? _filterEditParameter;
   ProjectSnapshot? _trackColorEditStartSnapshot;
   String? _trackColorEditTrackId;
   int? _trackColorEditOriginalValue;
@@ -302,6 +306,9 @@ class EditorController extends Notifier<EditorState> {
     _masterVolumeEditStartSnapshot = null;
     _panEditStartSnapshot = null;
     _panEditTrackId = null;
+    _filterEditStartSnapshot = null;
+    _filterEditTrackId = null;
+    _filterEditParameter = null;
     _trackColorEditStartSnapshot = null;
     _trackColorEditTrackId = null;
     _trackColorEditOriginalValue = null;
@@ -471,7 +478,8 @@ class EditorController extends Notifier<EditorState> {
           leftTrack.volumeDb != rightTrack.volumeDb ||
           leftTrack.pan != rightTrack.pan ||
           leftTrack.isMuted != rightTrack.isMuted ||
-          leftTrack.isSolo != rightTrack.isSolo) {
+          leftTrack.isSolo != rightTrack.isSolo ||
+          leftTrack.filterFx != rightTrack.filterFx) {
         return false;
       }
     }
@@ -2582,6 +2590,175 @@ class EditorController extends Notifier<EditorState> {
     );
 
     _audioEngine.syncMixer(state.tracks);
+  }
+
+  void toggleFilterFx(String trackId) {
+    final track = state.tracks
+        .where((track) => track.id == trackId)
+        .firstOrNull;
+    if (track == null) {
+      return;
+    }
+    final before = _captureProjectSnapshot();
+    _setTrackFilterFx(
+      trackId,
+      track.filterFx.copyWith(enabled: !track.filterFx.enabled),
+    );
+    _recordEdit('Toggle Filter FX', before);
+  }
+
+  void toggleTrackFilterModule(String trackId, {required bool highPass}) {
+    final track = state.tracks
+        .where((track) => track.id == trackId)
+        .firstOrNull;
+    if (track == null) {
+      return;
+    }
+    final before = _captureProjectSnapshot();
+    final filter = track.filterFx;
+    _setTrackFilterFx(
+      trackId,
+      highPass
+          ? filter.copyWith(
+              highPass: filter.highPass.copyWith(
+                enabled: !filter.highPass.enabled,
+              ),
+            )
+          : filter.copyWith(
+              lowPass: filter.lowPass.copyWith(
+                enabled: !filter.lowPass.enabled,
+              ),
+            ),
+    );
+    _recordEdit(
+      highPass ? 'Toggle High-Pass Filter' : 'Toggle Low-Pass Filter',
+      before,
+    );
+  }
+
+  void beginTrackFilterChange(String trackId, TrackFilterParameter parameter) {
+    if (_filterEditStartSnapshot != null ||
+        !state.tracks.any((track) => track.id == trackId)) {
+      return;
+    }
+    _filterEditStartSnapshot = _captureProjectSnapshot();
+    _filterEditTrackId = trackId;
+    _filterEditParameter = parameter;
+  }
+
+  void previewTrackFilterChange(
+    String trackId,
+    TrackFilterParameter parameter,
+    double value,
+  ) {
+    if (_filterEditTrackId != trackId || _filterEditParameter != parameter) {
+      return;
+    }
+    _audioEngine.syncTrackFilterFx([
+      for (final track in state.tracks)
+        if (track.id == trackId)
+          track.copyWith(
+            filterFx: _filterWithParameter(track.filterFx, parameter, value),
+          )
+        else
+          track,
+    ]);
+  }
+
+  void commitTrackFilterChange(
+    String trackId,
+    TrackFilterParameter parameter,
+    double value,
+  ) {
+    if (_filterEditTrackId != trackId || _filterEditParameter != parameter) {
+      return;
+    }
+    final before = _filterEditStartSnapshot;
+    _filterEditStartSnapshot = null;
+    _filterEditTrackId = null;
+    _filterEditParameter = null;
+    final track = state.tracks
+        .where((track) => track.id == trackId)
+        .firstOrNull;
+    if (track == null || before == null) {
+      return;
+    }
+    _setTrackFilterFx(
+      trackId,
+      _filterWithParameter(track.filterFx, parameter, value),
+    );
+    _recordEdit(_filterParameterHistoryLabel(parameter), before);
+  }
+
+  void resetTrackFilterParameter(
+    String trackId,
+    TrackFilterParameter parameter,
+  ) {
+    final track = state.tracks
+        .where((track) => track.id == trackId)
+        .firstOrNull;
+    if (track == null) {
+      return;
+    }
+    final before = _filterEditTrackId == trackId
+        ? _filterEditStartSnapshot
+        : _captureProjectSnapshot();
+    _filterEditStartSnapshot = null;
+    _filterEditTrackId = null;
+    _filterEditParameter = null;
+    final defaultValue = switch (parameter) {
+      TrackFilterParameter.highPassFrequency => defaultHighPassFrequencyHz,
+      TrackFilterParameter.lowPassFrequency => defaultLowPassFrequencyHz,
+      TrackFilterParameter.highPassQ ||
+      TrackFilterParameter.lowPassQ => defaultFilterQ,
+    };
+    _setTrackFilterFx(
+      trackId,
+      _filterWithParameter(track.filterFx, parameter, defaultValue),
+    );
+    if (before != null) {
+      _recordEdit(_filterParameterHistoryLabel(parameter), before);
+    }
+  }
+
+  TrackFilterFx _filterWithParameter(
+    TrackFilterFx filter,
+    TrackFilterParameter parameter,
+    double value,
+  ) {
+    return switch (parameter) {
+      TrackFilterParameter.highPassFrequency => filter.copyWith(
+        highPass: filter.highPass.copyWith(frequencyHz: value),
+      ),
+      TrackFilterParameter.highPassQ => filter.copyWith(
+        highPass: filter.highPass.copyWith(q: value),
+      ),
+      TrackFilterParameter.lowPassFrequency => filter.copyWith(
+        lowPass: filter.lowPass.copyWith(frequencyHz: value),
+      ),
+      TrackFilterParameter.lowPassQ => filter.copyWith(
+        lowPass: filter.lowPass.copyWith(q: value),
+      ),
+    };
+  }
+
+  String _filterParameterHistoryLabel(TrackFilterParameter parameter) {
+    return switch (parameter) {
+      TrackFilterParameter.highPassFrequency => 'Change HP Cutoff',
+      TrackFilterParameter.highPassQ => 'Change HP Resonance',
+      TrackFilterParameter.lowPassFrequency => 'Change LP Cutoff',
+      TrackFilterParameter.lowPassQ => 'Change LP Resonance',
+    };
+  }
+
+  void _setTrackFilterFx(String trackId, TrackFilterFx filterFx) {
+    state = state.copyWith(
+      tracks: [
+        for (final track in state.tracks)
+          track.id == trackId ? track.copyWith(filterFx: filterFx) : track,
+      ],
+    );
+    _audioEngine.syncTrackFilterFx(state.tracks);
   }
 
   void setTempoBpm(double bpm) {

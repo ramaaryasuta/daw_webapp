@@ -240,6 +240,31 @@ abstract final class EditorCommands {
     searchTerms: ['duplicate', 'copy track', 'clone'],
   );
 
+  static const trackFilterFx = AppCommand(
+    title: 'Track Filter FX',
+    description:
+        'Open the track filter rack and shape the track with high-pass and low-pass filters.',
+    shortcutParts: ['Track Actions', 'Track FX'],
+    category: AppCommandCategory.mixer,
+    searchTerms: [
+      'filter',
+      'fx',
+      'effect',
+      'high pass',
+      'low pass',
+      'cutoff',
+      'resonance',
+      'frequency',
+    ],
+    usageSteps: [
+      'Open Track FX from the track actions menu.',
+      'Enable the high-pass or low-pass module.',
+      'Drag Cutoff vertically to choose the corner frequency.',
+      'Adjust Resonance (Q) around the cutoff.',
+      'Use the global FILTER bypass to compare processed and unprocessed audio.',
+    ],
+  );
+
   static const reorderTrack = AppCommand(
     title: 'Reorder Track',
     description: 'Change the vertical order of an audio track.',
@@ -405,6 +430,7 @@ abstract final class EditorCommands {
     changeTrackColor,
     addAudioTrack,
     duplicateTrack,
+    trackFilterFx,
     deleteTrack,
     reorderTrack,
     trackMixerControls,

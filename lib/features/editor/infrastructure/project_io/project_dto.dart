@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../../domain/musical_timing.dart';
+import '../../domain/track_filter_fx.dart';
 
 const String fldawProjectFormat = 'fldawproj';
 const int fldawProjectFormatVersion = 1;
@@ -271,6 +272,7 @@ class ProjectTrackDto {
     required this.muted,
     required this.solo,
     required this.pan,
+    this.filterFx = const TrackFilterFx(),
   });
 
   final String id;
@@ -281,6 +283,7 @@ class ProjectTrackDto {
   final bool muted;
   final bool solo;
   final double pan;
+  final TrackFilterFx filterFx;
 
   Map<String, Object?> toJson() => {
     'id': id,
@@ -291,6 +294,19 @@ class ProjectTrackDto {
     'mute': muted,
     'solo': solo,
     'pan': pan,
+    'filterFx': {
+      'enabled': filterFx.enabled,
+      'highPass': {
+        'enabled': filterFx.highPass.enabled,
+        'frequencyHz': filterFx.highPass.frequencyHz,
+        'q': filterFx.highPass.q,
+      },
+      'lowPass': {
+        'enabled': filterFx.lowPass.enabled,
+        'frequencyHz': filterFx.lowPass.frequencyHz,
+        'q': filterFx.lowPass.q,
+      },
+    },
   };
 
   factory ProjectTrackDto.fromJson(Map<String, Object?> json) =>
@@ -303,7 +319,40 @@ class ProjectTrackDto {
         muted: _requiredBool(json, 'mute'),
         solo: _requiredBool(json, 'solo'),
         pan: _boundedNumber(json, 'pan', -1, 1),
+        filterFx: _trackFilterFx(json),
       );
+}
+
+TrackFilterFx _trackFilterFx(Map<String, Object?> trackJson) {
+  if (!trackJson.containsKey('filterFx')) {
+    return const TrackFilterFx();
+  }
+  final json = _requiredMap(trackJson, 'filterFx');
+  final highPass = _requiredMap(json, 'highPass');
+  final lowPass = _requiredMap(json, 'lowPass');
+  return TrackFilterFx(
+    enabled: _requiredBool(json, 'enabled'),
+    highPass: TrackFilterModule(
+      enabled: _requiredBool(highPass, 'enabled'),
+      frequencyHz: _boundedNumber(
+        highPass,
+        'frequencyHz',
+        minimumFilterFrequencyHz,
+        maximumFilterFrequencyHz,
+      ),
+      q: _boundedNumber(highPass, 'q', minimumFilterQ, maximumFilterQ),
+    ),
+    lowPass: TrackFilterModule(
+      enabled: _requiredBool(lowPass, 'enabled'),
+      frequencyHz: _boundedNumber(
+        lowPass,
+        'frequencyHz',
+        minimumFilterFrequencyHz,
+        maximumFilterFrequencyHz,
+      ),
+      q: _boundedNumber(lowPass, 'q', minimumFilterQ, maximumFilterQ),
+    ),
+  );
 }
 
 class ProjectClipDto {

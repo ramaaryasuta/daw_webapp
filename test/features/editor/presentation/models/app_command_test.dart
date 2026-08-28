@@ -215,6 +215,19 @@ void main() {
     );
   });
 
+  test('Help commands document the Track Filter FX rack', () {
+    final command = EditorCommands.all.singleWhere(
+      (command) => command.title == 'Track Filter FX',
+    );
+
+    expect(command.shortcutParts, ['Track Actions', 'Track FX']);
+    expect(
+      command.searchTerms,
+      containsAll(['filter', 'fx', 'high pass', 'low pass', 'resonance']),
+    );
+    expect(command.usageSteps, hasLength(5));
+  });
+
   test('Help commands define the track reorder handle gesture once', () {
     final matches = EditorCommands.all.where(
       (command) => command.title == 'Reorder Track',

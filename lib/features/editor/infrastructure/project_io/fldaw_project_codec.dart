@@ -169,6 +169,7 @@ class FldawProjectCodec {
             muted: snapshot.tracks[index].isMuted,
             solo: snapshot.tracks[index].isSolo,
             pan: snapshot.tracks[index].pan,
+            filterFx: snapshot.tracks[index].filterFx,
           ),
       ],
       clips: [
@@ -279,6 +280,7 @@ class FldawProjectCodec {
           pan: track.pan,
           isMuted: track.muted,
           isSolo: track.solo,
+          filterFx: track.filterFx,
         ),
       );
     }

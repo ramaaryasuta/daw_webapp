@@ -17,6 +17,7 @@ import '../controllers/audio_meter_controller.dart';
 import '../controllers/track_reorder_drag_controller.dart';
 import 'delete_track_dialog.dart';
 import 'track_header.dart';
+import 'track_filter_fx_rack.dart';
 import 'track_lane_background_painter.dart';
 import 'timeline_view.dart';
 
@@ -78,6 +79,10 @@ class _TrackHeaderListState extends ConsumerState<TrackHeaderList> {
               isReorderDragging: dragState?.draggedTrackId == track.id,
               meterController: widget.meterController,
               trackId: track.id,
+              trackFxRack: TrackFilterFxRack(
+                key: ValueKey('track-filter-fx-${track.id}'),
+                trackId: track.id,
+              ),
               onReorderStarted: () => widget.reorderController.start(
                 trackId: track.id,
                 trackIds: editorState.tracks.map((track) => track.id),

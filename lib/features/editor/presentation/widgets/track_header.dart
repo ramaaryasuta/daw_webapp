@@ -46,6 +46,7 @@ class TrackHeader extends StatefulWidget {
     this.isReorderDragging = false,
     this.meterController,
     this.trackId,
+    this.trackFxRack,
   });
 
   final String name;
@@ -58,6 +59,7 @@ class TrackHeader extends StatefulWidget {
   final bool isSelected;
   final AudioMeterController? meterController;
   final String? trackId;
+  final Widget? trackFxRack;
 
   final VoidCallback onTap;
   final ValueChanged<String> onRename;
@@ -93,6 +95,7 @@ class _TrackHeaderState extends State<TrackHeader> {
   final FocusNode _nameFocusNode = FocusNode();
   final MenuController _colorMenuController = MenuController();
   final MenuController _propertiesMenuController = MenuController();
+  final MenuController _fxMenuController = MenuController();
 
   bool _isRenaming = false;
   bool _colorEditActive = false;
@@ -222,6 +225,18 @@ class _TrackHeaderState extends State<TrackHeader> {
     });
   }
 
+  void _openFxFromProperties() {
+    if (widget.trackFxRack == null) {
+      return;
+    }
+    _propertiesMenuController.close();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _fxMenuController.open();
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -327,7 +342,7 @@ class _TrackHeaderState extends State<TrackHeader> {
                           Expanded(child: _buildTrackName(context)),
 
                           MenuAnchor(
-                            controller: _propertiesMenuController,
+                            controller: _fxMenuController,
                             useRootOverlay: true,
                             consumeOutsideTap: true,
                             style: MenuStyle(
@@ -348,36 +363,72 @@ class _TrackHeaderState extends State<TrackHeader> {
                               ),
                             ),
                             menuChildren: [
-                              TrackPropertiesPopover(
-                                key: const ValueKey('track-properties-popover'),
-                                trackName: widget.name,
-                                colorValue: widget.colorValue,
-                                pan: widget.pan,
-                                onRename: _renameFromProperties,
-                                onColorSelected: widget.onColorSelected,
-                                onPanChangeStart: widget.onPanChangeStart,
-                                onPanChanged: widget.onPanChanged,
-                                onPanChangeEnd: widget.onPanChangeEnd,
-                                onPanReset: widget.onPanReset,
-                                onDuplicate: _duplicateFromProperties,
-                                onDelete: _deleteFromProperties,
-                              ),
+                              if (widget.trackFxRack != null)
+                                widget.trackFxRack!,
                             ],
-                            builder: (context, controller, child) => IconButton(
-                              key: const ValueKey('track-properties-button'),
-                              tooltip: 'Track actions',
-                              iconSize: 18,
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints.tightFor(
-                                width: 32,
-                                height: 32,
-                              ),
-                              onPressed: () => controller.isOpen
-                                  ? controller.close()
-                                  : controller.open(),
-                              icon: const Icon(Icons.more_horiz),
-                            ),
+                            builder: (context, fxController, child) =>
+                                MenuAnchor(
+                                  controller: _propertiesMenuController,
+                                  useRootOverlay: true,
+                                  consumeOutsideTap: true,
+                                  style: MenuStyle(
+                                    padding: const WidgetStatePropertyAll(
+                                      EdgeInsets.zero,
+                                    ),
+                                    backgroundColor: WidgetStatePropertyAll(
+                                      colorScheme.surfaceContainerHigh,
+                                    ),
+                                    elevation: const WidgetStatePropertyAll(8),
+                                    shape: WidgetStatePropertyAll(
+                                      RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(7),
+                                        side: BorderSide(
+                                          color: colorScheme.outlineVariant,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  menuChildren: [
+                                    TrackPropertiesPopover(
+                                      key: const ValueKey(
+                                        'track-properties-popover',
+                                      ),
+                                      trackName: widget.name,
+                                      colorValue: widget.colorValue,
+                                      pan: widget.pan,
+                                      onRename: _renameFromProperties,
+                                      onColorSelected: widget.onColorSelected,
+                                      onPanChangeStart: widget.onPanChangeStart,
+                                      onPanChanged: widget.onPanChanged,
+                                      onPanChangeEnd: widget.onPanChangeEnd,
+                                      onPanReset: widget.onPanReset,
+                                      onTrackFx: widget.trackFxRack == null
+                                          ? null
+                                          : _openFxFromProperties,
+                                      onDuplicate: _duplicateFromProperties,
+                                      onDelete: _deleteFromProperties,
+                                    ),
+                                  ],
+                                  builder: (context, controller, child) =>
+                                      IconButton(
+                                        key: const ValueKey(
+                                          'track-properties-button',
+                                        ),
+                                        tooltip: 'Track actions',
+                                        iconSize: 18,
+                                        visualDensity: VisualDensity.compact,
+                                        padding: EdgeInsets.zero,
+                                        constraints:
+                                            const BoxConstraints.tightFor(
+                                              width: 32,
+                                              height: 32,
+                                            ),
+                                        onPressed: () => controller.isOpen
+                                            ? controller.close()
+                                            : controller.open(),
+                                        icon: const Icon(Icons.more_horiz),
+                                      ),
+                                ),
                           ),
                         ],
                       ),

@@ -11,6 +11,7 @@ import '../domain/daw_track.dart';
 import '../domain/loop_region.dart';
 import '../domain/musical_timing.dart';
 import '../domain/track_mixer.dart';
+import '../domain/track_filter_fx.dart';
 import 'web_metronome_scheduler.dart';
 
 class DecodedAudioInfo {
@@ -65,6 +66,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
   final Map<String, web.GainNode> _trackGains = {};
   final Map<String, web.StereoPannerNode> _trackPanners = {};
   final Map<String, _StereoMeterTap> _trackMeterTaps = {};
+  final Map<String, _TrackFilterRuntime> _trackFilters = {};
 
   bool _isPlaying = false;
   double _masterVolumeDb = unityMasterVolumeDb;
@@ -191,6 +193,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
       ..clear()
       ..addAll(prepared._buffers);
     _reversedBuffers.clear();
+    _disposeAllTrackMixerNodes();
   }
 
   Future<({web.AudioBuffer buffer, DecodedAudioInfo info})> _decodeSource(
@@ -257,7 +260,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
 
     _contextStartTime = startAt;
 
-    _createTrackMixerNodes(tracks);
+    _syncTrackMixerNodes(tracks);
 
     if (loopRegion == null) {
       _scheduleSegment(
@@ -289,16 +292,39 @@ class WebAudioEngine implements AudioMeterPeakSource {
     _isPlaying = true;
   }
 
-  void _createTrackMixerNodes(List<DawTrack> tracks) {
+  void _syncTrackMixerNodes(List<DawTrack> tracks) {
     final hasSolo = tracks.any((track) => track.isSolo);
+    final trackIds = tracks.map((track) => track.id).toSet();
+    for (final trackId in _trackGains.keys.toList()) {
+      if (!trackIds.contains(trackId)) {
+        removeTrack(trackId);
+      }
+    }
 
     for (final track in tracks) {
+      final existingGain = _trackGains[track.id];
+      if (existingGain != null) {
+        _smoothGainTo(
+          existingGain,
+          effectiveTrackGain(track, hasSolo: hasSolo),
+        );
+        _smoothAudioParamTo(
+          _trackPanners[track.id]!.pan,
+          clampTrackPan(track.pan),
+        );
+        _trackFilters[track.id]!.update(track.filterFx, this);
+        continue;
+      }
+
+      final filter = _TrackFilterRuntime.create(_audioContext, track.filterFx);
       final gain = _audioContext.createGain();
       final panner = _audioContext.createStereoPanner();
       gain.gain.value = effectiveTrackGain(track, hasSolo: hasSolo);
       panner.pan.value = clampTrackPan(track.pan);
+      filter.output.connect(gain);
       gain.connect(panner);
       panner.connect(_masterMix);
+      _trackFilters[track.id] = filter;
       _trackGains[track.id] = gain;
       _trackPanners[track.id] = panner;
       _trackMeterTaps[track.id] = _StereoMeterTap.create(_audioContext, panner);
@@ -316,8 +342,8 @@ class WebAudioEngine implements AudioMeterPeakSource {
     }
 
     for (final track in tracks) {
-      final gain = _trackGains[track.id];
-      if (gain == null) {
+      final filter = _trackFilters[track.id];
+      if (filter == null) {
         continue;
       }
       for (final clip in track.clips) {
@@ -354,7 +380,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
         source.buffer = buffer;
         source.connect(fadeGain);
         fadeGain.connect(clipGain);
-        clipGain.connect(gain);
+        clipGain.connect(filter.input);
         clipGain.gain.value = clipGainDbToLinear(clip.gainDb);
         final sourceStartTime = contextStartTime + playbackTiming.delaySeconds;
         final clipLocalStartSeconds =
@@ -504,26 +530,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
       }
     }
 
-    for (final gain in _trackGains.values) {
-      try {
-        gain.disconnect();
-      } catch (_) {}
-    }
-
-    for (final panner in _trackPanners.values) {
-      try {
-        panner.disconnect();
-      } catch (_) {}
-    }
-
-    for (final meterTap in _trackMeterTaps.values) {
-      meterTap.dispose();
-    }
-
     _activeSources.clear();
-    _trackGains.clear();
-    _trackPanners.clear();
-    _trackMeterTaps.clear();
     _scheduledTracks = const [];
     _contextStartTime = 0;
   }
@@ -555,7 +562,16 @@ class WebAudioEngine implements AudioMeterPeakSource {
       if (panner != null) {
         _smoothAudioParamTo(panner.pan, clampTrackPan(track.pan));
       }
+      _trackFilters[track.id]?.update(track.filterFx, this);
     }
+    _scheduledTracks = List<DawTrack>.unmodifiable(tracks);
+  }
+
+  void syncTrackFilterFx(List<DawTrack> tracks) {
+    for (final track in tracks) {
+      _trackFilters[track.id]?.update(track.filterFx, this);
+    }
+    _scheduledTracks = List<DawTrack>.unmodifiable(tracks);
   }
 
   void setClipGain(String clipId, double gainDb) {
@@ -629,6 +645,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
     final gain = _trackGains.remove(trackId);
     final panner = _trackPanners.remove(trackId);
     final meterTap = _trackMeterTaps.remove(trackId);
+    final filter = _trackFilters.remove(trackId);
 
     if (gain != null) {
       try {
@@ -643,6 +660,30 @@ class WebAudioEngine implements AudioMeterPeakSource {
     }
 
     meterTap?.dispose();
+    filter?.dispose();
+  }
+
+  void _disposeAllTrackMixerNodes() {
+    for (final meterTap in _trackMeterTaps.values) {
+      meterTap.dispose();
+    }
+    for (final filter in _trackFilters.values) {
+      filter.dispose();
+    }
+    for (final gain in _trackGains.values) {
+      try {
+        gain.disconnect();
+      } catch (_) {}
+    }
+    for (final panner in _trackPanners.values) {
+      try {
+        panner.disconnect();
+      } catch (_) {}
+    }
+    _trackFilters.clear();
+    _trackGains.clear();
+    _trackPanners.clear();
+    _trackMeterTaps.clear();
   }
 
   List<double> _extractWaveformPeaks(
@@ -735,6 +776,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
   Future<void> dispose() async {
     _playRequestId++;
     stopSources();
+    _disposeAllTrackMixerNodes();
     _metronomeScheduler.dispose();
     _masterMeterTap.dispose();
     try {
@@ -747,6 +789,152 @@ class WebAudioEngine implements AudioMeterPeakSource {
     _reversedBuffers.clear();
 
     await _audioContext.close().toDart;
+  }
+}
+
+class _TrackFilterRuntime {
+  _TrackFilterRuntime({
+    required this.input,
+    required this.output,
+    required this.highPass,
+    required this.lowPass,
+    required this.highPassDry,
+    required this.highPassWet,
+    required this.lowPassDry,
+    required this.lowPassWet,
+    required this.globalDry,
+    required this.globalWet,
+    required this.nodes,
+  });
+
+  factory _TrackFilterRuntime.create(
+    web.BaseAudioContext context,
+    TrackFilterFx settings,
+  ) {
+    final input = context.createGain();
+    final output = context.createGain();
+    final highPass = context.createBiquadFilter()
+      ..type = 'highpass'
+      ..frequency.value = settings.highPass.frequencyHz
+      ..Q.value = settings.highPass.q;
+    final lowPass = context.createBiquadFilter()
+      ..type = 'lowpass'
+      ..frequency.value = settings.lowPass.frequencyHz
+      ..Q.value = settings.lowPass.q;
+    final highPassDry = context.createGain()
+      ..gain.value = settings.highPass.enabled ? 0 : 1;
+    final highPassWet = context.createGain()
+      ..gain.value = settings.highPass.enabled ? 1 : 0;
+    final highPassSum = context.createGain();
+    final lowPassDry = context.createGain()
+      ..gain.value = settings.lowPass.enabled ? 0 : 1;
+    final lowPassWet = context.createGain()
+      ..gain.value = settings.lowPass.enabled ? 1 : 0;
+    final lowPassSum = context.createGain();
+    final globalDry = context.createGain()
+      ..gain.value = settings.enabled ? 0 : 1;
+    final globalWet = context.createGain()
+      ..gain.value = settings.enabled ? 1 : 0;
+
+    input.connect(globalDry);
+    globalDry.connect(output);
+    input.connect(highPassDry);
+    input.connect(highPass);
+    highPassDry.connect(highPassSum);
+    highPass.connect(highPassWet);
+    highPassWet.connect(highPassSum);
+    highPassSum.connect(lowPassDry);
+    highPassSum.connect(lowPass);
+    lowPassDry.connect(lowPassSum);
+    lowPass.connect(lowPassWet);
+    lowPassWet.connect(lowPassSum);
+    lowPassSum.connect(globalWet);
+    globalWet.connect(output);
+
+    return _TrackFilterRuntime(
+      input: input,
+      output: output,
+      highPass: highPass,
+      lowPass: lowPass,
+      highPassDry: highPassDry,
+      highPassWet: highPassWet,
+      lowPassDry: lowPassDry,
+      lowPassWet: lowPassWet,
+      globalDry: globalDry,
+      globalWet: globalWet,
+      nodes: [
+        input,
+        output,
+        highPass,
+        lowPass,
+        highPassDry,
+        highPassWet,
+        highPassSum,
+        lowPassDry,
+        lowPassWet,
+        lowPassSum,
+        globalDry,
+        globalWet,
+      ],
+    );
+  }
+
+  final web.GainNode input;
+  final web.GainNode output;
+  final web.BiquadFilterNode highPass;
+  final web.BiquadFilterNode lowPass;
+  final web.GainNode highPassDry;
+  final web.GainNode highPassWet;
+  final web.GainNode lowPassDry;
+  final web.GainNode lowPassWet;
+  final web.GainNode globalDry;
+  final web.GainNode globalWet;
+  final List<web.AudioNode> nodes;
+
+  void update(TrackFilterFx settings, WebAudioEngine engine) {
+    engine._smoothAudioParamTo(
+      highPass.frequency,
+      settings.highPass.frequencyHz,
+    );
+    engine._smoothAudioParamTo(highPass.Q, settings.highPass.q);
+    engine._smoothAudioParamTo(lowPass.frequency, settings.lowPass.frequencyHz);
+    engine._smoothAudioParamTo(lowPass.Q, settings.lowPass.q);
+    _setBypassPair(
+      dry: highPassDry,
+      wet: highPassWet,
+      enabled: settings.highPass.enabled,
+      engine: engine,
+    );
+    _setBypassPair(
+      dry: lowPassDry,
+      wet: lowPassWet,
+      enabled: settings.lowPass.enabled,
+      engine: engine,
+    );
+    _setBypassPair(
+      dry: globalDry,
+      wet: globalWet,
+      enabled: settings.enabled,
+      engine: engine,
+    );
+  }
+
+  static void _setBypassPair({
+    required web.GainNode dry,
+    required web.GainNode wet,
+    required bool enabled,
+    required WebAudioEngine engine,
+  }) {
+    engine._smoothGainTo(dry, enabled ? 0 : 1);
+    engine._smoothGainTo(wet, enabled ? 1 : 0);
+  }
+
+  void dispose() {
+    for (final node in nodes) {
+      try {
+        node.disconnect();
+      } catch (_) {}
+    }
   }
 }
 

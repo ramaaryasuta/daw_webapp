@@ -28,6 +28,7 @@ void main() {
     VoidCallback? onReorderStarted,
     ValueChanged<DragUpdateDetails>? onReorderUpdated,
     VoidCallback? onReorderEnded,
+    Widget? trackFxRack,
   }) {
     return tester.pumpWidget(
       MaterialApp(
@@ -65,6 +66,7 @@ void main() {
               onReorderStarted: onReorderStarted ?? () {},
               onReorderUpdated: onReorderUpdated ?? (_) {},
               onReorderEnded: onReorderEnded ?? () {},
+              trackFxRack: trackFxRack,
             ),
           ),
         ),
@@ -211,26 +213,25 @@ void main() {
     expect(find.byKey(const ValueKey('track-color-popover')), findsNothing);
   });
 
-  testWidgets(
-    'track actions repeatedly opens and Rename remains functional',
-    (tester) async {
-      await pumpHeader(tester, onRename: (_) {});
+  testWidgets('track actions repeatedly opens and Rename remains functional', (
+    tester,
+  ) async {
+    await pumpHeader(tester, onRename: (_) {});
 
-      for (var index = 0; index < 3; index++) {
-        await tester.tap(find.byTooltip('Track actions'));
-        await tester.pumpAndSettle();
-        expect(find.text('Track Actions'), findsOneWidget);
-        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-        await tester.pumpAndSettle();
-      }
-
+    for (var index = 0; index < 3; index++) {
       await tester.tap(find.byTooltip('Track actions'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('track-properties-rename')));
+      expect(find.text('Track Actions'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('track-name-editor')), findsOneWidget);
-    },
-  );
+    }
+
+    await tester.tap(find.byTooltip('Track actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('track-properties-rename')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('track-name-editor')), findsOneWidget);
+  });
 
   testWidgets('delete is available only inside Track Actions', (tester) async {
     var deletePresses = 0;
@@ -251,6 +252,32 @@ void main() {
       find.byKey(const ValueKey('track-properties-popover')),
       findsNothing,
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Track FX swaps the actions menu for an anchored rack', (
+    tester,
+  ) async {
+    await pumpHeader(
+      tester,
+      onRename: (_) {},
+      trackFxRack: const SizedBox(
+        key: ValueKey('test-filter-rack'),
+        width: 320,
+        child: Text('FILTER RACK'),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('track-properties-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('track-properties-fx')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('track-properties-popover')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('test-filter-rack')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

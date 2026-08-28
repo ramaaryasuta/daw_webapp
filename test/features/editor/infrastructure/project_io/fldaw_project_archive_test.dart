@@ -10,6 +10,7 @@ import 'package:daw_webapp/features/editor/domain/musical_timing.dart';
 import 'package:daw_webapp/features/editor/domain/snap_settings.dart';
 import 'package:daw_webapp/features/editor/domain/timeline_marker.dart';
 import 'package:daw_webapp/features/editor/domain/timeline_section.dart';
+import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/fldaw_project_archive.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/fldaw_project_codec.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/fldaw_project_io_service.dart';
@@ -65,6 +66,19 @@ void main() {
           pan: 0.35,
           isMuted: true,
           isSolo: false,
+          filterFx: const TrackFilterFx(
+            enabled: true,
+            highPass: TrackFilterModule(
+              enabled: true,
+              frequencyHz: 120,
+              q: 1.25,
+            ),
+            lowPass: TrackFilterModule(
+              enabled: true,
+              frequencyHz: 14200,
+              q: 0.9,
+            ),
+          ),
           clips: [
             AudioClip(
               id: 'clip-a',
@@ -153,6 +167,7 @@ void main() {
     expect(restored.tracks.single.volumeDb, -3);
     expect(restored.tracks.single.pan, 0.35);
     expect(restored.tracks.single.isMuted, isTrue);
+    expect(restored.tracks.single.filterFx, snapshot.tracks.single.filterFx);
     expect(restored.tracks.single.clips.map((clip) => clip.id), [
       'clip-a',
       'clip-b',

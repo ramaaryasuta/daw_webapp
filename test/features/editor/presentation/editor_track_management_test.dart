@@ -3,6 +3,7 @@ library;
 
 import 'package:daw_webapp/features/editor/application/editor_controller.dart';
 import 'package:daw_webapp/features/editor/domain/track_color.dart';
+import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/presentation/editor_page.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/audio_level_meter.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/track_header.dart';
@@ -13,6 +14,73 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+    'Filter FX gestures commit once and duplicate persistent settings',
+    () async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final controller = container.read(editorControllerProvider.notifier);
+      final trackId = controller.addTrack();
+      controller.toggleFilterFx(trackId);
+      controller.toggleTrackFilterModule(trackId, highPass: true);
+      final historyBeforeDrag = container
+          .read(editorControllerProvider)
+          .history
+          .past
+          .length;
+
+      controller.beginTrackFilterChange(
+        trackId,
+        TrackFilterParameter.highPassFrequency,
+      );
+      controller.previewTrackFilterChange(
+        trackId,
+        TrackFilterParameter.highPassFrequency,
+        160,
+      );
+      controller.previewTrackFilterChange(
+        trackId,
+        TrackFilterParameter.highPassFrequency,
+        240,
+      );
+      expect(
+        container
+            .read(editorControllerProvider)
+            .tracks
+            .single
+            .filterFx
+            .highPass
+            .frequencyHz,
+        defaultHighPassFrequencyHz,
+      );
+      controller.commitTrackFilterChange(
+        trackId,
+        TrackFilterParameter.highPassFrequency,
+        240,
+      );
+
+      var state = container.read(editorControllerProvider);
+      expect(state.history.past, hasLength(historyBeforeDrag + 1));
+      expect(state.history.past.last.label, 'Change HP Cutoff');
+      expect(state.tracks.single.filterFx.highPass.frequencyHz, 240);
+
+      final duplicateId = await controller.duplicateTrack(trackId);
+      state = container.read(editorControllerProvider);
+      final duplicate = state.tracks.singleWhere(
+        (track) => track.id == duplicateId,
+      );
+      expect(duplicate.filterFx, state.tracks.first.filterFx);
+
+      await controller.undo();
+      await controller.undo();
+      state = container.read(editorControllerProvider);
+      expect(
+        state.tracks.single.filterFx.highPass.frequencyHz,
+        defaultHighPassFrequencyHz,
+      );
+    },
+  );
+
   testWidgets('Tracks add button creates real tracks with stable defaults', (
     tester,
   ) async {
@@ -69,6 +137,49 @@ void main() {
       'Add Track',
       'Add Track',
     ]);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Track Actions opens the anchored Filter FX rack', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: ThemeData.dark(useMaterial3: true),
+          home: const EditorPage(),
+        ),
+      ),
+    );
+    final trackId = container
+        .read(editorControllerProvider.notifier)
+        .addTrack();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('track-properties-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('track-properties-fx')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(ValueKey('track-filter-fx-$trackId')), findsOneWidget);
+    expect(find.byKey(const ValueKey('track-filter-response')), findsOneWidget);
+    expect(find.text('HIGH PASS'), findsOneWidget);
+    expect(find.text('LOW PASS'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('filter-fx-global-toggle')));
+    await tester.pump();
+    expect(
+      container.read(editorControllerProvider).tracks.single.filterFx.enabled,
+      isTrue,
+    );
     expect(tester.takeException(), isNull);
   });
 

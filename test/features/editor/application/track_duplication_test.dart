@@ -5,6 +5,7 @@ import 'package:daw_webapp/features/editor/domain/audio_asset.dart';
 import 'package:daw_webapp/features/editor/domain/audio_clip.dart';
 import 'package:daw_webapp/features/editor/domain/daw_track.dart';
 import 'package:daw_webapp/features/editor/domain/track_color.dart';
+import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -56,6 +57,10 @@ void main() {
         pan: 0.45,
         isMuted: true,
         isSolo: true,
+        filterFx: const TrackFilterFx(
+          enabled: true,
+          highPass: TrackFilterModule(enabled: true, frequencyHz: 180, q: 1.4),
+        ),
         clips: [
           AudioClip(
             id: 'clip-a',
@@ -96,6 +101,7 @@ void main() {
       expect(duplicate.pan, source.pan);
       expect(duplicate.isMuted, source.isMuted);
       expect(duplicate.isSolo, source.isSolo);
+      expect(duplicate.filterFx, source.filterFx);
       expect(duplicate.clips.map((clip) => clip.id), ['clip-10', 'clip-11']);
       expect(duplicate.clips.map((clip) => clip.id).toSet(), hasLength(2));
       for (var index = 0; index < source.clips.length; index++) {
