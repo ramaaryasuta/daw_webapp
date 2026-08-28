@@ -7,7 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../application/editor_controller.dart';
 import '../../domain/daw_track.dart';
 import '../../domain/track_filter_fx.dart';
+import '../../domain/track_eq_fx.dart';
 import '../editor_shortcut_policy.dart';
+
+enum _TrackFxModule { filter, eq }
 
 class TrackFilterFxRack extends ConsumerStatefulWidget {
   const TrackFilterFxRack({super.key, required this.trackId});
@@ -19,7 +22,9 @@ class TrackFilterFxRack extends ConsumerStatefulWidget {
 }
 
 class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
-  TrackFilterFx? _preview;
+  TrackFilterFx? _filterPreview;
+  TrackEqFx? _eqPreview;
+  _TrackFxModule _selectedModule = _TrackFxModule.filter;
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +38,8 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
     if (track == null) {
       return const SizedBox.shrink();
     }
-    final filter = _preview ?? track.filterFx;
+    final filter = _filterPreview ?? track.filterFx;
+    final eq = _eqPreview ?? track.eqFx;
     final colorScheme = Theme.of(context).colorScheme;
     final accent = Color(track.colorValue);
 
@@ -41,7 +47,7 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
       child: Focus(
         autofocus: true,
         child: SizedBox(
-          width: 372,
+          width: 392,
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: colorScheme.surfaceContainerHigh,
@@ -51,22 +57,169 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _RackHeader(
+                _TrackFxRackHeader(
                   trackName: track.name,
-                  enabled: filter.enabled,
+                  enabled: filter.isProcessing || eq.enabled,
                   accent: accent,
-                  onToggle: () => ref
-                      .read(editorControllerProvider.notifier)
-                      .toggleFilterFx(widget.trackId),
                 ),
                 Divider(height: 1, color: colorScheme.outlineVariant),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
-                  child: Column(
-                    children: [
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
+                _ModuleTabs(
+                  selected: _selectedModule,
+                  filterActive: filter.isProcessing,
+                  eqActive: eq.enabled,
+                  accent: accent,
+                  onSelected: (module) => setState(() {
+                    _selectedModule = module;
+                    _filterPreview = null;
+                    _eqPreview = null;
+                  }),
+                ),
+                Divider(height: 1, color: colorScheme.outlineVariant),
+                if (_selectedModule == _TrackFxModule.filter) ...[
+                  _EffectHeader(
+                    title: 'FILTER',
+                    enabled: filter.enabled,
+                    accent: accent,
+                    toggleKey: const ValueKey('filter-fx-global-toggle'),
+                    onToggle: () => ref
+                        .read(editorControllerProvider.notifier)
+                        .toggleFilterFx(widget.trackId),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+                    child: Column(
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'FREQUENCY RESPONSE',
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  fontSize: 10,
+                                  letterSpacing: 1.15,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        Container(
+                          height: 126,
+                          decoration: BoxDecoration(
+                            color: colorScheme.surface.withValues(alpha: 0.72),
+                            borderRadius: BorderRadius.circular(5),
+                            border: Border.all(
+                              color: colorScheme.outlineVariant.withValues(
+                                alpha: 0.8,
+                              ),
+                            ),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x38000000),
+                                blurRadius: 4,
+                                offset: Offset(0, 1),
+                              ),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: CustomPaint(
+                              key: const ValueKey('track-filter-response'),
+                              painter: _FilterResponsePainter(
+                                filter: filter,
+                                accent: accent,
+                                gridColor: colorScheme.outlineVariant,
+                                labelColor: colorScheme.onSurfaceVariant,
+                              ),
+                              child: const SizedBox.expand(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Divider(height: 1, color: colorScheme.outlineVariant),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 11, 12, 13),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: _FilterModulePanel(
+                            title: 'HIGH PASS',
+                            enabled: filter.highPass.enabled,
+                            globallyEnabled: filter.enabled,
+                            accent: accent,
+                            frequencyHz: filter.highPass.frequencyHz,
+                            q: filter.highPass.q,
+                            frequencyParameter:
+                                TrackFilterParameter.highPassFrequency,
+                            qParameter: TrackFilterParameter.highPassQ,
+                            onToggle: () => ref
+                                .read(editorControllerProvider.notifier)
+                                .toggleTrackFilterModule(
+                                  widget.trackId,
+                                  highPass: true,
+                                ),
+                            onPreview: (parameter, value) =>
+                                _previewParameter(track, parameter, value),
+                            onCommit: (parameter, value) =>
+                                _commitParameter(parameter, value),
+                            onBegin: _beginParameter,
+                            onReset: _resetParameter,
+                          ),
+                        ),
+                        Container(
+                          width: 1,
+                          height: 146,
+                          color: colorScheme.outlineVariant,
+                        ),
+                        Expanded(
+                          child: _FilterModulePanel(
+                            title: 'LOW PASS',
+                            enabled: filter.lowPass.enabled,
+                            globallyEnabled: filter.enabled,
+                            accent: accent,
+                            frequencyHz: filter.lowPass.frequencyHz,
+                            q: filter.lowPass.q,
+                            frequencyParameter:
+                                TrackFilterParameter.lowPassFrequency,
+                            qParameter: TrackFilterParameter.lowPassQ,
+                            onToggle: () => ref
+                                .read(editorControllerProvider.notifier)
+                                .toggleTrackFilterModule(
+                                  widget.trackId,
+                                  highPass: false,
+                                ),
+                            onPreview: (parameter, value) =>
+                                _previewParameter(track, parameter, value),
+                            onCommit: (parameter, value) =>
+                                _commitParameter(parameter, value),
+                            onBegin: _beginParameter,
+                            onReset: _resetParameter,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  _EffectHeader(
+                    title: '3-BAND EQ',
+                    enabled: eq.enabled,
+                    accent: const Color(0xFF79B8FF),
+                    toggleKey: const ValueKey('track-eq-global-toggle'),
+                    onToggle: () => ref
+                        .read(editorControllerProvider.notifier)
+                        .toggleTrackEq(widget.trackId),
+                    onReset: () => ref
+                        .read(editorControllerProvider.notifier)
+                        .resetTrackEq(widget.trackId),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 9),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
                           'FREQUENCY RESPONSE',
                           style: Theme.of(context).textTheme.labelSmall
                               ?.copyWith(
@@ -75,112 +228,181 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
                                 color: colorScheme.onSurfaceVariant,
                               ),
                         ),
-                      ),
-                      const SizedBox(height: 7),
-                      Container(
-                        height: 126,
-                        decoration: BoxDecoration(
-                          color: colorScheme.surface.withValues(alpha: 0.72),
-                          borderRadius: BorderRadius.circular(5),
-                          border: Border.all(
-                            color: colorScheme.outlineVariant.withValues(
-                              alpha: 0.8,
+                        const SizedBox(height: 7),
+                        Container(
+                          height: 142,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF101317),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: colorScheme.outlineVariant.withValues(
+                                alpha: 0.8,
+                              ),
+                            ),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x48000000),
+                                blurRadius: 4,
+                                offset: Offset(0, 1),
+                              ),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(3),
+                            child: CustomPaint(
+                              key: const ValueKey('track-eq-response'),
+                              painter: _EqResponsePainter(
+                                eq: eq,
+                                gridColor: colorScheme.outlineVariant,
+                                labelColor: colorScheme.onSurfaceVariant,
+                              ),
+                              child: const SizedBox.expand(),
                             ),
                           ),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x38000000),
-                              blurRadius: 4,
-                              offset: Offset(0, 1),
-                            ),
-                          ],
                         ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: CustomPaint(
-                            key: const ValueKey('track-filter-response'),
-                            painter: _FilterResponsePainter(
-                              filter: filter,
-                              accent: accent,
-                              gridColor: colorScheme.outlineVariant,
-                              labelColor: colorScheme.onSurfaceVariant,
-                            ),
-                            child: const SizedBox.expand(),
+                      ],
+                    ),
+                  ),
+                  Divider(height: 1, color: colorScheme.outlineVariant),
+                  AnimatedOpacity(
+                    duration: const Duration(milliseconds: 100),
+                    opacity: eq.enabled ? 1 : 0.55,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _eqKnob(
+                                track: track,
+                                eq: eq,
+                                parameter: TrackEqParameter.lowGain,
+                                label: 'LOW',
+                                value: eq.lowGainDb,
+                                minimum: minimumEqGainDb,
+                                maximum: maximumEqGainDb,
+                                valueLabel: formatEqGain(eq.lowGainDb),
+                                accent: const Color(0xFF64C7D0),
+                              ),
+                              _eqKnob(
+                                track: track,
+                                eq: eq,
+                                parameter: TrackEqParameter.midGain,
+                                label: 'MID',
+                                value: eq.midGainDb,
+                                minimum: minimumEqGainDb,
+                                maximum: maximumEqGainDb,
+                                valueLabel: formatEqGain(eq.midGainDb),
+                                accent: const Color(0xFFE4B85D),
+                              ),
+                              _eqKnob(
+                                track: track,
+                                eq: eq,
+                                parameter: TrackEqParameter.highGain,
+                                label: 'HIGH',
+                                value: eq.highGainDb,
+                                minimum: minimumEqGainDb,
+                                maximum: maximumEqGainDb,
+                                valueLabel: formatEqGain(eq.highGainDb),
+                                accent: const Color(0xFFC28BE8),
+                              ),
+                            ],
                           ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Divider(height: 1, color: colorScheme.outlineVariant),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 11, 12, 13),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: _FilterModulePanel(
-                          title: 'HIGH PASS',
-                          enabled: filter.highPass.enabled,
-                          globallyEnabled: filter.enabled,
-                          accent: accent,
-                          frequencyHz: filter.highPass.frequencyHz,
-                          q: filter.highPass.q,
-                          frequencyParameter:
-                              TrackFilterParameter.highPassFrequency,
-                          qParameter: TrackFilterParameter.highPassQ,
-                          onToggle: () => ref
-                              .read(editorControllerProvider.notifier)
-                              .toggleTrackFilterModule(
-                                widget.trackId,
-                                highPass: true,
+                          const SizedBox(height: 10),
+                          Container(
+                            height: 1,
+                            color: colorScheme.outlineVariant,
+                          ),
+                          const SizedBox(height: 9),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _eqKnob(
+                                track: track,
+                                eq: eq,
+                                parameter: TrackEqParameter.midFrequency,
+                                label: 'MID FREQ',
+                                value: eq.midFrequencyHz,
+                                minimum: minimumEqMidFrequencyHz,
+                                maximum: maximumEqMidFrequencyHz,
+                                logarithmic: true,
+                                valueLabel: formatEqFrequency(
+                                  eq.midFrequencyHz,
+                                ),
+                                accent: const Color(0xFFE4B85D),
                               ),
-                          onPreview: (parameter, value) =>
-                              _previewParameter(track, parameter, value),
-                          onCommit: (parameter, value) =>
-                              _commitParameter(parameter, value),
-                          onBegin: _beginParameter,
-                          onReset: _resetParameter,
-                        ),
-                      ),
-                      Container(
-                        width: 1,
-                        height: 146,
-                        color: colorScheme.outlineVariant,
-                      ),
-                      Expanded(
-                        child: _FilterModulePanel(
-                          title: 'LOW PASS',
-                          enabled: filter.lowPass.enabled,
-                          globallyEnabled: filter.enabled,
-                          accent: accent,
-                          frequencyHz: filter.lowPass.frequencyHz,
-                          q: filter.lowPass.q,
-                          frequencyParameter:
-                              TrackFilterParameter.lowPassFrequency,
-                          qParameter: TrackFilterParameter.lowPassQ,
-                          onToggle: () => ref
-                              .read(editorControllerProvider.notifier)
-                              .toggleTrackFilterModule(
-                                widget.trackId,
-                                highPass: false,
+                              const SizedBox(width: 30),
+                              _eqKnob(
+                                track: track,
+                                eq: eq,
+                                parameter: TrackEqParameter.midQ,
+                                label: 'Q',
+                                value: eq.midQ,
+                                minimum: minimumEqMidQ,
+                                maximum: maximumEqMidQ,
+                                valueLabel: eq.midQ.toStringAsFixed(2),
+                                accent: const Color(0xFFE4B85D),
                               ),
-                          onPreview: (parameter, value) =>
-                              _previewParameter(track, parameter, value),
-                          onCommit: (parameter, value) =>
-                              _commitParameter(parameter, value),
-                          onBegin: _beginParameter,
-                          onReset: _resetParameter,
-                        ),
+                            ],
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _eqKnob({
+    required DawTrack track,
+    required TrackEqFx eq,
+    required TrackEqParameter parameter,
+    required String label,
+    required double value,
+    required double minimum,
+    required double maximum,
+    required String valueLabel,
+    required Color accent,
+    bool logarithmic = false,
+  }) {
+    return _RotaryKnob(
+      key: ValueKey('$parameter-knob'),
+      label: label,
+      value: value,
+      minimum: minimum,
+      maximum: maximum,
+      logarithmic: logarithmic,
+      valueLabel: valueLabel,
+      active: eq.enabled,
+      accent: accent,
+      onChangeStart: () => ref
+          .read(editorControllerProvider.notifier)
+          .beginTrackEqChange(widget.trackId, parameter),
+      onChanged: (value) {
+        final base = _eqPreview ?? track.eqFx;
+        setState(() => _eqPreview = _withEqParameter(base, parameter, value));
+        ref
+            .read(editorControllerProvider.notifier)
+            .previewTrackEqChange(widget.trackId, parameter, value);
+      },
+      onChangeEnd: (value) {
+        ref
+            .read(editorControllerProvider.notifier)
+            .commitTrackEqChange(widget.trackId, parameter, value);
+        if (mounted) setState(() => _eqPreview = null);
+      },
+      onReset: () {
+        ref
+            .read(editorControllerProvider.notifier)
+            .resetTrackEqParameter(widget.trackId, parameter);
+        setState(() => _eqPreview = null);
+      },
     );
   }
 
@@ -195,8 +417,8 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
     TrackFilterParameter parameter,
     double value,
   ) {
-    final base = _preview ?? track.filterFx;
-    setState(() => _preview = _withParameter(base, parameter, value));
+    final base = _filterPreview ?? track.filterFx;
+    setState(() => _filterPreview = _withParameter(base, parameter, value));
     ref
         .read(editorControllerProvider.notifier)
         .previewTrackFilterChange(widget.trackId, parameter, value);
@@ -207,7 +429,7 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
         .read(editorControllerProvider.notifier)
         .commitTrackFilterChange(widget.trackId, parameter, value);
     if (mounted) {
-      setState(() => _preview = null);
+      setState(() => _filterPreview = null);
     }
   }
 
@@ -215,8 +437,22 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
     ref
         .read(editorControllerProvider.notifier)
         .resetTrackFilterParameter(widget.trackId, parameter);
-    setState(() => _preview = null);
+    setState(() => _filterPreview = null);
   }
+}
+
+TrackEqFx _withEqParameter(
+  TrackEqFx eq,
+  TrackEqParameter parameter,
+  double value,
+) {
+  return switch (parameter) {
+    TrackEqParameter.lowGain => eq.copyWith(lowGainDb: value),
+    TrackEqParameter.midGain => eq.copyWith(midGainDb: value),
+    TrackEqParameter.midFrequency => eq.copyWith(midFrequencyHz: value),
+    TrackEqParameter.midQ => eq.copyWith(midQ: value),
+    TrackEqParameter.highGain => eq.copyWith(highGainDb: value),
+  };
 }
 
 TrackFilterFx _withParameter(
@@ -240,18 +476,16 @@ TrackFilterFx _withParameter(
   };
 }
 
-class _RackHeader extends StatelessWidget {
-  const _RackHeader({
+class _TrackFxRackHeader extends StatelessWidget {
+  const _TrackFxRackHeader({
     required this.trackName,
     required this.enabled,
     required this.accent,
-    required this.onToggle,
   });
 
   final String trackName;
   final bool enabled;
   final Color accent;
-  final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -274,7 +508,7 @@ class _RackHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'FILTER',
+                  'TRACK FX',
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.2,
@@ -291,8 +525,181 @@ class _RackHeader extends StatelessWidget {
               ],
             ),
           ),
+          Text(
+            enabled ? '● ON' : '○ OFF',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.8,
+              color: enabled ? accent : colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ModuleTabs extends StatelessWidget {
+  const _ModuleTabs({
+    required this.selected,
+    required this.filterActive,
+    required this.eqActive,
+    required this.accent,
+    required this.onSelected,
+  });
+
+  final _TrackFxModule selected;
+  final bool filterActive;
+  final bool eqActive;
+  final Color accent;
+  final ValueChanged<_TrackFxModule> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: Row(
+        children: [
+          Expanded(
+            child: _ModuleTab(
+              key: const ValueKey('track-fx-filter-tab'),
+              label: 'FILTER',
+              selected: selected == _TrackFxModule.filter,
+              active: filterActive,
+              accent: accent,
+              onTap: () => onSelected(_TrackFxModule.filter),
+            ),
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: _ModuleTab(
+              key: const ValueKey('track-fx-eq-tab'),
+              label: '3-BAND EQ',
+              selected: selected == _TrackFxModule.eq,
+              active: eqActive,
+              accent: const Color(0xFF79B8FF),
+              onTap: () => onSelected(_TrackFxModule.eq),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ModuleTab extends StatelessWidget {
+  const _ModuleTab({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.active,
+    required this.accent,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final bool active;
+  final Color accent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        height: 30,
+        padding: const EdgeInsets.symmetric(horizontal: 9),
+        decoration: BoxDecoration(
+          color: selected
+              ? scheme.surfaceContainerHighest
+              : scheme.surface.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: selected
+                ? accent.withValues(alpha: 0.72)
+                : scheme.outlineVariant,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.7,
+              ),
+            ),
+            if (active) ...[
+              const SizedBox(width: 7),
+              Container(
+                width: 5,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: accent,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EffectHeader extends StatelessWidget {
+  const _EffectHeader({
+    required this.title,
+    required this.enabled,
+    required this.accent,
+    required this.toggleKey,
+    required this.onToggle,
+    this.onReset,
+  });
+
+  final String title;
+  final bool enabled;
+  final Color accent;
+  final Key toggleKey;
+  final VoidCallback onToggle;
+  final VoidCallback? onReset;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 7, 10, 7),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1,
+              ),
+            ),
+          ),
+          if (onReset != null)
+            TextButton(
+              key: const ValueKey('track-eq-reset'),
+              onPressed: onReset,
+              style: TextButton.styleFrom(
+                minimumSize: const Size(42, 24),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+              child: const Text('Reset', style: TextStyle(fontSize: 10)),
+            ),
+          if (onReset != null) const SizedBox(width: 5),
           _CompactPowerButton(
-            key: const ValueKey('filter-fx-global-toggle'),
+            key: toggleKey,
             label: enabled ? 'ON' : 'OFF',
             enabled: enabled,
             accent: accent,
@@ -839,6 +1246,256 @@ class _FilterResponsePainter extends CustomPainter {
   bool shouldRepaint(covariant _FilterResponsePainter oldDelegate) =>
       oldDelegate.filter != filter ||
       oldDelegate.accent != accent ||
+      oldDelegate.gridColor != gridColor ||
+      oldDelegate.labelColor != labelColor;
+}
+
+enum _EqBand { low, mid, high }
+
+class _EqResponsePainter extends CustomPainter {
+  const _EqResponsePainter({
+    required this.eq,
+    required this.gridColor,
+    required this.labelColor,
+  });
+
+  final TrackEqFx eq;
+  final Color gridColor;
+  final Color labelColor;
+
+  static const _lowColor = Color(0xFF64C7D0);
+  static const _midColor = Color(0xFFE4B85D);
+  static const _highColor = Color(0xFFC28BE8);
+  static const _combinedColor = Color(0xFF9FCBFF);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const graph = EdgeInsets.fromLTRB(24, 8, 8, 22);
+    final rect = Rect.fromLTRB(
+      graph.left,
+      graph.top,
+      size.width - graph.right,
+      size.height - graph.bottom,
+    );
+    final gridPaint = Paint()
+      ..color = gridColor.withValues(alpha: 0.3)
+      ..strokeWidth = 1;
+    for (final db in const [-18.0, 0.0, 18.0]) {
+      final y = _dbY(db, rect);
+      canvas.drawLine(Offset(rect.left, y), Offset(rect.right, y), gridPaint);
+      _paintLabel(canvas, '${db.toInt()}', Offset(2, y - 5));
+    }
+    for (final frequency in const [20.0, 100.0, 1000.0, 10000.0, 20000.0]) {
+      final x = _frequencyX(frequency, rect);
+      canvas.drawLine(Offset(x, rect.top), Offset(x, rect.bottom), gridPaint);
+      final label = switch (frequency) {
+        20 => '20',
+        100 => '100',
+        1000 => '1k',
+        10000 => '10k',
+        _ => '20k',
+      };
+      final painter = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: TextStyle(color: labelColor, fontSize: 8),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      painter.paint(
+        canvas,
+        Offset(
+          (x - painter.width / 2).clamp(0, size.width - painter.width),
+          rect.bottom + 5,
+        ),
+      );
+    }
+
+    if (eq.enabled) {
+      _drawBand(canvas, rect, _EqBand.low, _lowColor);
+      _drawBand(canvas, rect, _EqBand.mid, _midColor);
+      _drawBand(canvas, rect, _EqBand.high, _highColor);
+    }
+    final combined = _responsePath(rect, null);
+    canvas.drawPath(
+      combined,
+      Paint()
+        ..color = eq.enabled
+            ? _combinedColor
+            : labelColor.withValues(alpha: 0.38)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = eq.enabled ? 2.2 : 1.2
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
+    if (eq.enabled) {
+      _drawHandle(canvas, rect, defaultEqLowFrequencyHz, _lowColor);
+      _drawHandle(canvas, rect, eq.midFrequencyHz, _midColor);
+      _drawHandle(canvas, rect, defaultEqHighFrequencyHz, _highColor);
+    }
+  }
+
+  void _paintLabel(Canvas canvas, String text, Offset offset) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(color: labelColor, fontSize: 8),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    painter.paint(canvas, offset);
+  }
+
+  void _drawBand(Canvas canvas, Rect rect, _EqBand band, Color color) {
+    canvas.drawPath(
+      _responsePath(rect, band),
+      Paint()
+        ..color = color.withValues(alpha: 0.4)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  void _drawHandle(Canvas canvas, Rect rect, double frequency, Color color) {
+    final x = _frequencyX(frequency, rect);
+    final db = _combinedDb(frequency).clamp(-18.0, 18.0);
+    final center = Offset(x, _dbY(db, rect));
+    canvas.drawCircle(center, 4.2, Paint()..color = const Color(0xFF11151A));
+    canvas.drawCircle(
+      center,
+      4.2,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+  }
+
+  Path _responsePath(Rect rect, _EqBand? band) {
+    final path = Path();
+    const count = 240;
+    for (var index = 0; index < count; index++) {
+      final ratio = index / (count - 1);
+      final frequency = 20 * math.pow(1000, ratio).toDouble();
+      final db =
+          (band == null ? _combinedDb(frequency) : _bandDb(frequency, band))
+              .clamp(-18.0, 18.0);
+      final point = Offset(rect.left + rect.width * ratio, _dbY(db, rect));
+      if (index == 0) {
+        path.moveTo(point.dx, point.dy);
+      } else {
+        path.lineTo(point.dx, point.dy);
+      }
+    }
+    return path;
+  }
+
+  double _combinedDb(double frequency) {
+    if (!eq.enabled) return 0;
+    return _bandDb(frequency, _EqBand.low) +
+        _bandDb(frequency, _EqBand.mid) +
+        _bandDb(frequency, _EqBand.high);
+  }
+
+  double _bandDb(double frequency, _EqBand band) {
+    final magnitude = switch (band) {
+      _EqBand.low => _eqMagnitude(
+        band: band,
+        frequency: frequency,
+        centerFrequency: defaultEqLowFrequencyHz,
+        gainDb: eq.lowGainDb,
+        q: 1,
+      ),
+      _EqBand.mid => _eqMagnitude(
+        band: band,
+        frequency: frequency,
+        centerFrequency: eq.midFrequencyHz,
+        gainDb: eq.midGainDb,
+        q: eq.midQ,
+      ),
+      _EqBand.high => _eqMagnitude(
+        band: band,
+        frequency: frequency,
+        centerFrequency: defaultEqHighFrequencyHz,
+        gainDb: eq.highGainDb,
+        q: 1,
+      ),
+    };
+    return 20 * math.log(math.max(magnitude, 0.000001)) / math.ln10;
+  }
+
+  double _frequencyX(double frequency, Rect rect) =>
+      rect.left + rect.width * math.log(frequency / 20) / math.log(1000);
+
+  double _dbY(double db, Rect rect) =>
+      rect.top + rect.height * ((18 - db) / 36);
+
+  double _eqMagnitude({
+    required _EqBand band,
+    required double frequency,
+    required double centerFrequency,
+    required double gainDb,
+    required double q,
+  }) {
+    const sampleRate = 48000.0;
+    final a = math.pow(10, gainDb / 40).toDouble();
+    final omega0 = 2 * math.pi * centerFrequency / sampleRate;
+    final cosine0 = math.cos(omega0);
+    final sine0 = math.sin(omega0);
+    late final double b0;
+    late final double b1;
+    late final double b2;
+    late final double a0;
+    late final double a1;
+    late final double a2;
+    if (band == _EqBand.mid) {
+      final alpha = sine0 / (2 * q);
+      b0 = 1 + alpha * a;
+      b1 = -2 * cosine0;
+      b2 = 1 - alpha * a;
+      a0 = 1 + alpha / a;
+      a1 = -2 * cosine0;
+      a2 = 1 - alpha / a;
+    } else {
+      final alpha = sine0 / 2 * math.sqrt(2);
+      final shelfTerm = 2 * math.sqrt(a) * alpha;
+      if (band == _EqBand.low) {
+        b0 = a * ((a + 1) - (a - 1) * cosine0 + shelfTerm);
+        b1 = 2 * a * ((a - 1) - (a + 1) * cosine0);
+        b2 = a * ((a + 1) - (a - 1) * cosine0 - shelfTerm);
+        a0 = (a + 1) + (a - 1) * cosine0 + shelfTerm;
+        a1 = -2 * ((a - 1) + (a + 1) * cosine0);
+        a2 = (a + 1) + (a - 1) * cosine0 - shelfTerm;
+      } else {
+        b0 = a * ((a + 1) + (a - 1) * cosine0 + shelfTerm);
+        b1 = -2 * a * ((a - 1) + (a + 1) * cosine0);
+        b2 = a * ((a + 1) + (a - 1) * cosine0 - shelfTerm);
+        a0 = (a + 1) - (a - 1) * cosine0 + shelfTerm;
+        a1 = 2 * ((a - 1) - (a + 1) * cosine0);
+        a2 = (a + 1) - (a - 1) * cosine0 - shelfTerm;
+      }
+    }
+    final omega = 2 * math.pi * frequency / sampleRate;
+    final cosine = math.cos(omega);
+    final sine = math.sin(omega);
+    final cosine2 = math.cos(2 * omega);
+    final sine2 = math.sin(2 * omega);
+    final numeratorReal = b0 + b1 * cosine + b2 * cosine2;
+    final numeratorImaginary = -b1 * sine - b2 * sine2;
+    final denominatorReal = a0 + a1 * cosine + a2 * cosine2;
+    final denominatorImaginary = -a1 * sine - a2 * sine2;
+    return math.sqrt(
+      (numeratorReal * numeratorReal +
+              numeratorImaginary * numeratorImaginary) /
+          (denominatorReal * denominatorReal +
+              denominatorImaginary * denominatorImaginary),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _EqResponsePainter oldDelegate) =>
+      oldDelegate.eq != eq ||
       oldDelegate.gridColor != gridColor ||
       oldDelegate.labelColor != labelColor;
 }

@@ -12,6 +12,7 @@ import '../domain/loop_region.dart';
 import '../domain/musical_timing.dart';
 import '../domain/track_mixer.dart';
 import '../domain/track_filter_fx.dart';
+import '../domain/track_eq_fx.dart';
 import 'web_metronome_scheduler.dart';
 
 class DecodedAudioInfo {
@@ -67,6 +68,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
   final Map<String, web.StereoPannerNode> _trackPanners = {};
   final Map<String, _StereoMeterTap> _trackMeterTaps = {};
   final Map<String, _TrackFilterRuntime> _trackFilters = {};
+  final Map<String, _TrackEqRuntime> _trackEqs = {};
 
   bool _isPlaying = false;
   double _masterVolumeDb = unityMasterVolumeDb;
@@ -313,18 +315,22 @@ class WebAudioEngine implements AudioMeterPeakSource {
           clampTrackPan(track.pan),
         );
         _trackFilters[track.id]!.update(track.filterFx, this);
+        _trackEqs[track.id]!.update(track.eqFx, this);
         continue;
       }
 
       final filter = _TrackFilterRuntime.create(_audioContext, track.filterFx);
+      final eq = _TrackEqRuntime.create(_audioContext, track.eqFx);
       final gain = _audioContext.createGain();
       final panner = _audioContext.createStereoPanner();
       gain.gain.value = effectiveTrackGain(track, hasSolo: hasSolo);
       panner.pan.value = clampTrackPan(track.pan);
-      filter.output.connect(gain);
+      filter.output.connect(eq.input);
+      eq.output.connect(gain);
       gain.connect(panner);
       panner.connect(_masterMix);
       _trackFilters[track.id] = filter;
+      _trackEqs[track.id] = eq;
       _trackGains[track.id] = gain;
       _trackPanners[track.id] = panner;
       _trackMeterTaps[track.id] = _StereoMeterTap.create(_audioContext, panner);
@@ -563,6 +569,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
         _smoothAudioParamTo(panner.pan, clampTrackPan(track.pan));
       }
       _trackFilters[track.id]?.update(track.filterFx, this);
+      _trackEqs[track.id]?.update(track.eqFx, this);
     }
     _scheduledTracks = List<DawTrack>.unmodifiable(tracks);
   }
@@ -570,6 +577,13 @@ class WebAudioEngine implements AudioMeterPeakSource {
   void syncTrackFilterFx(List<DawTrack> tracks) {
     for (final track in tracks) {
       _trackFilters[track.id]?.update(track.filterFx, this);
+    }
+    _scheduledTracks = List<DawTrack>.unmodifiable(tracks);
+  }
+
+  void syncTrackEqFx(List<DawTrack> tracks) {
+    for (final track in tracks) {
+      _trackEqs[track.id]?.update(track.eqFx, this);
     }
     _scheduledTracks = List<DawTrack>.unmodifiable(tracks);
   }
@@ -646,6 +660,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
     final panner = _trackPanners.remove(trackId);
     final meterTap = _trackMeterTaps.remove(trackId);
     final filter = _trackFilters.remove(trackId);
+    final eq = _trackEqs.remove(trackId);
 
     if (gain != null) {
       try {
@@ -661,6 +676,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
 
     meterTap?.dispose();
     filter?.dispose();
+    eq?.dispose();
   }
 
   void _disposeAllTrackMixerNodes() {
@@ -669,6 +685,9 @@ class WebAudioEngine implements AudioMeterPeakSource {
     }
     for (final filter in _trackFilters.values) {
       filter.dispose();
+    }
+    for (final eq in _trackEqs.values) {
+      eq.dispose();
     }
     for (final gain in _trackGains.values) {
       try {
@@ -681,6 +700,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
       } catch (_) {}
     }
     _trackFilters.clear();
+    _trackEqs.clear();
     _trackGains.clear();
     _trackPanners.clear();
     _trackMeterTaps.clear();
@@ -927,6 +947,82 @@ class _TrackFilterRuntime {
   }) {
     engine._smoothGainTo(dry, enabled ? 0 : 1);
     engine._smoothGainTo(wet, enabled ? 1 : 0);
+  }
+
+  void dispose() {
+    for (final node in nodes) {
+      try {
+        node.disconnect();
+      } catch (_) {}
+    }
+  }
+}
+
+class _TrackEqRuntime {
+  _TrackEqRuntime({
+    required this.input,
+    required this.output,
+    required this.low,
+    required this.mid,
+    required this.high,
+    required this.nodes,
+  });
+
+  factory _TrackEqRuntime.create(
+    web.BaseAudioContext context,
+    TrackEqFx settings,
+  ) {
+    final input = context.createGain();
+    final low = context.createBiquadFilter()
+      ..type = 'lowshelf'
+      ..frequency.value = defaultEqLowFrequencyHz
+      ..gain.value = settings.enabled ? settings.lowGainDb : 0;
+    final mid = context.createBiquadFilter()
+      ..type = 'peaking'
+      ..frequency.value = settings.midFrequencyHz
+      ..Q.value = settings.midQ
+      ..gain.value = settings.enabled ? settings.midGainDb : 0;
+    final high = context.createBiquadFilter()
+      ..type = 'highshelf'
+      ..frequency.value = defaultEqHighFrequencyHz
+      ..gain.value = settings.enabled ? settings.highGainDb : 0;
+    final output = context.createGain();
+    input.connect(low);
+    low.connect(mid);
+    mid.connect(high);
+    high.connect(output);
+    return _TrackEqRuntime(
+      input: input,
+      output: output,
+      low: low,
+      mid: mid,
+      high: high,
+      nodes: [input, low, mid, high, output],
+    );
+  }
+
+  final web.GainNode input;
+  final web.GainNode output;
+  final web.BiquadFilterNode low;
+  final web.BiquadFilterNode mid;
+  final web.BiquadFilterNode high;
+  final List<web.AudioNode> nodes;
+
+  void update(TrackEqFx settings, WebAudioEngine engine) {
+    engine._smoothAudioParamTo(
+      low.gain,
+      settings.enabled ? settings.lowGainDb : 0,
+    );
+    engine._smoothAudioParamTo(mid.frequency, settings.midFrequencyHz);
+    engine._smoothAudioParamTo(mid.Q, settings.midQ);
+    engine._smoothAudioParamTo(
+      mid.gain,
+      settings.enabled ? settings.midGainDb : 0,
+    );
+    engine._smoothAudioParamTo(
+      high.gain,
+      settings.enabled ? settings.highGainDb : 0,
+    );
   }
 
   void dispose() {

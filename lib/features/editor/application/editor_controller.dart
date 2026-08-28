@@ -17,6 +17,7 @@ import '../domain/timeline_section.dart';
 import '../domain/track_color.dart';
 import '../domain/track_mixer.dart';
 import '../domain/track_filter_fx.dart';
+import '../domain/track_eq_fx.dart';
 import '../domain/timeline_snapper.dart';
 import '../infrastructure/web_audio_engine.dart';
 import '../infrastructure/project_io/fldaw_project_codec.dart';
@@ -239,6 +240,9 @@ class EditorController extends Notifier<EditorState> {
   ProjectSnapshot? _filterEditStartSnapshot;
   String? _filterEditTrackId;
   TrackFilterParameter? _filterEditParameter;
+  ProjectSnapshot? _eqEditStartSnapshot;
+  String? _eqEditTrackId;
+  TrackEqParameter? _eqEditParameter;
   ProjectSnapshot? _trackColorEditStartSnapshot;
   String? _trackColorEditTrackId;
   int? _trackColorEditOriginalValue;
@@ -306,6 +310,9 @@ class EditorController extends Notifier<EditorState> {
     _filterEditStartSnapshot = null;
     _filterEditTrackId = null;
     _filterEditParameter = null;
+    _eqEditStartSnapshot = null;
+    _eqEditTrackId = null;
+    _eqEditParameter = null;
     _trackColorEditStartSnapshot = null;
     _trackColorEditTrackId = null;
     _trackColorEditOriginalValue = null;
@@ -476,7 +483,8 @@ class EditorController extends Notifier<EditorState> {
           leftTrack.pan != rightTrack.pan ||
           leftTrack.isMuted != rightTrack.isMuted ||
           leftTrack.isSolo != rightTrack.isSolo ||
-          leftTrack.filterFx != rightTrack.filterFx) {
+          leftTrack.filterFx != rightTrack.filterFx ||
+          leftTrack.eqFx != rightTrack.eqFx) {
         return false;
       }
     }
@@ -2756,6 +2764,133 @@ class EditorController extends Notifier<EditorState> {
       ],
     );
     _audioEngine.syncTrackFilterFx(state.tracks);
+  }
+
+  void toggleTrackEq(String trackId) {
+    final track = state.tracks
+        .where((track) => track.id == trackId)
+        .firstOrNull;
+    if (track == null) return;
+    final before = _captureProjectSnapshot();
+    _setTrackEqFx(trackId, track.eqFx.copyWith(enabled: !track.eqFx.enabled));
+    _recordEdit('Toggle Track EQ', before);
+  }
+
+  void beginTrackEqChange(String trackId, TrackEqParameter parameter) {
+    if (_eqEditStartSnapshot != null ||
+        !state.tracks.any((track) => track.id == trackId)) {
+      return;
+    }
+    _eqEditStartSnapshot = _captureProjectSnapshot();
+    _eqEditTrackId = trackId;
+    _eqEditParameter = parameter;
+  }
+
+  void previewTrackEqChange(
+    String trackId,
+    TrackEqParameter parameter,
+    double value,
+  ) {
+    if (_eqEditTrackId != trackId || _eqEditParameter != parameter) return;
+    _audioEngine.syncTrackEqFx([
+      for (final track in state.tracks)
+        track.id == trackId
+            ? track.copyWith(
+                eqFx: _eqWithParameter(track.eqFx, parameter, value),
+              )
+            : track,
+    ]);
+  }
+
+  void commitTrackEqChange(
+    String trackId,
+    TrackEqParameter parameter,
+    double value,
+  ) {
+    if (_eqEditTrackId != trackId || _eqEditParameter != parameter) return;
+    final before = _eqEditStartSnapshot;
+    _eqEditStartSnapshot = null;
+    _eqEditTrackId = null;
+    _eqEditParameter = null;
+    final track = state.tracks
+        .where((track) => track.id == trackId)
+        .firstOrNull;
+    if (track == null || before == null) return;
+    _setTrackEqFx(trackId, _eqWithParameter(track.eqFx, parameter, value));
+    _recordEdit(_eqParameterHistoryLabel(parameter), before);
+  }
+
+  void resetTrackEqParameter(String trackId, TrackEqParameter parameter) {
+    final track = state.tracks
+        .where((track) => track.id == trackId)
+        .firstOrNull;
+    if (track == null) return;
+    final before = _eqEditTrackId == trackId
+        ? _eqEditStartSnapshot
+        : _captureProjectSnapshot();
+    _eqEditStartSnapshot = null;
+    _eqEditTrackId = null;
+    _eqEditParameter = null;
+    final defaultValue = switch (parameter) {
+      TrackEqParameter.lowGain ||
+      TrackEqParameter.midGain ||
+      TrackEqParameter.highGain => 0.0,
+      TrackEqParameter.midFrequency => defaultEqMidFrequencyHz,
+      TrackEqParameter.midQ => defaultEqMidQ,
+    };
+    _setTrackEqFx(
+      trackId,
+      _eqWithParameter(track.eqFx, parameter, defaultValue),
+    );
+    if (before != null) {
+      _recordEdit(_eqParameterHistoryLabel(parameter), before);
+    }
+  }
+
+  void resetTrackEq(String trackId) {
+    final track = state.tracks
+        .where((track) => track.id == trackId)
+        .firstOrNull;
+    if (track == null) return;
+    final reset = const TrackEqFx().copyWith(enabled: track.eqFx.enabled);
+    if (reset == track.eqFx) return;
+    final before = _captureProjectSnapshot();
+    _setTrackEqFx(trackId, reset);
+    _recordEdit('Reset Track EQ', before);
+  }
+
+  TrackEqFx _eqWithParameter(
+    TrackEqFx eq,
+    TrackEqParameter parameter,
+    double value,
+  ) {
+    return switch (parameter) {
+      TrackEqParameter.lowGain => eq.copyWith(lowGainDb: value),
+      TrackEqParameter.midGain => eq.copyWith(midGainDb: value),
+      TrackEqParameter.midFrequency => eq.copyWith(midFrequencyHz: value),
+      TrackEqParameter.midQ => eq.copyWith(midQ: value),
+      TrackEqParameter.highGain => eq.copyWith(highGainDb: value),
+    };
+  }
+
+  String _eqParameterHistoryLabel(TrackEqParameter parameter) {
+    return switch (parameter) {
+      TrackEqParameter.lowGain => 'Change EQ Low Gain',
+      TrackEqParameter.midGain => 'Change EQ Mid Gain',
+      TrackEqParameter.midFrequency => 'Change EQ Mid Frequency',
+      TrackEqParameter.midQ => 'Change EQ Mid Q',
+      TrackEqParameter.highGain => 'Change EQ High Gain',
+    };
+  }
+
+  void _setTrackEqFx(String trackId, TrackEqFx eqFx) {
+    state = state.copyWith(
+      tracks: [
+        for (final track in state.tracks)
+          track.id == trackId ? track.copyWith(eqFx: eqFx) : track,
+      ],
+    );
+    _audioEngine.syncTrackEqFx(state.tracks);
   }
 
   void setTempoBpm(double bpm) {

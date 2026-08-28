@@ -7,6 +7,7 @@ import 'package:web/web.dart' as web;
 import '../domain/audio_clip.dart';
 import '../domain/daw_track.dart';
 import '../domain/track_mixer.dart';
+import '../domain/track_eq_fx.dart';
 import 'audio_render_duration.dart';
 import 'generated_export.dart';
 import 'wav_encoder.dart';
@@ -102,6 +103,25 @@ class AudioMixdownService implements AudioExportGenerator {
           ..Q.value = track.filterFx.lowPass.q;
         filterTail.connect(lowPass);
         filterTail = lowPass;
+      }
+      if (track.eqFx.enabled) {
+        final lowEq = offlineContext.createBiquadFilter()
+          ..type = 'lowshelf'
+          ..frequency.value = defaultEqLowFrequencyHz
+          ..gain.value = track.eqFx.lowGainDb;
+        final midEq = offlineContext.createBiquadFilter()
+          ..type = 'peaking'
+          ..frequency.value = track.eqFx.midFrequencyHz
+          ..Q.value = track.eqFx.midQ
+          ..gain.value = track.eqFx.midGainDb;
+        final highEq = offlineContext.createBiquadFilter()
+          ..type = 'highshelf'
+          ..frequency.value = defaultEqHighFrequencyHz
+          ..gain.value = track.eqFx.highGainDb;
+        filterTail.connect(lowEq);
+        lowEq.connect(midEq);
+        midEq.connect(highEq);
+        filterTail = highEq;
       }
       gain.gain.value = gainValue;
       panner.pan.value = clampTrackPan(track.pan);

@@ -228,6 +228,19 @@ void main() {
     expect(command.usageSteps, hasLength(5));
   });
 
+  test('Help commands document 3-Band EQ inside Track FX', () {
+    final command = EditorCommands.all.singleWhere(
+      (command) => command.title == '3-Band EQ',
+    );
+
+    expect(command.shortcutParts, ['Track Actions', 'Track FX', '3-Band EQ']);
+    expect(
+      command.searchTerms,
+      containsAll(['eq', 'equalizer', 'low', 'mid', 'high', '3 band']),
+    );
+    expect(command.usageSteps, hasLength(5));
+  });
+
   test('Help commands define the track reorder handle gesture once', () {
     final matches = EditorCommands.all.where(
       (command) => command.title == 'Reorder Track',

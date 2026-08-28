@@ -11,4 +11,3 @@ void main() {
 
   runApp(const ProviderScope(child: DawApp()));
 }
-  

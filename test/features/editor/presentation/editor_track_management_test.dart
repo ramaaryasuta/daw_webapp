@@ -4,6 +4,7 @@ library;
 import 'package:daw_webapp/features/editor/application/editor_controller.dart';
 import 'package:daw_webapp/features/editor/domain/track_color.dart';
 import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
+import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
 import 'package:daw_webapp/features/editor/presentation/editor_page.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/audio_level_meter.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/track_header.dart';
@@ -80,6 +81,55 @@ void main() {
       );
     },
   );
+
+  test('EQ gesture is one edit and reset is one independent edit', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final controller = container.read(editorControllerProvider.notifier);
+    final trackId = controller.addTrack();
+    controller.toggleTrackEq(trackId);
+    final historyBeforeDrag = container
+        .read(editorControllerProvider)
+        .history
+        .past
+        .length;
+
+    controller.beginTrackEqChange(trackId, TrackEqParameter.midFrequency);
+    controller.previewTrackEqChange(
+      trackId,
+      TrackEqParameter.midFrequency,
+      1200,
+    );
+    controller.previewTrackEqChange(
+      trackId,
+      TrackEqParameter.midFrequency,
+      2400,
+    );
+    expect(
+      container
+          .read(editorControllerProvider)
+          .tracks
+          .single
+          .eqFx
+          .midFrequencyHz,
+      defaultEqMidFrequencyHz,
+    );
+    controller.commitTrackEqChange(
+      trackId,
+      TrackEqParameter.midFrequency,
+      2400,
+    );
+
+    var state = container.read(editorControllerProvider);
+    expect(state.history.past, hasLength(historyBeforeDrag + 1));
+    expect(state.history.past.last.label, 'Change EQ Mid Frequency');
+    expect(state.tracks.single.eqFx.midFrequencyHz, 2400);
+
+    controller.resetTrackEq(trackId);
+    state = container.read(editorControllerProvider);
+    expect(state.history.past.last.label, 'Reset Track EQ');
+    expect(state.tracks.single.eqFx, const TrackEqFx(enabled: true));
+  });
 
   testWidgets('Tracks add button creates real tracks with stable defaults', (
     tester,
@@ -173,6 +223,22 @@ void main() {
     expect(find.byKey(const ValueKey('track-filter-response')), findsOneWidget);
     expect(find.text('HIGH PASS'), findsOneWidget);
     expect(find.text('LOW PASS'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('track-fx-eq-tab')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('track-eq-response')), findsOneWidget);
+    expect(find.text('3-BAND EQ'), findsNWidgets(2));
+    expect(find.text('MID FREQ'), findsOneWidget);
+    expect(find.text('Q'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('track-eq-global-toggle')));
+    await tester.pump();
+    expect(
+      container.read(editorControllerProvider).tracks.single.eqFx.enabled,
+      isTrue,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('track-fx-filter-tab')));
+    await tester.pump();
 
     await tester.tap(find.byKey(const ValueKey('filter-fx-global-toggle')));
     await tester.pump();

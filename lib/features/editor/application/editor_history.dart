@@ -92,6 +92,7 @@ class ProjectSnapshot {
           leftTrack.isMuted != rightTrack.isMuted ||
           leftTrack.isSolo != rightTrack.isSolo ||
           leftTrack.filterFx != rightTrack.filterFx ||
+          leftTrack.eqFx != rightTrack.eqFx ||
           leftTrack.clips.length != rightTrack.clips.length) {
         return false;
       }

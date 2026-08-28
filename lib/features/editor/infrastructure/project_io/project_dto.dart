@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../../domain/musical_timing.dart';
 import '../../domain/track_filter_fx.dart';
+import '../../domain/track_eq_fx.dart';
 
 const String fldawProjectFormat = 'fldawproj';
 const int fldawProjectFormatVersion = 1;
@@ -281,6 +282,7 @@ class ProjectTrackDto {
     required this.solo,
     required this.pan,
     this.filterFx = const TrackFilterFx(),
+    this.eqFx = const TrackEqFx(),
   });
 
   final String id;
@@ -292,6 +294,7 @@ class ProjectTrackDto {
   final bool solo;
   final double pan;
   final TrackFilterFx filterFx;
+  final TrackEqFx eqFx;
 
   Map<String, Object?> toJson() => {
     'id': id,
@@ -315,6 +318,14 @@ class ProjectTrackDto {
         'q': filterFx.lowPass.q,
       },
     },
+    'eq': {
+      'enabled': eqFx.enabled,
+      'lowGainDb': eqFx.lowGainDb,
+      'midGainDb': eqFx.midGainDb,
+      'midFrequencyHz': eqFx.midFrequencyHz,
+      'midQ': eqFx.midQ,
+      'highGainDb': eqFx.highGainDb,
+    },
   };
 
   factory ProjectTrackDto.fromJson(Map<String, Object?> json) =>
@@ -328,7 +339,41 @@ class ProjectTrackDto {
         solo: _requiredBool(json, 'solo'),
         pan: _boundedNumber(json, 'pan', -1, 1),
         filterFx: _trackFilterFx(json),
+        eqFx: _trackEqFx(json),
       );
+}
+
+TrackEqFx _trackEqFx(Map<String, Object?> trackJson) {
+  if (!trackJson.containsKey('eq')) return const TrackEqFx();
+  final json = _requiredMap(trackJson, 'eq');
+  return TrackEqFx(
+    enabled: _requiredBool(json, 'enabled'),
+    lowGainDb: _boundedNumber(
+      json,
+      'lowGainDb',
+      minimumEqGainDb,
+      maximumEqGainDb,
+    ),
+    midGainDb: _boundedNumber(
+      json,
+      'midGainDb',
+      minimumEqGainDb,
+      maximumEqGainDb,
+    ),
+    midFrequencyHz: _boundedNumber(
+      json,
+      'midFrequencyHz',
+      minimumEqMidFrequencyHz,
+      maximumEqMidFrequencyHz,
+    ),
+    midQ: _boundedNumber(json, 'midQ', minimumEqMidQ, maximumEqMidQ),
+    highGainDb: _boundedNumber(
+      json,
+      'highGainDb',
+      minimumEqGainDb,
+      maximumEqGainDb,
+    ),
+  );
 }
 
 TrackFilterFx _trackFilterFx(Map<String, Object?> trackJson) {

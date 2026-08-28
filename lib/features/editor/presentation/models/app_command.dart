@@ -265,6 +265,30 @@ abstract final class EditorCommands {
     ],
   );
 
+  static const trackEqFx = AppCommand(
+    title: '3-Band EQ',
+    description: 'Shape the low, mid, and high frequency balance of a track.',
+    shortcutParts: ['Track Actions', 'Track FX', '3-Band EQ'],
+    category: AppCommandCategory.mixer,
+    searchTerms: [
+      'eq',
+      'equalizer',
+      'low',
+      'mid',
+      'high',
+      'frequency',
+      'tone',
+      '3 band',
+    ],
+    usageSteps: [
+      'Open Track FX.',
+      'Select 3-Band EQ.',
+      'Enable EQ.',
+      'Adjust Low, Mid, and High gain.',
+      'Use Mid Frequency and Q to target a specific midrange area.',
+    ],
+  );
+
   static const reorderTrack = AppCommand(
     title: 'Reorder Track',
     description: 'Change the vertical order of an audio track.',
@@ -431,6 +455,7 @@ abstract final class EditorCommands {
     addAudioTrack,
     duplicateTrack,
     trackFilterFx,
+    trackEqFx,
     deleteTrack,
     reorderTrack,
     trackMixerControls,

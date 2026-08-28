@@ -1,4 +1,5 @@
 import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
+import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/project_dto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -19,6 +20,8 @@ void main() {
 
     expect(track.filterFx, const TrackFilterFx());
     expect(track.filterFx.isProcessing, isFalse);
+    expect(track.eqFx, const TrackEqFx());
+    expect(track.eqFx.isProcessing, isFalse);
   });
 
   test('Filter FX metadata round-trips all authoritative values', () {
@@ -36,10 +39,19 @@ void main() {
         highPass: TrackFilterModule(enabled: true, frequencyHz: 120, q: 1.2),
         lowPass: TrackFilterModule(enabled: true, frequencyHz: 14200, q: 2.4),
       ),
+      eqFx: const TrackEqFx(
+        enabled: true,
+        lowGainDb: 3.5,
+        midGainDb: -4,
+        midFrequencyHz: 1450,
+        midQ: 2.2,
+        highGainDb: 1.5,
+      ),
     );
 
     final restored = ProjectTrackDto.fromJson(original.toJson());
 
     expect(restored.filterFx, original.filterFx);
+    expect(restored.eqFx, original.eqFx);
   });
 }

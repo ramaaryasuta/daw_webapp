@@ -8,6 +8,7 @@ import 'package:daw_webapp/features/editor/domain/audio_asset.dart';
 import 'package:daw_webapp/features/editor/domain/audio_clip.dart';
 import 'package:daw_webapp/features/editor/domain/daw_track.dart';
 import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
+import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
 import 'package:daw_webapp/features/editor/infrastructure/audio_mixdown_service.dart';
 import 'package:daw_webapp/features/editor/infrastructure/wav_encoder.dart';
 import 'package:daw_webapp/features/editor/infrastructure/web_audio_engine.dart';
@@ -56,6 +57,7 @@ void main() {
     double fadeIn = 0,
     double fadeOut = 0,
     TrackFilterFx filterFx = const TrackFilterFx(),
+    TrackEqFx eqFx = const TrackEqFx(),
   }) {
     return DawTrack(
       id: id,
@@ -65,6 +67,7 @@ void main() {
       isMuted: isMuted,
       isSolo: isSolo,
       filterFx: filterFx,
+      eqFx: eqFx,
       clips: [
         AudioClip(
           id: 'clip-$id',
@@ -281,6 +284,76 @@ void main() {
       engine.pause();
     },
   );
+
+  test('offline WAV applies 3-Band EQ and its global bypass', () async {
+    final frameCount = sampleRate * durationSeconds ~/ 1;
+    final tone = Float32List(frameCount);
+    for (var index = 0; index < frameCount; index++) {
+      tone[index] = 0.1 * math.sin(2 * math.pi * 1000 * index / sampleRate);
+    }
+    final bytes = WavEncoder.encodePcm16(
+      channels: [tone, tone],
+      sampleRate: sampleRate,
+    );
+    final decoded = await engine.decode(assetId: 'asset-eq', bytes: bytes);
+    asset = AudioAsset(
+      id: 'asset-eq',
+      name: 'eq.wav',
+      extension: 'wav',
+      size: bytes.length,
+      durationSeconds: decoded.durationSeconds,
+      sampleRate: decoded.sampleRate,
+      numberOfChannels: decoded.numberOfChannels,
+      waveformPeaks: decoded.waveformPeaks,
+    );
+    final dry = _leftChannelRms(
+      (await mixdown.generateWavExport([track('eq-dry')])).wavBytes,
+    );
+    const boostedEq = TrackEqFx(
+      enabled: true,
+      midGainDb: 6,
+      midFrequencyHz: 1000,
+      midQ: 2,
+    );
+    final boosted = _leftChannelRms(
+      (await mixdown.generateWavExport([
+        track('eq-boost', eqFx: boostedEq),
+      ])).wavBytes,
+    );
+    final bypassed = _leftChannelRms(
+      (await mixdown.generateWavExport([
+        track('eq-bypass', eqFx: boostedEq.copyWith(enabled: false)),
+      ])).wavBytes,
+    );
+
+    expect(boosted / dry, closeTo(math.pow(10, 6 / 20), 0.08));
+    expect(bypassed / dry, closeTo(1, 0.01));
+  });
+
+  test('live EQ changes keep transport running at its playhead', () async {
+    final dryTrack = track('live-eq');
+    await engine.play(tracks: [dryTrack], fromSeconds: 0);
+    await Future<void>.delayed(const Duration(milliseconds: 15));
+    final before = engine.currentPositionSeconds;
+
+    engine.syncTrackEqFx([
+      dryTrack.copyWith(
+        eqFx: const TrackEqFx(
+          enabled: true,
+          lowGainDb: 3,
+          midGainDb: -2,
+          midFrequencyHz: 1800,
+          midQ: 2.5,
+          highGainDb: 4,
+        ),
+      ),
+    ]);
+    final after = engine.currentPositionSeconds;
+
+    expect(engine.isPlaying, isTrue);
+    expect(after, greaterThanOrEqualTo(before));
+    engine.pause();
+  });
 
   test('offline WAV reverses only the trimmed visible source range', () async {
     final frameCount = sampleRate * durationSeconds ~/ 1;
