@@ -23,6 +23,7 @@ import '../infrastructure/project_io/fldaw_project_codec.dart';
 import '../infrastructure/project_io/project_dto.dart';
 import 'editor_clipboard.dart';
 import 'editor_history.dart';
+import 'project_id_generator.dart';
 import 'snap_controller.dart';
 import 'tempo_controller.dart';
 import 'track_duplication.dart';
@@ -227,11 +228,6 @@ Set<String> _immutableClipSelection(
 }
 
 class EditorController extends Notifier<EditorState> {
-  int _trackCounter = 0;
-  int _assetCounter = 0;
-  int _clipCounter = 0;
-  int _markerCounter = 0;
-  int _sectionCounter = 0;
   int _clipEditRequestId = 0;
 
   ProjectSnapshot? _tempoEditStartSnapshot;
@@ -261,6 +257,7 @@ class EditorController extends Notifier<EditorState> {
   Timer? _playheadTimer;
 
   WebAudioEngine get _audioEngine => ref.read(webAudioEngineProvider);
+  ProjectIdGenerator get _idGenerator => ref.read(projectIdGeneratorProvider);
 
   @override
   EditorState build() {
@@ -552,12 +549,9 @@ class EditorController extends Notifier<EditorState> {
     final failedFiles = <String>[];
 
     for (final file in files) {
-      _clipCounter++;
-
       final assetId = _nextAssetId();
-
       final trackId = _nextTrackId();
-      final clipId = 'clip-$_clipCounter';
+      final clipId = _nextClipId();
 
       try {
         final decoded = await _audioEngine.decode(
@@ -582,7 +576,9 @@ class EditorController extends Notifier<EditorState> {
           DawTrack(
             id: trackId,
             name: file.name,
-            colorValue: defaultTrackColorForIndex(_trackCounter - 1),
+            colorValue: defaultTrackColorForIndex(
+              state.tracks.length + newTracks.length,
+            ),
             clips: [
               AudioClip(
                 id: clipId,
@@ -623,6 +619,10 @@ class EditorController extends Notifier<EditorState> {
     void Function(int completed, int total)? onSourceProgress,
     bool recoveredAutosave = false,
   }) async {
+    // Reject malformed identity/reference graphs before decoding audio or
+    // changing the current project. Archive Open and IndexedDB Recovery both
+    // enter through this transaction gate.
+    document.manifest.validateIntegrity();
     final prepared = await _audioEngine.prepareAudioSources(
       document.audioBytesBySourceId,
       onProgress: onSourceProgress,
@@ -661,6 +661,15 @@ class EditorController extends Notifier<EditorState> {
       document.manifest,
       assets,
     );
+
+    _idGenerator.reserveIds([
+      for (final track in restored.tracks) ...[
+        track.id,
+        for (final clip in track.clips) ...[clip.id, clip.audio.id],
+      ],
+      for (final marker in restored.markers) marker.id,
+      for (final section in restored.sections) section.id,
+    ]);
 
     // This is the transaction boundary: every archive entry has been read,
     // decoded, and converted to immutable project state before old state ends.
@@ -720,14 +729,12 @@ class EditorController extends Notifier<EditorState> {
   }
 
   String _nextAssetId() {
-    final existingIds = {
-      for (final track in state.tracks)
-        for (final clip in track.clips) clip.audio.id,
-    };
-    do {
-      _assetCounter++;
-    } while (existingIds.contains('asset-$_assetCounter'));
-    return 'asset-$_assetCounter';
+    return _idGenerator.newSourceId(
+      reservedIds: {
+        for (final track in state.tracks)
+          for (final clip in track.clips) clip.audio.id,
+      },
+    );
   }
 
   String addTrack() {
@@ -736,7 +743,7 @@ class EditorController extends Notifier<EditorState> {
     final track = DawTrack(
       id: trackId,
       name: _nextDefaultTrackName(),
-      colorValue: defaultTrackColorForIndex(_trackCounter - 1),
+      colorValue: defaultTrackColorForIndex(state.tracks.length),
       clips: const [],
     );
 
@@ -816,11 +823,9 @@ class EditorController extends Notifier<EditorState> {
   }
 
   String _nextTrackId() {
-    final existingIds = state.tracks.map((track) => track.id).toSet();
-    do {
-      _trackCounter++;
-    } while (existingIds.contains('track-$_trackCounter'));
-    return 'track-$_trackCounter';
+    return _idGenerator.newTrackId(
+      reservedIds: state.tracks.map((track) => track.id),
+    );
   }
 
   String _nextDefaultTrackName() {
@@ -1210,11 +1215,9 @@ class EditorController extends Notifier<EditorState> {
   }
 
   String _nextMarkerId() {
-    final existingIds = state.markers.map((marker) => marker.id).toSet();
-    do {
-      _markerCounter++;
-    } while (existingIds.contains('marker-$_markerCounter'));
-    return 'marker-$_markerCounter';
+    return _idGenerator.newMarkerId(
+      reservedIds: state.markers.map((marker) => marker.id),
+    );
   }
 
   String _nextDefaultMarkerName() {
@@ -1429,11 +1432,9 @@ class EditorController extends Notifier<EditorState> {
   }
 
   String _nextSectionId() {
-    final existingIds = state.sections.map((section) => section.id).toSet();
-    do {
-      _sectionCounter++;
-    } while (existingIds.contains('section-$_sectionCounter'));
-    return 'section-$_sectionCounter';
+    return _idGenerator.newSectionId(
+      reservedIds: state.sections.map((section) => section.id),
+    );
   }
 
   String _nextDefaultSectionName() {
@@ -2323,16 +2324,12 @@ class EditorController extends Notifier<EditorState> {
   }
 
   String _nextClipId() {
-    final existingIds = {
-      for (final track in state.tracks)
-        for (final clip in track.clips) clip.id,
-    };
-
-    do {
-      _clipCounter++;
-    } while (existingIds.contains('clip-$_clipCounter'));
-
-    return 'clip-$_clipCounter';
+    return _idGenerator.newClipId(
+      reservedIds: {
+        for (final track in state.tracks)
+          for (final clip in track.clips) clip.id,
+      },
+    );
   }
 
   static List<AudioClip> _orderedClips(Iterable<AudioClip> clips) {

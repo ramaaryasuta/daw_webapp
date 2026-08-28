@@ -41,6 +41,7 @@ dependencies:
   web: ^1.1.1
   just_audio: ^0.10.6
   archive: ^4.0.9
+  uuid: ^4.6.0
 
 dev_dependencies:
   flutter_test:

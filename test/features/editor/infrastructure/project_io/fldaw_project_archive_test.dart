@@ -239,6 +239,25 @@ void main() {
     );
   });
 
+  test('manifest rejects duplicate persistent IDs with a clear error', () {
+    final manifest = _emptyManifest();
+    (manifest['tracks']! as List<Object?>).addAll([
+      _trackJson(id: 'track-1', order: 0),
+      _trackJson(id: 'track-1', order: 1),
+    ]);
+
+    expect(
+      () => FldawProjectManifest.fromJson(manifest),
+      throwsA(
+        isA<FldawProjectException>().having(
+          (error) => error.userMessage,
+          'userMessage',
+          contains('duplicate object identifiers'),
+        ),
+      ),
+    );
+  });
+
   test('archive rejects corrupt bytes and ZIPs without project.json', () {
     expect(
       () => projectArchive.decode(Uint8List.fromList([1, 2, 3, 4])),
@@ -321,6 +340,17 @@ Map<String, Object?> _emptyManifest() => {
   'clips': <Object?>[],
   'markers': <Object?>[],
   'audioSources': <Object?>[],
+};
+
+Map<String, Object?> _trackJson({required String id, required int order}) => {
+  'id': id,
+  'order': order,
+  'name': id,
+  'colorArgb': 0xff527ac2,
+  'volumeDb': 0,
+  'mute': false,
+  'solo': false,
+  'pan': 0,
 };
 
 Uint8List _zipWithManifest(Map<String, Object?> manifest) {

@@ -104,16 +104,24 @@ class FldawProjectManifest {
         ProjectAudioSourceDto.fromJson,
       ),
     );
-    manifest._validateRelationships();
+    manifest.validateIntegrity();
     return manifest;
   }
 
-  void _validateRelationships() {
-    _requireUnique(tracks.map((track) => track.id), 'track ID');
-    _requireUnique(clips.map((clip) => clip.id), 'clip ID');
-    _requireUnique(markers.map((marker) => marker.id), 'marker ID');
-    _requireUnique(sections.map((section) => section.id), 'section ID');
-    _requireUnique(audioSources.map((source) => source.sourceId), 'source ID');
+  /// Performs the full persistent-identity and reference audit used by Save,
+  /// archive Open, and IndexedDB Recovery.
+  void validateIntegrity() {
+    _requireUniqueObjectIds(tracks.map((track) => track.id), 'track ID');
+    _requireUniqueObjectIds(clips.map((clip) => clip.id), 'clip ID');
+    _requireUniqueObjectIds(markers.map((marker) => marker.id), 'marker ID');
+    _requireUniqueObjectIds(
+      sections.map((section) => section.id),
+      'section ID',
+    );
+    _requireUniqueObjectIds(
+      audioSources.map((source) => source.sourceId),
+      'source ID',
+    );
     _requireUnique(
       audioSources.map((source) => source.archivePath),
       'audio archive path',
@@ -578,6 +586,19 @@ void _requireUnique(Iterable<String> values, String label) {
   for (final value in values) {
     if (!seen.add(value)) {
       _invalid('Duplicate $label: $value.');
+    }
+  }
+}
+
+void _requireUniqueObjectIds(Iterable<String> values, String label) {
+  final seen = <String>{};
+  for (final value in values) {
+    if (!seen.add(value)) {
+      throw FldawProjectException(
+        'Duplicate $label: $value.',
+        userMessage:
+            'The project contains duplicate object identifiers and cannot be loaded safely.',
+      );
     }
   }
 }
