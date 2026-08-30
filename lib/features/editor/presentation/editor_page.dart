@@ -7,7 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../app/router/route_names.dart';
 import '../application/editor_controller.dart';
 import '../application/snap_controller.dart';
 import '../application/tempo_controller.dart';
@@ -18,8 +20,8 @@ import '../domain/timeline_snapper.dart';
 import '../infrastructure/audio_import_service.dart';
 import '../infrastructure/audio_mixdown_service.dart';
 import '../infrastructure/browser_before_unload.dart';
-import '../infrastructure/project_io/fldaw_project_codec.dart';
-import '../infrastructure/project_io/fldaw_project_io_service.dart';
+import '../infrastructure/project_io/flaudio_project_codec.dart';
+import '../infrastructure/project_io/flaudio_project_io_service.dart';
 import '../infrastructure/project_io/project_autosave_store.dart';
 import '../infrastructure/project_io/project_dto.dart';
 import '../infrastructure/web_audio_engine.dart';
@@ -386,10 +388,10 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     );
   }
 
-  FldawProjectSnapshot _createProjectSnapshot({String? projectName}) {
+  FlaudioProjectSnapshot _createProjectSnapshot({String? projectName}) {
     final editor = ref.read(editorControllerProvider);
     final tempo = ref.read(tempoControllerProvider);
-    return FldawProjectSnapshot(
+    return FlaudioProjectSnapshot(
       name: projectName ?? editor.projectName,
       bpm: tempo.bpm,
       timeSignature: tempo.timeSignature,
@@ -417,7 +419,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       return;
     }
     final snapshot = _createProjectSnapshot(projectName: projectName);
-    final io = ref.read(fldawProjectIoServiceProvider);
+    final io = ref.read(flaudioProjectIoServiceProvider);
     final progress = ValueNotifier(
       ProjectOperationProgress(
         title: 'Saving Project',
@@ -463,7 +465,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       if (mounted) {
         await _showProjectError(
           title: 'Unable to Save Project',
-          message: error is FldawProjectException
+          message: error is FlaudioProjectException
               ? error.userMessage
               : 'The project could not be packaged.',
         );
@@ -483,8 +485,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     if (_isProjectOperationInProgress) {
       return;
     }
-    final io = ref.read(fldawProjectIoServiceProvider);
-    PickedFldawProject? picked;
+    final io = ref.read(flaudioProjectIoServiceProvider);
+    PickedFlaudioProject? picked;
     try {
       picked = await io.pickProjectFile();
     } catch (error, stackTrace) {
@@ -564,7 +566,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       if (mounted) {
         await _showProjectError(
           title: 'Unable to Open Project',
-          message: error is FldawProjectException
+          message: error is FlaudioProjectException
               ? error.userMessage
               : 'One or more required audio sources could not be restored.',
         );
@@ -618,7 +620,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       _autosaveError = null;
     });
     try {
-      final document = const FldawProjectCodec().encodeSnapshot(
+      final document = const FlaudioProjectCodec().encodeSnapshot(
         _createProjectSnapshot(),
       );
       await ref.read(projectAutosaveStoreProvider).saveDocument(document);
@@ -758,7 +760,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   Future<bool> _showRecoveryFailure(Object error) async {
     final message = switch (error) {
       ProjectAutosaveException(:final message) => message,
-      FldawProjectException(:final userMessage) => userMessage,
+      FlaudioProjectException(:final userMessage) => userMessage,
       _ => 'The autosaved project could not be restored.',
     };
     return await showDialog<bool>(
@@ -793,7 +795,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
               constraints: const BoxConstraints(maxWidth: 360),
               child: const Text(
                 'This project has changes that have not been saved to a '
-                '.fldawproj file.',
+                '.flaudioproject file.',
               ),
             ),
             actions: [
@@ -804,6 +806,45 @@ class _EditorPageState extends ConsumerState<EditorPage> {
               FilledButton(
                 onPressed: () => Navigator.of(context).pop(true),
                 child: const Text('Continue'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Future<void> _backToMainPage() async {
+    if (_isProjectOperationInProgress) return;
+    if (ref.read(editorControllerProvider).hasUnsavedChanges) {
+      final shouldLeave = await _confirmLeaveEditor();
+      if (!shouldLeave || !mounted) return;
+    }
+    ref.read(editorControllerProvider.notifier).pause();
+    Tooltip.dismissAllToolTips();
+    if (mounted) context.goNamed(RouteNames.home);
+  }
+
+  Future<bool> _confirmLeaveEditor() async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            key: const ValueKey('leave-editor-dialog'),
+            title: const Text('Leave Editor?'),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 360),
+              child: const Text(
+                'You have changes that have not been saved to a Flaudio '
+                'project file.',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Leave'),
               ),
             ],
           ),
@@ -905,6 +946,13 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         label: 'File',
         actions: [
           EditorMenuAction(
+            label: 'Import Audio...',
+            icon: Icons.library_music_outlined,
+            onSelected: isImporting || _isProjectOperationInProgress
+                ? null
+                : _pickAudioFiles,
+          ),
+          EditorMenuAction(
             label: 'Open Project...',
             icon: Icons.folder_open_outlined,
             onSelected: _isProjectOperationInProgress ? null : _openProject,
@@ -915,20 +963,18 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             onSelected: _isProjectOperationInProgress ? null : _saveProject,
           ),
           EditorMenuAction(
-            label: 'Import Audio...',
-            icon: Icons.library_music_outlined,
-            separatorBefore: true,
-            onSelected: isImporting || _isProjectOperationInProgress
-                ? null
-                : _pickAudioFiles,
-          ),
-          EditorMenuAction(
             label: 'Export...',
             icon: Icons.download_outlined,
             onSelected:
                 isImporting || _isProjectOperationInProgress || !hasTracks
                 ? null
                 : _openExportDialog,
+          ),
+          EditorMenuAction(
+            label: 'Back to Main Page',
+            icon: Icons.arrow_back_outlined,
+            separatorBefore: true,
+            onSelected: _isProjectOperationInProgress ? null : _backToMainPage,
           ),
         ],
       ),

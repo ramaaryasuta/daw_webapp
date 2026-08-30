@@ -34,10 +34,13 @@ void main() {
     expect(save.shortcutParts, ['File', 'Save Project...']);
     expect(
       save.description,
-      'Save the project and its audio sources as a portable .fldawproj file.',
+      'Save the project and its audio sources as a portable Flaudio Project (.flaudioproject).',
     );
     expect(open.shortcutParts, ['File', 'Open Project...']);
-    expect(open.description, 'Open a portable .fldawproj project file.');
+    expect(
+      open.description,
+      'Open a portable Flaudio Project (.flaudioproject).',
+    );
   });
 
   test('Help commands define marker gestures once', () {
@@ -221,6 +224,8 @@ void main() {
     );
 
     expect(command.shortcutParts, ['Track Actions', 'Track FX']);
+    expect(command.tip, contains('Shift'));
+    expect(command.tip, contains('Double-click'));
     expect(
       command.searchTerms,
       containsAll(['filter', 'fx', 'high pass', 'low pass', 'resonance']),

@@ -14,11 +14,11 @@ class HomePage extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
-              'Flutter DAW',
+              'Flaudio',
               style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            const Text('Simple Digital Audio Workstation'),
+            const Text('Digital Audio Workstation'),
             const SizedBox(height: 32),
             FilledButton.icon(
               onPressed: () {

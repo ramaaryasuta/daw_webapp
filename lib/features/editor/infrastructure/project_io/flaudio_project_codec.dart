@@ -12,8 +12,8 @@ import '../../domain/timeline_section.dart';
 import '../../presentation/models/timeline_ruler_mode.dart';
 import 'project_dto.dart';
 
-class FldawProjectSnapshot {
-  const FldawProjectSnapshot({
+class FlaudioProjectSnapshot {
+  const FlaudioProjectSnapshot({
     required this.name,
     required this.bpm,
     this.timeSignature = defaultTimeSignature,
@@ -53,18 +53,18 @@ class FldawProjectSnapshot {
   }
 }
 
-class FldawProjectDocument {
-  const FldawProjectDocument({
+class FlaudioProjectDocument {
+  const FlaudioProjectDocument({
     required this.manifest,
     required this.audioBytesBySourceId,
   });
 
-  final FldawProjectManifest manifest;
+  final FlaudioProjectManifest manifest;
   final Map<String, Uint8List> audioBytesBySourceId;
 }
 
-class RestoredFldawProject {
-  const RestoredFldawProject({
+class RestoredFlaudioProject {
+  const RestoredFlaudioProject({
     required this.name,
     required this.bpm,
     this.timeSignature = defaultTimeSignature,
@@ -91,23 +91,23 @@ class RestoredFldawProject {
   final List<TimelineSection> sections;
 }
 
-class FldawProjectCodec {
-  const FldawProjectCodec();
+class FlaudioProjectCodec {
+  const FlaudioProjectCodec();
 
-  FldawProjectDocument encodeSnapshot(FldawProjectSnapshot snapshot) {
+  FlaudioProjectDocument encodeSnapshot(FlaudioProjectSnapshot snapshot) {
     final assets = <String, AudioAsset>{};
     for (final track in snapshot.tracks) {
       for (final clip in track.clips) {
         final previous = assets[clip.audio.id];
         if (previous != null && !identical(previous, clip.audio)) {
-          throw FldawProjectException(
+          throw FlaudioProjectException(
             'Source ID ${clip.audio.id} is represented by multiple assets.',
             userMessage: 'The project contains conflicting audio sources.',
           );
         }
         assets[clip.audio.id] = clip.audio;
         if (clip.sourceEndSeconds > clip.audio.durationSeconds + 0.001) {
-          throw FldawProjectException(
+          throw FlaudioProjectException(
             'Clip ${clip.id} extends beyond source ${clip.audio.id}.',
             userMessage: 'The project contains an invalid audio clip.',
           );
@@ -121,7 +121,7 @@ class FldawProjectCodec {
     for (final asset in assets.values) {
       final bytes = asset.sourceBytes;
       if (bytes == null || bytes.isEmpty) {
-        throw FldawProjectException(
+        throw FlaudioProjectException(
           'Source ${asset.id} does not retain original bytes.',
           userMessage:
               'One or more audio sources cannot be packaged. Re-import the audio and try again.',
@@ -145,7 +145,7 @@ class FldawProjectCodec {
       );
     }
 
-    final manifest = FldawProjectManifest(
+    final manifest = FlaudioProjectManifest(
       project: ProjectSettingsDto(
         name: _projectName(snapshot.name),
         bpm: snapshot.bpm,
@@ -214,15 +214,15 @@ class FldawProjectCodec {
     );
 
     // Run the same strict validator used by Open before writing anything.
-    final validated = FldawProjectManifest.fromJson(manifest.toJson());
-    return FldawProjectDocument(
+    final validated = FlaudioProjectManifest.fromJson(manifest.toJson());
+    return FlaudioProjectDocument(
       manifest: validated,
       audioBytesBySourceId: Map.unmodifiable(bytesBySourceId),
     );
   }
 
-  RestoredFldawProject restore(
-    FldawProjectManifest manifest,
+  RestoredFlaudioProject restore(
+    FlaudioProjectManifest manifest,
     Map<String, AudioAsset> assets,
   ) {
     final expectedSourceIds = manifest.audioSources
@@ -230,7 +230,7 @@ class FldawProjectCodec {
         .toSet();
     if (assets.length != expectedSourceIds.length ||
         !assets.keys.toSet().containsAll(expectedSourceIds)) {
-      throw const FldawProjectException(
+      throw const FlaudioProjectException(
         'Not all decoded audio assets were supplied.',
         userMessage:
             'One or more required audio sources could not be restored.',
@@ -253,7 +253,7 @@ class FldawProjectCodec {
         final asset = assets[clip.sourceId]!;
         if (clip.sourceStartSeconds + clip.clipDurationSeconds >
             asset.durationSeconds + 0.001) {
-          throw FldawProjectException(
+          throw FlaudioProjectException(
             'Clip ${clip.id} extends beyond decoded source ${asset.id}.',
             userMessage: 'The project contains an invalid audio clip.',
           );
@@ -296,7 +296,7 @@ class FldawProjectCodec {
             startSeconds: settings.loopStartSeconds!,
             endSeconds: settings.loopEndSeconds!,
           );
-    return RestoredFldawProject(
+    return RestoredFlaudioProject(
       name: settings.name,
       bpm: settings.bpm,
       timeSignature: settings.timeSignature,
@@ -335,7 +335,7 @@ class FldawProjectCodec {
 String _safeExtension(String extension) {
   final normalized = extension.toLowerCase().replaceFirst('.', '');
   if (!const {'wav', 'mp3'}.contains(normalized)) {
-    throw FldawProjectException(
+    throw FlaudioProjectException(
       'Unsupported source extension: $extension.',
       userMessage: 'The project contains an unsupported audio source.',
     );
@@ -355,7 +355,7 @@ String _uniqueArchivePath(
   if (!usedPaths.add(path)) {
     path = 'audio/${safeId}_${_stableIdHash(utf8.encode(sourceId))}.$extension';
     if (!usedPaths.add(path)) {
-      throw const FldawProjectException(
+      throw const FlaudioProjectException(
         'Unable to create unique source archive paths.',
         userMessage: 'The project contains conflicting audio sources.',
       );

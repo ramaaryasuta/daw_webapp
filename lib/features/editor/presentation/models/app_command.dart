@@ -9,6 +9,10 @@ enum AppCommandCategory {
   final String label;
 }
 
+const _trackFxKnobTip =
+    'Drag knobs vertically to adjust. Hold Shift while dragging for fine '
+    'control. Double-click a knob to reset it.';
+
 class AppCommand {
   const AppCommand({
     required this.title,
@@ -35,14 +39,14 @@ abstract final class EditorCommands {
   static const saveProject = AppCommand(
     title: 'Save Project',
     description:
-        'Save the project and its audio sources as a portable .fldawproj file.',
+        'Save the project and its audio sources as a portable Flaudio Project (.flaudioproject).',
     shortcutParts: ['File', 'Save Project...'],
     category: AppCommandCategory.file,
   );
 
   static const openProject = AppCommand(
     title: 'Open Project',
-    description: 'Open a portable .fldawproj project file.',
+    description: 'Open a portable Flaudio Project (.flaudioproject).',
     shortcutParts: ['File', 'Open Project...'],
     category: AppCommandCategory.file,
   );
@@ -263,6 +267,7 @@ abstract final class EditorCommands {
       'Adjust Resonance (Q) around the cutoff.',
       'Use the global FILTER bypass to compare processed and unprocessed audio.',
     ],
+    tip: _trackFxKnobTip,
   );
 
   static const trackEqFx = AppCommand(
@@ -287,6 +292,7 @@ abstract final class EditorCommands {
       'Adjust Low, Mid, and High gain.',
       'Use Mid Frequency and Q to target a specific midrange area.',
     ],
+    tip: _trackFxKnobTip,
   );
 
   static const trackCompressor = AppCommand(
@@ -313,6 +319,7 @@ abstract final class EditorCommands {
       'Adjust Attack and Release for response speed.',
       'Use Makeup Gain to restore output level.',
     ],
+    tip: _trackFxKnobTip,
   );
 
   static const reorderTrack = AppCommand(

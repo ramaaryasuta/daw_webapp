@@ -21,7 +21,7 @@ import '../domain/track_eq_fx.dart';
 import '../domain/track_compressor_fx.dart';
 import '../domain/timeline_snapper.dart';
 import '../infrastructure/web_audio_engine.dart';
-import '../infrastructure/project_io/fldaw_project_codec.dart';
+import '../infrastructure/project_io/flaudio_project_codec.dart';
 import '../infrastructure/project_io/project_dto.dart';
 import 'editor_clipboard.dart';
 import 'editor_history.dart';
@@ -630,8 +630,8 @@ class EditorController extends Notifier<EditorState> {
 
   /// Decodes and validates an opened project completely before replacing the
   /// current arrangement or its runtime audio graph.
-  Future<RestoredFldawProject> openProjectDocument(
-    FldawProjectDocument document, {
+  Future<RestoredFlaudioProject> openProjectDocument(
+    FlaudioProjectDocument document, {
     void Function(int completed, int total)? onSourceProgress,
     bool recoveredAutosave = false,
   }) async {
@@ -652,7 +652,7 @@ class EditorController extends Notifier<EditorState> {
       final metadata = sourceMetadata[entry.key];
       final bytes = document.audioBytesBySourceId[entry.key];
       if (metadata == null || bytes == null) {
-        throw const FldawProjectException(
+        throw const FlaudioProjectException(
           'Decoded source metadata is incomplete.',
           userMessage:
               'One or more required audio sources could not be restored.',
@@ -673,7 +673,7 @@ class EditorController extends Notifier<EditorState> {
       );
     }
 
-    final restored = const FldawProjectCodec().restore(
+    final restored = const FlaudioProjectCodec().restore(
       document.manifest,
       assets,
     );

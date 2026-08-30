@@ -5,7 +5,7 @@ import 'package:daw_webapp/features/editor/application/editor_controller.dart';
 import 'package:daw_webapp/features/editor/application/tempo_controller.dart';
 import 'package:daw_webapp/features/editor/domain/musical_timing.dart';
 import 'package:daw_webapp/features/editor/domain/snap_settings.dart';
-import 'package:daw_webapp/features/editor/infrastructure/project_io/fldaw_project_codec.dart';
+import 'package:daw_webapp/features/editor/infrastructure/project_io/flaudio_project_codec.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/project_autosave_store.dart';
 import 'package:daw_webapp/features/editor/presentation/models/timeline_ruler_mode.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/time_signature_control.dart';
@@ -60,8 +60,8 @@ void main() {
     addTearDown(store.discardRecovery);
     await store.discardRecovery();
 
-    final document = const FldawProjectCodec().encodeSnapshot(
-      const FldawProjectSnapshot(
+    final document = const FlaudioProjectCodec().encodeSnapshot(
+      const FlaudioProjectSnapshot(
         name: 'Meter Recovery',
         bpm: 120,
         timeSignature: TimeSignature.sixEight,

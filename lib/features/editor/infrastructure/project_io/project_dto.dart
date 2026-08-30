@@ -5,21 +5,22 @@ import '../../domain/track_filter_fx.dart';
 import '../../domain/track_eq_fx.dart';
 import '../../domain/track_compressor_fx.dart';
 
-const String fldawProjectFormat = 'fldawproj';
-const int fldawProjectFormatVersion = 1;
+const String flaudioProjectFormat = 'flaudioproject';
+const String projectFileExtension = '.$flaudioProjectFormat';
+const int flaudioProjectFormatVersion = 1;
 
-class FldawProjectException implements Exception {
-  const FldawProjectException(this.message, {required this.userMessage});
+class FlaudioProjectException implements Exception {
+  const FlaudioProjectException(this.message, {required this.userMessage});
 
   final String message;
   final String userMessage;
 
   @override
-  String toString() => 'FldawProjectException: $message';
+  String toString() => 'FlaudioProjectException: $message';
 }
 
-class FldawProjectManifest {
-  const FldawProjectManifest({
+class FlaudioProjectManifest {
+  const FlaudioProjectManifest({
     required this.project,
     required this.tracks,
     required this.clips,
@@ -36,8 +37,8 @@ class FldawProjectManifest {
   final List<ProjectAudioSourceDto> audioSources;
 
   Map<String, Object?> toJson() => {
-    'format': fldawProjectFormat,
-    'formatVersion': fldawProjectFormatVersion,
+    'format': flaudioProjectFormat,
+    'formatVersion': flaudioProjectFormatVersion,
     'project': project.toJson(),
     'tracks': [for (final track in tracks) track.toJson()],
     'clips': [for (final clip in clips) clip.toJson()],
@@ -48,49 +49,49 @@ class FldawProjectManifest {
 
   String encodeJson() => jsonEncode(toJson());
 
-  factory FldawProjectManifest.decodeJson(String source) {
+  factory FlaudioProjectManifest.decodeJson(String source) {
     Object? decoded;
     try {
       decoded = jsonDecode(source);
     } on FormatException catch (error) {
-      throw FldawProjectException(
+      throw FlaudioProjectException(
         'project.json is not valid JSON: $error',
         userMessage: 'The project metadata is invalid or corrupt.',
       );
     }
     if (decoded is! Map<String, Object?>) {
-      throw const FldawProjectException(
+      throw const FlaudioProjectException(
         'project.json root must be an object.',
         userMessage: 'The project metadata is invalid or corrupt.',
       );
     }
-    return FldawProjectManifest.fromJson(decoded);
+    return FlaudioProjectManifest.fromJson(decoded);
   }
 
-  factory FldawProjectManifest.fromJson(Map<String, Object?> json) {
+  factory FlaudioProjectManifest.fromJson(Map<String, Object?> json) {
     final format = _requiredString(json, 'format');
-    if (format != fldawProjectFormat) {
-      throw const FldawProjectException(
-        'Manifest format is not fldawproj.',
-        userMessage: 'The selected file is not an FLDAW project.',
+    if (format != flaudioProjectFormat) {
+      throw const FlaudioProjectException(
+        'Manifest format identifier is invalid.',
+        userMessage: 'This file is not a valid Flaudio project.',
       );
     }
     final version = _requiredInt(json, 'formatVersion');
-    if (version > fldawProjectFormatVersion) {
-      throw const FldawProjectException(
+    if (version > flaudioProjectFormatVersion) {
+      throw const FlaudioProjectException(
         'Manifest uses a newer format version.',
         userMessage:
-            'This project was created with a newer FLDAW project format.',
+            'This project was created with a newer Flaudio project format.',
       );
     }
-    if (version != fldawProjectFormatVersion) {
-      throw FldawProjectException(
+    if (version != flaudioProjectFormatVersion) {
+      throw FlaudioProjectException(
         'Unsupported format version: $version.',
-        userMessage: 'This FLDAW project format is not supported.',
+        userMessage: 'This Flaudio project format is not supported.',
       );
     }
 
-    final manifest = FldawProjectManifest(
+    final manifest = FlaudioProjectManifest(
       project: ProjectSettingsDto.fromJson(_requiredMap(json, 'project')),
       tracks: _objectList(json, 'tracks', ProjectTrackDto.fromJson),
       clips: _objectList(json, 'clips', ProjectClipDto.fromJson),
@@ -691,7 +692,7 @@ void _requireUniqueObjectIds(Iterable<String> values, String label) {
   final seen = <String>{};
   for (final value in values) {
     if (!seen.add(value)) {
-      throw FldawProjectException(
+      throw FlaudioProjectException(
         'Duplicate $label: $value.',
         userMessage:
             'The project contains duplicate object identifiers and cannot be loaded safely.',
@@ -723,7 +724,7 @@ List<T> _objectList<T>(
       if (item is Map<String, Object?>)
         decode(item)
       else
-        throw FldawProjectException(
+        throw FlaudioProjectException(
           '$key contains a non-object value.',
           userMessage: 'The project metadata is invalid or corrupt.',
         ),
@@ -853,7 +854,7 @@ double _boundedNumber(
   return value;
 }
 
-Never _invalid(String message) => throw FldawProjectException(
+Never _invalid(String message) => throw FlaudioProjectException(
   message,
   userMessage: 'The project metadata is invalid or corrupt.',
 );

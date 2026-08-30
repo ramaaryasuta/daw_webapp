@@ -3,11 +3,11 @@ import 'dart:typed_data';
 
 import 'package:web/web.dart' as web;
 
-void downloadFldawProject(Uint8List bytes, String fileName) {
+void downloadFlaudioProject(Uint8List bytes, String fileName) {
   final objectUrl = web.URL.createObjectURL(
     web.Blob(
       <JSAny>[bytes.toJS].toJS,
-      web.BlobPropertyBag(type: 'application/vnd.fldaw.project+zip'),
+      web.BlobPropertyBag(type: 'application/vnd.flaudio.project+zip'),
     ),
   );
   try {

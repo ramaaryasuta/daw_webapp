@@ -7,6 +7,7 @@ import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
 import 'package:daw_webapp/features/editor/presentation/editor_page.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/audio_level_meter.dart';
+import 'package:daw_webapp/features/editor/presentation/widgets/daw_interaction_hint.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/track_header.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/track_list.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/timeline_ruler.dart';
@@ -223,6 +224,14 @@ void main() {
     expect(find.byKey(const ValueKey('track-filter-response')), findsOneWidget);
     expect(find.text('HIGH PASS'), findsOneWidget);
     expect(find.text('LOW PASS'), findsOneWidget);
+    expect(
+      find.byTooltip(DawInteractionHints.rotaryKnob.plainText),
+      findsNWidgets(4),
+    );
+    final cutoffSemantics = tester.getSemantics(
+      find.bySemanticsLabel('HIGH PASS cutoff'),
+    );
+    expect(cutoffSemantics.value, isNotEmpty);
 
     await tester.tap(find.byKey(const ValueKey('track-fx-eq-tab')));
     await tester.pump();

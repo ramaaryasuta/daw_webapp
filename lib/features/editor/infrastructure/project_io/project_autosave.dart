@@ -1,21 +1,21 @@
-import 'fldaw_project_codec.dart';
+import 'flaudio_project_codec.dart';
 import 'project_dto.dart';
 
-const int fldawAutosaveSchemaVersion = 1;
+const int flaudioAutosaveSchemaVersion = 1;
 
 class AutosaveRecovery {
   const AutosaveRecovery({required this.manifest, required this.savedAt});
 
-  final FldawProjectManifest manifest;
+  final FlaudioProjectManifest manifest;
   final DateTime savedAt;
 }
 
 abstract class ProjectAutosaveStore {
-  Future<void> saveDocument(FldawProjectDocument document);
+  Future<void> saveDocument(FlaudioProjectDocument document);
 
   Future<AutosaveRecovery?> readRecovery();
 
-  Future<FldawProjectDocument> loadDocument(AutosaveRecovery recovery);
+  Future<FlaudioProjectDocument> loadDocument(AutosaveRecovery recovery);
 
   Future<void> discardRecovery();
 }

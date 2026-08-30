@@ -9,7 +9,7 @@ import 'package:daw_webapp/features/editor/domain/audio_clip.dart';
 import 'package:daw_webapp/features/editor/domain/daw_track.dart';
 import 'package:daw_webapp/features/editor/domain/imported_audio_file.dart';
 import 'package:daw_webapp/features/editor/domain/snap_settings.dart';
-import 'package:daw_webapp/features/editor/infrastructure/project_io/fldaw_project_codec.dart';
+import 'package:daw_webapp/features/editor/infrastructure/project_io/flaudio_project_codec.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/project_autosave_store.dart';
 import 'package:daw_webapp/features/editor/infrastructure/wav_encoder.dart';
 import 'package:daw_webapp/features/editor/presentation/models/timeline_ruler_mode.dart';
@@ -201,7 +201,7 @@ void main() {
       _expectUniqueProjectIds(state);
 
       // Save performs the same complete integrity validation as Open/Recovery.
-      const FldawProjectCodec().encodeSnapshot(_snapshotFromState(state));
+      const FlaudioProjectCodec().encodeSnapshot(_snapshotFromState(state));
     },
   );
 
@@ -247,7 +247,7 @@ void main() {
   );
 }
 
-FldawProjectDocument _oldCounterIdDocument(Uint8List bytes) {
+FlaudioProjectDocument _oldCounterIdDocument(Uint8List bytes) {
   AudioAsset source(String id, String name) => AudioAsset(
     id: id,
     name: name,
@@ -262,8 +262,8 @@ FldawProjectDocument _oldCounterIdDocument(Uint8List bytes) {
   );
   final sourceA = source('source-1', 'audioA.wav');
   final sourceB = source('source-2', 'audioB.wav');
-  return const FldawProjectCodec().encodeSnapshot(
-    FldawProjectSnapshot(
+  return const FlaudioProjectCodec().encodeSnapshot(
+    FlaudioProjectSnapshot(
       name: 'Identity Regression',
       bpm: 120,
       snapSettings: const SnapSettings(),
@@ -292,8 +292,8 @@ FldawProjectDocument _oldCounterIdDocument(Uint8List bytes) {
   );
 }
 
-FldawProjectSnapshot _snapshotFromState(EditorState state) =>
-    FldawProjectSnapshot(
+FlaudioProjectSnapshot _snapshotFromState(EditorState state) =>
+    FlaudioProjectSnapshot(
       name: state.projectName,
       bpm: 120,
       snapSettings: const SnapSettings(),

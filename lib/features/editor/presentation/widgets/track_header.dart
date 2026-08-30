@@ -5,6 +5,7 @@ import '../../domain/daw_track.dart';
 import '../../domain/track_mixer.dart';
 import '../controllers/audio_meter_controller.dart';
 import 'audio_level_meter.dart';
+import 'daw_interaction_hint.dart';
 import 'track_color_popover.dart';
 import 'track_properties_popover.dart';
 
@@ -535,8 +536,12 @@ class _TrackHeaderState extends State<TrackHeader> {
       );
     }
 
-    return Tooltip(
-      message: widget.name,
+    return DawInteractionHint(
+      data: DawInteractionHintData(
+        title: DawInteractionHints.trackName.title,
+        semanticsLabel:
+            'Track name ${widget.name}. Double-click to rename track.',
+      ),
       child: GestureDetector(
         key: const ValueKey('track-name-label'),
         behavior: HitTestBehavior.opaque,
@@ -591,8 +596,8 @@ class _TrackReorderHandle extends StatelessWidget {
       ),
     );
 
-    return Tooltip(
-      message: 'Drag to reorder track',
+    return DawInteractionHint(
+      data: DawInteractionHints.trackReorder,
       child: Semantics(
         label: 'Drag $trackName to reorder track',
         child: Draggable<String>(

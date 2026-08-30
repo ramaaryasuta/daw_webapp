@@ -11,6 +11,7 @@ import '../../domain/track_eq_fx.dart';
 import '../../domain/track_compressor_fx.dart';
 import '../controllers/audio_meter_controller.dart';
 import '../editor_shortcut_policy.dart';
+import 'daw_interaction_hint.dart';
 
 enum _TrackFxModule { filter, eq, compressor }
 
@@ -500,6 +501,13 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
     return _RotaryKnob(
       key: ValueKey('$parameter-knob'),
       label: label,
+      semanticLabel: switch (parameter) {
+        TrackEqParameter.lowGain => 'Low EQ gain',
+        TrackEqParameter.midGain => 'Mid EQ gain',
+        TrackEqParameter.midFrequency => 'Mid EQ frequency',
+        TrackEqParameter.midQ => 'Mid EQ Q',
+        TrackEqParameter.highGain => 'High EQ gain',
+      },
       value: value,
       minimum: minimum,
       maximum: maximum,
@@ -546,6 +554,13 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
     return _RotaryKnob(
       key: ValueKey('$parameter-knob'),
       label: label,
+      semanticLabel: switch (parameter) {
+        TrackCompressorParameter.threshold => 'Compressor threshold',
+        TrackCompressorParameter.ratio => 'Compressor ratio',
+        TrackCompressorParameter.attack => 'Compressor attack',
+        TrackCompressorParameter.release => 'Compressor release',
+        TrackCompressorParameter.makeupGain => 'Compressor makeup gain',
+      },
       value: value,
       minimum: minimum,
       maximum: maximum,
@@ -1109,6 +1124,7 @@ class _FilterModulePanel extends StatelessWidget {
                 _RotaryKnob(
                   key: ValueKey('$frequencyParameter-knob'),
                   label: 'CUTOFF',
+                  semanticLabel: '$title cutoff',
                   value: frequencyHz,
                   minimum: minimumFilterFrequencyHz,
                   maximum: maximumFilterFrequencyHz,
@@ -1124,6 +1140,7 @@ class _FilterModulePanel extends StatelessWidget {
                 _RotaryKnob(
                   key: ValueKey('$qParameter-knob'),
                   label: 'RES',
+                  semanticLabel: '$title resonance',
                   value: q,
                   minimum: minimumFilterQ,
                   maximum: maximumFilterQ,
@@ -1200,6 +1217,7 @@ class _RotaryKnob extends StatefulWidget {
   const _RotaryKnob({
     super.key,
     required this.label,
+    required this.semanticLabel,
     required this.value,
     required this.minimum,
     required this.maximum,
@@ -1214,6 +1232,7 @@ class _RotaryKnob extends StatefulWidget {
   });
 
   final String label;
+  final String semanticLabel;
   final double value;
   final double minimum;
   final double maximum;
@@ -1251,77 +1270,94 @@ class _RotaryKnobState extends State<_RotaryKnob> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Semantics(
-      label: '${widget.label} ${widget.valueLabel}',
-      slider: true,
-      value: widget.valueLabel,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.resizeUpDown,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onDoubleTap: widget.onReset,
-          onVerticalDragStart: (_) {
-            _dragging = true;
-            _normalized = _normalize(widget.value);
-            widget.onChangeStart();
-          },
-          onVerticalDragUpdate: (details) {
-            final fine = HardwareKeyboard.instance.logicalKeysPressed.any(
-              (key) =>
-                  key == LogicalKeyboardKey.shiftLeft ||
-                  key == LogicalKeyboardKey.shiftRight,
-            );
-            _normalized = (_normalized - details.delta.dy / (fine ? 720 : 150))
-                .clamp(0.0, 1.0);
-            widget.onChanged(_denormalize(_normalized));
-          },
-          onVerticalDragEnd: (_) {
-            _dragging = false;
-            widget.onChangeEnd(_denormalize(_normalized));
-          },
-          onVerticalDragCancel: () {
-            _dragging = false;
-            widget.onChangeEnd(_denormalize(_normalized));
-          },
-          child: SizedBox(
-            width: 68,
-            child: Column(
-              children: [
-                Text(
-                  widget.label,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    fontSize: 9,
-                    letterSpacing: 0.8,
-                    color: scheme.onSurfaceVariant,
+    return DawInteractionHint(
+      data: DawInteractionHints.rotaryKnob,
+      child: Semantics(
+        label: widget.semanticLabel,
+        slider: true,
+        value: widget.valueLabel,
+        onIncrease: () => _adjustBy(.02),
+        onDecrease: () => _adjustBy(-.02),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.resizeUpDown,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onDoubleTap: widget.onReset,
+            onVerticalDragStart: (_) {
+              _dragging = true;
+              _normalized = _normalize(widget.value);
+              widget.onChangeStart();
+            },
+            onVerticalDragUpdate: (details) {
+              final fine = HardwareKeyboard.instance.logicalKeysPressed.any(
+                (key) =>
+                    key == LogicalKeyboardKey.shiftLeft ||
+                    key == LogicalKeyboardKey.shiftRight,
+              );
+              _normalized =
+                  (_normalized - details.delta.dy / (fine ? 720 : 150)).clamp(
+                    0.0,
+                    1.0,
+                  );
+              widget.onChanged(_denormalize(_normalized));
+            },
+            onVerticalDragEnd: (_) {
+              _dragging = false;
+              widget.onChangeEnd(_denormalize(_normalized));
+            },
+            onVerticalDragCancel: () {
+              _dragging = false;
+              widget.onChangeEnd(_denormalize(_normalized));
+            },
+            child: SizedBox(
+              width: 68,
+              child: Column(
+                children: [
+                  Text(
+                    widget.label,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      fontSize: 9,
+                      letterSpacing: 0.8,
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 3),
-                CustomPaint(
-                  painter: _KnobPainter(
-                    normalized: _normalized,
-                    active: widget.active,
-                    accent: widget.accent,
-                    bodyColor: scheme.surfaceContainerHighest,
-                    inactiveColor: scheme.outline,
+                  const SizedBox(height: 3),
+                  CustomPaint(
+                    painter: _KnobPainter(
+                      normalized: _normalized,
+                      active: widget.active,
+                      accent: widget.accent,
+                      bodyColor: scheme.surfaceContainerHighest,
+                      inactiveColor: scheme.outline,
+                    ),
+                    child: const SizedBox.square(dimension: 48),
                   ),
-                  child: const SizedBox.square(dimension: 48),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  widget.valueLabel,
-                  maxLines: 1,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    fontSize: 10,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                    fontWeight: FontWeight.w600,
+                  const SizedBox(height: 4),
+                  Text(
+                    widget.valueLabel,
+                    maxLines: 1,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      fontSize: 10,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
+  }
+
+  void _adjustBy(double delta) {
+    _normalized = (_normalize(widget.value) + delta).clamp(0.0, 1.0);
+    final value = _denormalize(_normalized);
+    widget.onChangeStart();
+    widget.onChanged(value);
+    widget.onChangeEnd(value);
+    if (mounted) setState(() {});
   }
 
   double _normalize(double value) {

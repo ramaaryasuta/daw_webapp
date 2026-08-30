@@ -5,7 +5,7 @@ import 'dart:typed_data';
 
 import 'package:web/web.dart' as web;
 
-import 'fldaw_project_codec.dart';
+import 'flaudio_project_codec.dart';
 import 'project_autosave.dart';
 import 'project_dto.dart';
 
@@ -22,7 +22,7 @@ class IndexedDbProjectAutosaveStore implements ProjectAutosaveStore {
   final Map<String, Uint8List> _knownSourceBytes = {};
 
   @override
-  Future<void> saveDocument(FldawProjectDocument document) async {
+  Future<void> saveDocument(FlaudioProjectDocument document) async {
     final database = await _openDatabase();
     try {
       // Source records are insert-if-missing. Normal arrangement and mixer
@@ -38,7 +38,7 @@ class IndexedDbProjectAutosaveStore implements ProjectAutosaveStore {
       }
 
       final payload = jsonEncode({
-        'schemaVersion': fldawAutosaveSchemaVersion,
+        'schemaVersion': flaudioAutosaveSchemaVersion,
         'savedAt': DateTime.now().toUtc().toIso8601String(),
         'manifest': document.manifest.toJson(),
       });
@@ -76,7 +76,7 @@ class IndexedDbProjectAutosaveStore implements ProjectAutosaveStore {
       }
       final decoded = jsonDecode((result as JSString).toDart);
       if (decoded is! Map<String, Object?> ||
-          decoded['schemaVersion'] != fldawAutosaveSchemaVersion ||
+          decoded['schemaVersion'] != flaudioAutosaveSchemaVersion ||
           decoded['savedAt'] is! String ||
           decoded['manifest'] is! Map<String, Object?>) {
         throw const ProjectAutosaveException(
@@ -90,13 +90,13 @@ class IndexedDbProjectAutosaveStore implements ProjectAutosaveStore {
         );
       }
       return AutosaveRecovery(
-        manifest: FldawProjectManifest.fromJson(
+        manifest: FlaudioProjectManifest.fromJson(
           decoded['manifest']! as Map<String, Object?>,
         ),
         savedAt: savedAt.toLocal(),
       );
     } catch (error) {
-      if (error is ProjectAutosaveException || error is FldawProjectException) {
+      if (error is ProjectAutosaveException || error is FlaudioProjectException) {
         rethrow;
       }
       throw ProjectAutosaveException('IndexedDB recovery check failed: $error');
@@ -106,7 +106,7 @@ class IndexedDbProjectAutosaveStore implements ProjectAutosaveStore {
   }
 
   @override
-  Future<FldawProjectDocument> loadDocument(AutosaveRecovery recovery) async {
+  Future<FlaudioProjectDocument> loadDocument(AutosaveRecovery recovery) async {
     final database = await _openDatabase();
     try {
       final bytesBySourceId = <String, Uint8List>{};
@@ -139,7 +139,7 @@ class IndexedDbProjectAutosaveStore implements ProjectAutosaveStore {
         }
         bytesBySourceId[source.sourceId] = bytes;
       }
-      return FldawProjectDocument(
+      return FlaudioProjectDocument(
         manifest: recovery.manifest,
         audioBytesBySourceId: Map.unmodifiable(bytesBySourceId),
       );
@@ -232,7 +232,7 @@ class IndexedDbProjectAutosaveStore implements ProjectAutosaveStore {
       if (!completer.isCompleted) {
         completer.completeError(
           const ProjectAutosaveException(
-            'IndexedDB is blocked by another FLDAW tab.',
+            'IndexedDB is blocked by another Flaudio tab.',
           ),
         );
       }

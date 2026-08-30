@@ -1,6 +1,7 @@
 import 'package:daw_webapp/features/editor/domain/timeline_marker.dart';
 import 'package:daw_webapp/features/editor/domain/timeline_scale.dart';
 import 'package:daw_webapp/features/editor/domain/timeline_section.dart';
+import 'package:daw_webapp/features/editor/presentation/widgets/daw_interaction_hint.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/timeline_ruler.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -44,6 +45,11 @@ void main() {
       ),
     );
 
+    expect(
+      find.byTooltip(DawInteractionHints.sectionLane.plainText),
+      findsOneWidget,
+    );
+
     await tester.drag(
       find.byKey(const ValueKey('timeline-marker-lane')),
       const Offset(150, 0),
@@ -82,6 +88,10 @@ void main() {
 
     expect(find.byKey(const ValueKey('section-left-handle')), findsOneWidget);
     expect(find.byKey(const ValueKey('section-right-handle')), findsOneWidget);
+    expect(
+      find.byTooltip(DawInteractionHints.section.plainText),
+      findsOneWidget,
+    );
     await tester.tap(find.text('Intro'));
     await tester.pump(const Duration(milliseconds: 350));
     expect(seekTime, section.startTime);
@@ -153,6 +163,11 @@ void main() {
           ),
         ),
       ),
+    );
+
+    expect(
+      find.byTooltip(DawInteractionHints.marker.plainText),
+      findsOneWidget,
     );
 
     await tester.tap(find.text('Verse'));

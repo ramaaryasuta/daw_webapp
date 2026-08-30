@@ -13,24 +13,28 @@ import 'package:daw_webapp/features/editor/domain/timeline_section.dart';
 import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_compressor_fx.dart';
-import 'package:daw_webapp/features/editor/infrastructure/project_io/fldaw_project_archive.dart';
-import 'package:daw_webapp/features/editor/infrastructure/project_io/fldaw_project_codec.dart';
-import 'package:daw_webapp/features/editor/infrastructure/project_io/fldaw_project_io_service.dart';
+import 'package:daw_webapp/features/editor/infrastructure/project_io/flaudio_project_archive.dart';
+import 'package:daw_webapp/features/editor/infrastructure/project_io/flaudio_project_codec.dart';
+import 'package:daw_webapp/features/editor/infrastructure/project_io/flaudio_project_io_service.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/project_dto.dart';
 import 'package:daw_webapp/features/editor/presentation/models/timeline_ruler_mode.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  const codec = FldawProjectCodec();
-  const projectArchive = FldawProjectArchive();
+  const codec = FlaudioProjectCodec();
+  const projectArchive = FlaudioProjectArchive();
 
   test('project download name is readable, safe, and has one extension', () {
-    expect(projectDownloadName('My Demo'), 'My Demo.fldawproj');
+    expect(projectDownloadName('My Demo'), 'My Demo.flaudioproject');
     expect(
-      projectDownloadName(r'  ../My:Demo?.fldawproj.fldawproj  '),
-      '__My_Demo_.fldawproj',
+      projectDownloadName(r'  ../My:Demo?.flaudioproject.flaudioproject  '),
+      '__My_Demo_.flaudioproject',
     );
-    expect(projectDownloadName('   '), 'Untitled.fldawproj');
+    expect(
+      projectDownloadName('My Song.flaudioproject'),
+      'My Song.flaudioproject',
+    );
+    expect(projectDownloadName('   '), 'Untitled.flaudioproject');
   });
 
   test('V1 archive round-trips all project fields and deduplicates audio', () {
@@ -47,7 +51,7 @@ void main() {
       mimeType: 'audio/wav',
       sourceBytes: sourceBytes,
     );
-    final snapshot = FldawProjectSnapshot(
+    final snapshot = FlaudioProjectSnapshot(
       name: 'My Song',
       bpm: 137.5,
       timeSignature: TimeSignature.sixEight,
@@ -150,7 +154,7 @@ void main() {
     );
 
     final document = projectArchive.decode(bytes);
-    expect(document.manifest.toJson()['format'], 'fldawproj');
+    expect(document.manifest.toJson()['format'], 'flaudioproject');
     expect(document.manifest.toJson()['formatVersion'], 1);
     expect(document.audioBytesBySourceId, hasLength(1));
     expect(document.audioBytesBySourceId['source-kick'], sourceBytes);
@@ -209,6 +213,21 @@ void main() {
     expect(restored.sections.single.endTime, 3.75);
   });
 
+  test('archive rejects a non-Flaudio format identifier', () {
+    final manifest = _emptyManifest()..['format'] = 'other-project';
+
+    expect(
+      () => projectArchive.decode(_zipWithManifest(manifest)),
+      throwsA(
+        isA<FlaudioProjectException>().having(
+          (error) => error.userMessage,
+          'userMessage',
+          'This file is not a valid Flaudio project.',
+        ),
+      ),
+    );
+  });
+
   test('older clip metadata defaults reverse to off', () {
     final clip = ProjectClipDto.fromJson({
       'id': 'clip-old',
@@ -233,17 +252,17 @@ void main() {
     expect(
       () => projectArchive.decode(bytes),
       throwsA(
-        isA<FldawProjectException>().having(
+        isA<FlaudioProjectException>().having(
           (error) => error.userMessage,
           'userMessage',
-          contains('newer FLDAW project format'),
+          contains('newer Flaudio project format'),
         ),
       ),
     );
   });
 
   test('older V1 metadata without a time signature defaults to 4/4', () {
-    final manifest = FldawProjectManifest.fromJson(_emptyManifest());
+    final manifest = FlaudioProjectManifest.fromJson(_emptyManifest());
 
     expect(manifest.project.timeSignature, TimeSignature.commonTime);
     expect(manifest.sections, isEmpty);
@@ -257,8 +276,8 @@ void main() {
     };
 
     expect(
-      () => FldawProjectManifest.fromJson(manifest),
-      throwsA(isA<FldawProjectException>()),
+      () => FlaudioProjectManifest.fromJson(manifest),
+      throwsA(isA<FlaudioProjectException>()),
     );
   });
 
@@ -270,9 +289,9 @@ void main() {
     ]);
 
     expect(
-      () => FldawProjectManifest.fromJson(manifest),
+      () => FlaudioProjectManifest.fromJson(manifest),
       throwsA(
-        isA<FldawProjectException>().having(
+        isA<FlaudioProjectException>().having(
           (error) => error.userMessage,
           'userMessage',
           contains('duplicate object identifiers'),
@@ -284,7 +303,7 @@ void main() {
   test('archive rejects corrupt bytes and ZIPs without project.json', () {
     expect(
       () => projectArchive.decode(Uint8List.fromList([1, 2, 3, 4])),
-      throwsA(isA<FldawProjectException>()),
+      throwsA(isA<FlaudioProjectException>()),
     );
     expect(
       () => projectArchive.decode(
@@ -293,10 +312,10 @@ void main() {
         ),
       ),
       throwsA(
-        isA<FldawProjectException>().having(
+        isA<FlaudioProjectException>().having(
           (error) => error.userMessage,
           'userMessage',
-          contains('does not contain FLDAW project metadata'),
+          contains('does not contain Flaudio project metadata'),
         ),
       ),
     );
@@ -319,7 +338,7 @@ void main() {
     expect(
       () => projectArchive.decode(_zipWithManifest(manifest)),
       throwsA(
-        isA<FldawProjectException>().having(
+        isA<FlaudioProjectException>().having(
           (error) => error.userMessage,
           'userMessage',
           contains('audio sources could not be restored'),
@@ -342,14 +361,14 @@ void main() {
     });
 
     expect(
-      () => FldawProjectManifest.fromJson(manifest),
-      throwsA(isA<FldawProjectException>()),
+      () => FlaudioProjectManifest.fromJson(manifest),
+      throwsA(isA<FlaudioProjectException>()),
     );
   });
 }
 
 Map<String, Object?> _emptyManifest() => {
-  'format': 'fldawproj',
+  'format': 'flaudioproject',
   'formatVersion': 1,
   'project': {
     'name': 'Untitled',

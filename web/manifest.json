@@ -1,11 +1,11 @@
 {
-    "name": "daw_webapp",
-    "short_name": "daw_webapp",
+    "name": "Flaudio",
+    "short_name": "Flaudio",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Flaudio digital audio workstation.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

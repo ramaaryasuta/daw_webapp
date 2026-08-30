@@ -3,6 +3,7 @@ import 'package:daw_webapp/features/editor/domain/audio_clip.dart';
 import 'package:daw_webapp/features/editor/domain/clip_crossfade.dart';
 import 'package:daw_webapp/features/editor/domain/timeline_scale.dart';
 import 'package:daw_webapp/features/editor/presentation/controllers/timeline_clip_drag_controller.dart';
+import 'package:daw_webapp/features/editor/presentation/widgets/daw_interaction_hint.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/timeline_view.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -98,6 +99,11 @@ void main() {
           ),
         ),
       ),
+    );
+
+    expect(
+      find.byTooltip(DawInteractionHints.audioClip.plainText),
+      findsOneWidget,
     );
 
     final laneOrigin = tester.getTopLeft(find.byType(TimelineTrackLane));

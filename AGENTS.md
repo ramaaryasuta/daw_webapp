@@ -16,6 +16,10 @@ This is an existing mature project.
 Inspect and extend the current architecture instead of rebuilding features from
 scratch.
 
+Current project file extension:
+- .flaudioproject
+
+
 ---
 
 ## Architecture Principles
@@ -31,7 +35,7 @@ Important existing architecture includes:
 - Track FX rack
 - offline WAV export
 - Undo / Redo
-- .fldawproj Save / Open
+- .flaudioproject Save / Open
 - IndexedDB autosave / recovery
 - project dirty-state tracking
 
@@ -91,6 +95,14 @@ Do not block the native browser context menu unless explicitly required.
 
 ---
 
+## UI Dependencies
+
+- Material Icons are the default.
+- One established Web-compatible icon package may be added when Material Icons
+  are insufficient for DAW/audio/editor UI. Avoid mixing multiple icon families.
+- google_fonts may be added when it materially improves Flaudio typography.
+- Do not add dependencies without an actual UI need.
+
 ## Persistent Feature Requirements
 
 When adding new persistent project state, integrate it with:
@@ -99,7 +111,7 @@ When adding new persistent project state, integrate it with:
 - Undo / Redo where appropriate
 - dirty state
 - IndexedDB autosave / recovery
-- .fldawproj Save / Open
+- .flaudioproject Save / Open
 - backward-compatible defaults for older projects
 
 Runtime state, selection, hover state, Web Audio nodes, meters, and temporary drag
@@ -158,7 +170,7 @@ Browser testing must not leave generated artifacts in the repository.
 Do not leave:
 - Chrome profile directories
 - .meter-chrome-profile-* directories
-- temporary .fldawproj files
+- temporary .flaudioproject files
 - generated WAV test files
 - screenshots
 - logs

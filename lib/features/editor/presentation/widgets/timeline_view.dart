@@ -12,6 +12,7 @@ import '../../domain/snap_settings.dart';
 import '../../domain/timeline_scale.dart';
 import '../controllers/timeline_clip_drag_controller.dart';
 import 'clip_properties_popover.dart';
+import 'daw_interaction_hint.dart';
 import 'track_header.dart';
 
 void _ignoreClipId(String _) {}
@@ -704,71 +705,75 @@ class _TimelineAudioClipState extends State<_TimelineAudioClip> {
               builder: (context, menuController, child) => Stack(
                 children: [
                   Positioned.fill(
-                    child: MouseRegion(
-                      cursor:
-                          isDragging &&
-                              dragState!.mode == TimelineClipDragMode.move
-                          ? SystemMouseCursors.grabbing
-                          : SystemMouseCursors.grab,
-                      child: Listener(
-                        behavior: HitTestBehavior.opaque,
-                        onPointerDown: (event) {
-                          if ((event.buttons & kPrimaryMouseButton) == 0) {
-                            return;
-                          }
-                          final toggle =
-                              HardwareKeyboard.instance.isControlPressed;
-                          _pendingClickShouldCollapseSelection =
-                              !toggle &&
-                              isSelected &&
-                              widget.selectedClipIds.length > 1;
-                          onSelect(toggle, !toggle);
-                          _pendingMovePointer = event.pointer;
-                          _pendingMoveGlobalX = event.position.dx;
-                          _pendingMoveGlobalY = event.position.dy;
-                        },
-                        onPointerMove: updateClipMove,
-                        onPointerUp: (event) {
-                          commitDrag(event.pointer);
-                          _clearPendingMove(event.pointer);
-                        },
-                        onPointerCancel: (event) {
-                          clipDragController.cancel(event.pointer);
-                          _clearPendingMove(event.pointer);
-                        },
-                        child: GestureDetector(
+                    child: DawInteractionHint(
+                      data: DawInteractionHints.audioClip,
+                      child: MouseRegion(
+                        cursor:
+                            isDragging &&
+                                dragState!.mode == TimelineClipDragMode.move
+                            ? SystemMouseCursors.grabbing
+                            : SystemMouseCursors.grab,
+                        child: Listener(
                           behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            if (_pendingClickShouldCollapseSelection &&
-                                !HardwareKeyboard.instance.isControlPressed) {
-                              onSelect(false, false);
-                            }
-                            _pendingClickShouldCollapseSelection = false;
-                          },
-                          onDoubleTap: () {
-                            if (widget.selectedClipIds.length != 1 ||
-                                !isSelected) {
+                          onPointerDown: (event) {
+                            if ((event.buttons & kPrimaryMouseButton) == 0) {
                               return;
                             }
-                            menuController.open();
+                            final toggle =
+                                HardwareKeyboard.instance.isControlPressed;
+                            _pendingClickShouldCollapseSelection =
+                                !toggle &&
+                                isSelected &&
+                                widget.selectedClipIds.length > 1;
+                            onSelect(toggle, !toggle);
+                            _pendingMovePointer = event.pointer;
+                            _pendingMoveGlobalX = event.position.dx;
+                            _pendingMoveGlobalY = event.position.dy;
                           },
-                          child: _AudioClipSurface(
-                            fileName: clip.audio.name,
-                            clipDurationSeconds: visualDurationSeconds,
-                            sourceStartSeconds: visualSourceStartSeconds,
-                            sourceAudioDurationSeconds:
-                                clip.sourceAudioDurationSeconds,
-                            waveformPeaks: clip.audio.waveformPeaks,
-                            isReversed: clip.isReversed,
-                            showReverseIndicator: renderedClipWidth >= 54,
-                            gainDb: clip.gainDb,
-                            showGainIndicator: renderedClipWidth >= 135,
-                            fadeInDurationSeconds: visualFadeInDurationSeconds,
-                            fadeOutDurationSeconds:
-                                visualFadeOutDurationSeconds,
-                            trackColor: visualTrackColor,
-                            isSelected: isSelected,
-                            isDragging: isDragging,
+                          onPointerMove: updateClipMove,
+                          onPointerUp: (event) {
+                            commitDrag(event.pointer);
+                            _clearPendingMove(event.pointer);
+                          },
+                          onPointerCancel: (event) {
+                            clipDragController.cancel(event.pointer);
+                            _clearPendingMove(event.pointer);
+                          },
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              if (_pendingClickShouldCollapseSelection &&
+                                  !HardwareKeyboard.instance.isControlPressed) {
+                                onSelect(false, false);
+                              }
+                              _pendingClickShouldCollapseSelection = false;
+                            },
+                            onDoubleTap: () {
+                              if (widget.selectedClipIds.length != 1 ||
+                                  !isSelected) {
+                                return;
+                              }
+                              menuController.open();
+                            },
+                            child: _AudioClipSurface(
+                              fileName: clip.audio.name,
+                              clipDurationSeconds: visualDurationSeconds,
+                              sourceStartSeconds: visualSourceStartSeconds,
+                              sourceAudioDurationSeconds:
+                                  clip.sourceAudioDurationSeconds,
+                              waveformPeaks: clip.audio.waveformPeaks,
+                              isReversed: clip.isReversed,
+                              showReverseIndicator: renderedClipWidth >= 54,
+                              gainDb: clip.gainDb,
+                              showGainIndicator: renderedClipWidth >= 135,
+                              fadeInDurationSeconds:
+                                  visualFadeInDurationSeconds,
+                              fadeOutDurationSeconds:
+                                  visualFadeOutDurationSeconds,
+                              trackColor: visualTrackColor,
+                              isSelected: isSelected,
+                              isDragging: isDragging,
+                            ),
                           ),
                         ),
                       ),

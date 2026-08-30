@@ -3,26 +3,26 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 
-import 'fldaw_project_codec.dart';
+import 'flaudio_project_codec.dart';
 import 'project_dto.dart';
 
-const String fldawProjectManifestPath = 'project.json';
+const String flaudioProjectManifestPath = 'project.json';
 
-class FldawProjectArchive {
-  const FldawProjectArchive();
+class FlaudioProjectArchive {
+  const FlaudioProjectArchive();
 
-  Uint8List encode(FldawProjectDocument document) {
+  Uint8List encode(FlaudioProjectDocument document) {
     final archive = Archive()
       ..add(
         ArchiveFile.string(
-          fldawProjectManifestPath,
+          flaudioProjectManifestPath,
           document.manifest.encodeJson(),
         ),
       );
     for (final source in document.manifest.audioSources) {
       final bytes = document.audioBytesBySourceId[source.sourceId];
       if (bytes == null) {
-        throw FldawProjectException(
+        throw FlaudioProjectException(
           'Missing bytes for source ${source.sourceId}.',
           userMessage:
               'One or more required audio sources could not be packaged.',
@@ -37,12 +37,12 @@ class FldawProjectArchive {
     return ZipEncoder().encodeBytes(archive);
   }
 
-  FldawProjectDocument decode(Uint8List bytes) {
+  FlaudioProjectDocument decode(Uint8List bytes) {
     Archive archive;
     try {
       archive = ZipDecoder().decodeBytes(bytes, verify: true);
     } catch (error) {
-      throw FldawProjectException(
+      throw FlaudioProjectException(
         'Unable to decode ZIP container: $error',
         userMessage: 'The selected project file is invalid or corrupt.',
       );
@@ -56,39 +56,39 @@ class FldawProjectArchive {
       }
     }
     if (duplicatePaths.isNotEmpty) {
-      throw const FldawProjectException(
+      throw const FlaudioProjectException(
         'Archive contains duplicate entry paths.',
         userMessage: 'The selected project file is invalid or corrupt.',
       );
     }
 
-    final manifestEntry = archive.find(fldawProjectManifestPath);
+    final manifestEntry = archive.find(flaudioProjectManifestPath);
     if (manifestEntry == null || !manifestEntry.isFile) {
-      throw const FldawProjectException(
+      throw const FlaudioProjectException(
         'Archive does not contain project.json.',
-        userMessage: 'This file does not contain FLDAW project metadata.',
+        userMessage: 'This file does not contain Flaudio project metadata.',
       );
     }
     if (manifestEntry.size > 4 * 1024 * 1024) {
-      throw const FldawProjectException(
+      throw const FlaudioProjectException(
         'project.json exceeds the allowed size.',
         userMessage: 'The project metadata is invalid or corrupt.',
       );
     }
 
-    FldawProjectManifest manifest;
+    FlaudioProjectManifest manifest;
     try {
       final manifestBytes = manifestEntry.readBytes();
       if (manifestBytes == null) {
         throw const FormatException('project.json has no readable content.');
       }
-      manifest = FldawProjectManifest.decodeJson(
+      manifest = FlaudioProjectManifest.decodeJson(
         utf8.decode(manifestBytes, allowMalformed: false),
       );
-    } on FldawProjectException {
+    } on FlaudioProjectException {
       rethrow;
     } catch (error) {
-      throw FldawProjectException(
+      throw FlaudioProjectException(
         'Unable to read project.json: $error',
         userMessage: 'The project metadata is invalid or corrupt.',
       );
@@ -100,21 +100,21 @@ class FldawProjectArchive {
       totalAudioBytes += source.size;
       if (source.size > 2 * 1024 * 1024 * 1024 ||
           totalAudioBytes > 2 * 1024 * 1024 * 1024) {
-        throw const FldawProjectException(
+        throw const FlaudioProjectException(
           'Embedded audio exceeds the supported browser memory limit.',
           userMessage: 'This project is too large to open in the browser.',
         );
       }
       final entry = archive.find(source.archivePath);
       if (entry == null || !entry.isFile) {
-        throw FldawProjectException(
+        throw FlaudioProjectException(
           'Missing archive entry ${source.archivePath}.',
           userMessage:
               'One or more required audio sources could not be restored.',
         );
       }
       if (entry.size != source.size) {
-        throw FldawProjectException(
+        throw FlaudioProjectException(
           'Audio entry ${source.archivePath} has an unexpected size.',
           userMessage:
               'One or more required audio sources could not be restored.',
@@ -122,7 +122,7 @@ class FldawProjectArchive {
       }
       final content = entry.readBytes();
       if (content == null || content.isEmpty || content.length != source.size) {
-        throw FldawProjectException(
+        throw FlaudioProjectException(
           'Audio entry ${source.archivePath} has an invalid size.',
           userMessage:
               'One or more required audio sources could not be restored.',
@@ -130,7 +130,7 @@ class FldawProjectArchive {
       }
       sourceBytes[source.sourceId] = content;
     }
-    return FldawProjectDocument(
+    return FlaudioProjectDocument(
       manifest: manifest,
       audioBytesBySourceId: Map.unmodifiable(sourceBytes),
     );

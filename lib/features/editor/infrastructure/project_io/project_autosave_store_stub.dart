@@ -1,4 +1,4 @@
-import 'fldaw_project_codec.dart';
+import 'flaudio_project_codec.dart';
 import 'project_autosave.dart';
 
 ProjectAutosaveStore createProjectAutosaveStore() =>
@@ -11,7 +11,7 @@ class _UnsupportedProjectAutosaveStore implements ProjectAutosaveStore {
   Future<void> discardRecovery() async {}
 
   @override
-  Future<FldawProjectDocument> loadDocument(AutosaveRecovery recovery) =>
+  Future<FlaudioProjectDocument> loadDocument(AutosaveRecovery recovery) =>
       throw const ProjectAutosaveException(
         'Browser-local recovery is only available on the web.',
       );
@@ -20,5 +20,5 @@ class _UnsupportedProjectAutosaveStore implements ProjectAutosaveStore {
   Future<AutosaveRecovery?> readRecovery() async => null;
 
   @override
-  Future<void> saveDocument(FldawProjectDocument document) async {}
+  Future<void> saveDocument(FlaudioProjectDocument document) async {}
 }

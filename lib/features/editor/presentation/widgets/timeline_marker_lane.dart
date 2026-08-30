@@ -9,6 +9,7 @@ import '../../domain/timeline_scale.dart';
 import '../../domain/timeline_section.dart';
 import '../../domain/timeline_snapper.dart';
 import 'marker_properties_popover.dart';
+import 'daw_interaction_hint.dart';
 import 'section_properties_popover.dart';
 
 class TimelineMarkerLane extends StatefulWidget {
@@ -184,94 +185,98 @@ class _TimelineMarkerLaneState extends State<TimelineMarkerLane> {
       for (final marker in widget.markers)
         marker.id: _markerFlagWidth(marker.name, Directionality.of(context)),
     };
-    return GestureDetector(
-      key: const ValueKey('timeline-marker-lane'),
-      behavior: HitTestBehavior.opaque,
-      onDoubleTapDown: widget.onAddMarker == null
-          ? null
-          : (details) {
-              if (!_hitsItem(details.localPosition.dx, markerWidths)) {
-                widget.onAddMarker!(_timeAt(details.localPosition.dx));
-              }
-            },
-      onHorizontalDragDown: (details) =>
-          _prepareCreation(details, markerWidths),
-      onHorizontalDragUpdate: _updateCreation,
-      onHorizontalDragEnd: (_) => _finishCreation(),
-      onHorizontalDragCancel: _cancelCreation,
-      child: Container(
-        height: TimelineMarkerLane.height,
-        decoration: BoxDecoration(
-          color: colors.surfaceContainerLow,
-          border: Border(
-            top: BorderSide(
-              color: colors.outlineVariant.withValues(alpha: .75),
+    return DawInteractionHint(
+      data: DawInteractionHints.sectionLane,
+      child: GestureDetector(
+        key: const ValueKey('timeline-marker-lane'),
+        behavior: HitTestBehavior.opaque,
+        onDoubleTapDown: widget.onAddMarker == null
+            ? null
+            : (details) {
+                if (!_hitsItem(details.localPosition.dx, markerWidths)) {
+                  widget.onAddMarker!(_timeAt(details.localPosition.dx));
+                }
+              },
+        onHorizontalDragDown: (details) =>
+            _prepareCreation(details, markerWidths),
+        onHorizontalDragUpdate: _updateCreation,
+        onHorizontalDragEnd: (_) => _finishCreation(),
+        onHorizontalDragCancel: _cancelCreation,
+        child: Container(
+          height: TimelineMarkerLane.height,
+          decoration: BoxDecoration(
+            color: colors.surfaceContainerLow,
+            border: Border(
+              top: BorderSide(
+                color: colors.outlineVariant.withValues(alpha: .75),
+              ),
+              bottom: BorderSide(color: colors.outlineVariant),
             ),
-            bottom: BorderSide(color: colors.outlineVariant),
           ),
-        ),
-        child: Stack(
-          clipBehavior: Clip.hardEdge,
-          children: [
-            for (final section in orderedSections) _positionedSection(section),
-            if (_creationPreview case final preview?)
-              _positionedSection(preview, isPreview: true),
-            Positioned(
-              left:
-                  widget.gridMetrics.transform.timeToContentX(
-                    widget.playheadSeconds,
-                  ) -
-                  1,
-              top: 0,
-              bottom: 0,
-              width: 2,
-              child: IgnorePointer(child: ColoredBox(color: colors.tertiary)),
-            ),
-            for (final marker in orderedMarkers)
+          child: Stack(
+            clipBehavior: Clip.hardEdge,
+            children: [
+              for (final section in orderedSections)
+                _positionedSection(section),
+              if (_creationPreview case final preview?)
+                _positionedSection(preview, isPreview: true),
               Positioned(
-                key: ValueKey('timeline-marker-${marker.id}'),
                 left:
                     widget.gridMetrics.transform.timeToContentX(
-                      marker.timeSeconds,
+                      widget.playheadSeconds,
                     ) -
-                    5,
+                    1,
                 top: 0,
-                width: markerWidths[marker.id],
-                height: TimelineMarkerLane.height,
-                child: _TimelineMarkerFlag(
-                  marker: marker,
-                  isSelected: marker.id == widget.selectedMarkerId,
-                  pixelsPerSecond: widget.gridMetrics.scale.pixelsPerSecond,
-                  onSelect: widget.onSelectMarker == null
-                      ? null
-                      : () {
-                          widget.onSelectMarker!(marker.id);
-                          widget.onSeek(marker.timeSeconds);
-                        },
-                  onMoveStart: widget.onMoveStart == null
-                      ? null
-                      : () => widget.onMoveStart!(marker.id),
-                  onMovePreview: widget.onMovePreview == null
-                      ? null
-                      : (time) => widget.onMovePreview!(marker.id, time),
-                  onMoveEnd: widget.onMoveEnd == null
-                      ? null
-                      : () => widget.onMoveEnd!(marker.id),
-                  onMoveCancel: widget.onMoveCancel == null
-                      ? null
-                      : () => widget.onMoveCancel!(marker.id),
-                  onRename: widget.onRename == null
-                      ? null
-                      : (name) => widget.onRename!(marker.id, name),
-                  onColorSelected: widget.onColorSelected == null
-                      ? null
-                      : (color) => widget.onColorSelected!(marker.id, color),
-                  onDelete: widget.onDelete == null
-                      ? null
-                      : () => widget.onDelete!(marker.id),
-                ),
+                bottom: 0,
+                width: 2,
+                child: IgnorePointer(child: ColoredBox(color: colors.tertiary)),
               ),
-          ],
+              for (final marker in orderedMarkers)
+                Positioned(
+                  key: ValueKey('timeline-marker-${marker.id}'),
+                  left:
+                      widget.gridMetrics.transform.timeToContentX(
+                        marker.timeSeconds,
+                      ) -
+                      5,
+                  top: 0,
+                  width: markerWidths[marker.id],
+                  height: TimelineMarkerLane.height,
+                  child: _TimelineMarkerFlag(
+                    marker: marker,
+                    isSelected: marker.id == widget.selectedMarkerId,
+                    pixelsPerSecond: widget.gridMetrics.scale.pixelsPerSecond,
+                    onSelect: widget.onSelectMarker == null
+                        ? null
+                        : () {
+                            widget.onSelectMarker!(marker.id);
+                            widget.onSeek(marker.timeSeconds);
+                          },
+                    onMoveStart: widget.onMoveStart == null
+                        ? null
+                        : () => widget.onMoveStart!(marker.id),
+                    onMovePreview: widget.onMovePreview == null
+                        ? null
+                        : (time) => widget.onMovePreview!(marker.id, time),
+                    onMoveEnd: widget.onMoveEnd == null
+                        ? null
+                        : () => widget.onMoveEnd!(marker.id),
+                    onMoveCancel: widget.onMoveCancel == null
+                        ? null
+                        : () => widget.onMoveCancel!(marker.id),
+                    onRename: widget.onRename == null
+                        ? null
+                        : (name) => widget.onRename!(marker.id, name),
+                    onColorSelected: widget.onColorSelected == null
+                        ? null
+                        : (color) => widget.onColorSelected!(marker.id, color),
+                    onDelete: widget.onDelete == null
+                        ? null
+                        : () => widget.onDelete!(marker.id),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -431,30 +436,33 @@ class _TimelineSectionStripState extends State<_TimelineSectionStrip> {
       builder: (context, controller, child) => Stack(
         fit: StackFit.expand,
         children: [
-          MouseRegion(
-            cursor: SystemMouseCursors.grab,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                widget.onSelect?.call();
-                widget.onSeek();
-              },
-              onDoubleTap: _openProperties,
-              onHorizontalDragDown: _prepare,
-              onHorizontalDragStart: (_) {
-                widget.onSelect?.call();
-                widget.onEditStart?.call();
-              },
-              onHorizontalDragUpdate: (d) => widget.onMovePreview?.call(
-                math.max(0, _originalStart + _delta(d)),
-              ),
-              onHorizontalDragEnd: (_) => widget.onEditEnd?.call(false),
-              onHorizontalDragCancel: widget.onEditCancel,
-              child: _SectionSurface(
-                section: widget.section,
-                isSelected: widget.isSelected,
-                isPreview: widget.isPreview,
-                color: Color(widget.section.colorArgb),
+          DawInteractionHint(
+            data: DawInteractionHints.sectionNamed(widget.section.name),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.grab,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  widget.onSelect?.call();
+                  widget.onSeek();
+                },
+                onDoubleTap: _openProperties,
+                onHorizontalDragDown: _prepare,
+                onHorizontalDragStart: (_) {
+                  widget.onSelect?.call();
+                  widget.onEditStart?.call();
+                },
+                onHorizontalDragUpdate: (d) => widget.onMovePreview?.call(
+                  math.max(0, _originalStart + _delta(d)),
+                ),
+                onHorizontalDragEnd: (_) => widget.onEditEnd?.call(false),
+                onHorizontalDragCancel: widget.onEditCancel,
+                child: _SectionSurface(
+                  section: widget.section,
+                  isSelected: widget.isSelected,
+                  isPreview: widget.isPreview,
+                  color: Color(widget.section.colorArgb),
+                ),
               ),
             ),
           ),
@@ -658,44 +666,47 @@ class _TimelineMarkerFlagState extends State<_TimelineMarkerFlag> {
           },
         ),
       ],
-      builder: (context, controller, child) => MouseRegion(
-        cursor: SystemMouseCursors.grab,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: widget.onSelect,
-          onDoubleTap: _openProperties,
-          onHorizontalDragDown: _prepareDrag,
-          onHorizontalDragStart: (_) => widget.onMoveStart?.call(),
-          onHorizontalDragUpdate: (d) => widget.onMovePreview?.call(
-            (_dragStartTime +
-                    (d.globalPosition.dx - _dragStartGlobalX) /
-                        widget.pixelsPerSecond)
-                .clamp(0, double.infinity),
-          ),
-          onHorizontalDragEnd: (_) => widget.onMoveEnd?.call(),
-          onHorizontalDragCancel: widget.onMoveCancel,
-          child: Align(
-            alignment: Alignment.topLeft,
-            child: CustomPaint(
-              painter: _MarkerFlagPainter(
-                color: Color(widget.marker.colorArgb),
-                isSelected: widget.isSelected,
-              ),
-              child: Container(
-                height: 21,
-                constraints: const BoxConstraints(maxWidth: 112),
-                padding: const EdgeInsets.only(left: 12, right: 6, bottom: 2),
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  widget.marker.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: colors.onSurface,
-                    fontSize: 10,
-                    fontWeight: widget.isSelected
-                        ? FontWeight.w700
-                        : FontWeight.w500,
+      builder: (context, controller, child) => DawInteractionHint(
+        data: DawInteractionHints.markerNamed(widget.marker.name),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.grab,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.onSelect,
+            onDoubleTap: _openProperties,
+            onHorizontalDragDown: _prepareDrag,
+            onHorizontalDragStart: (_) => widget.onMoveStart?.call(),
+            onHorizontalDragUpdate: (d) => widget.onMovePreview?.call(
+              (_dragStartTime +
+                      (d.globalPosition.dx - _dragStartGlobalX) /
+                          widget.pixelsPerSecond)
+                  .clamp(0, double.infinity),
+            ),
+            onHorizontalDragEnd: (_) => widget.onMoveEnd?.call(),
+            onHorizontalDragCancel: widget.onMoveCancel,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: CustomPaint(
+                painter: _MarkerFlagPainter(
+                  color: Color(widget.marker.colorArgb),
+                  isSelected: widget.isSelected,
+                ),
+                child: Container(
+                  height: 21,
+                  constraints: const BoxConstraints(maxWidth: 112),
+                  padding: const EdgeInsets.only(left: 12, right: 6, bottom: 2),
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    widget.marker.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: colors.onSurface,
+                      fontSize: 10,
+                      fontWeight: widget.isSelected
+                          ? FontWeight.w700
+                          : FontWeight.w500,
+                    ),
                   ),
                 ),
               ),
