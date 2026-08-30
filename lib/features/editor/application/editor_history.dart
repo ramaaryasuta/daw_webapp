@@ -95,6 +95,7 @@ class ProjectSnapshot {
           leftTrack.filterFx != rightTrack.filterFx ||
           leftTrack.eqFx != rightTrack.eqFx ||
           leftTrack.compressorFx != rightTrack.compressorFx ||
+          leftTrack.delayFx != rightTrack.delayFx ||
           !hasSameTrackFxChainOrder(
             leftTrack.fxChainOrder,
             rightTrack.fxChainOrder,

@@ -266,6 +266,18 @@ void main() {
     expect(command.usageSteps, hasLength(5));
   });
 
+  test('Help commands document Track Delay controls', () {
+    final command = EditorCommands.all.firstWhere(
+      (command) => command.title == 'Track Delay',
+    );
+
+    expect(command.shortcutParts, ['Track Actions', 'Track FX', 'Delay']);
+    expect(command.description, contains('tempo sync'));
+    expect(command.usageSteps, hasLength(5));
+    expect(command.tip, contains('Delay before Compressor'));
+    expect(command.searchTerms, containsAll(['delay', 'echo', 'feedback']));
+  });
+
   test('Help commands document Track FX chain reordering', () {
     final command = EditorCommands.all.singleWhere(
       (command) => command.title == 'Reorder Track FX',
@@ -274,7 +286,13 @@ void main() {
     expect(command.shortcutParts, ['Drag FX Slot']);
     expect(
       command.searchTerms,
-      containsAll(['fx chain', 'effect order', 'signal flow', 'insert', 'rack']),
+      containsAll([
+        'fx chain',
+        'effect order',
+        'signal flow',
+        'insert',
+        'rack',
+      ]),
     );
     expect(command.usageSteps, hasLength(4));
     expect(command.tip, contains('Compressor before EQ'));

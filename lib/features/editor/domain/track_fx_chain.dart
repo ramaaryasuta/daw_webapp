@@ -1,9 +1,10 @@
-enum TrackFxType { filter, eq, compressor }
+enum TrackFxType { filter, eq, compressor, delay }
 
 const List<TrackFxType> defaultTrackFxChainOrder = [
   TrackFxType.filter,
   TrackFxType.eq,
   TrackFxType.compressor,
+  TrackFxType.delay,
 ];
 
 bool isValidTrackFxChainOrder(Iterable<TrackFxType> order) {
@@ -26,5 +27,6 @@ extension TrackFxTypeDisplay on TrackFxType {
     TrackFxType.filter => 'FILTER',
     TrackFxType.eq => '3-BAND EQ',
     TrackFxType.compressor => 'COMPRESSOR',
+    TrackFxType.delay => 'DELAY',
   };
 }

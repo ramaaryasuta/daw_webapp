@@ -19,6 +19,7 @@ import '../domain/track_mixer.dart';
 import '../domain/track_filter_fx.dart';
 import '../domain/track_eq_fx.dart';
 import '../domain/track_compressor_fx.dart';
+import '../domain/track_delay_fx.dart';
 import '../domain/track_fx_chain.dart';
 import '../domain/timeline_snapper.dart';
 import '../infrastructure/web_audio_engine.dart';
@@ -248,6 +249,9 @@ class EditorController extends Notifier<EditorState> {
   ProjectSnapshot? _compressorEditStartSnapshot;
   String? _compressorEditTrackId;
   TrackCompressorParameter? _compressorEditParameter;
+  ProjectSnapshot? _delayEditStartSnapshot;
+  String? _delayEditTrackId;
+  TrackDelayParameter? _delayEditParameter;
   ProjectSnapshot? _trackColorEditStartSnapshot;
   String? _trackColorEditTrackId;
   int? _trackColorEditOriginalValue;
@@ -321,6 +325,9 @@ class EditorController extends Notifier<EditorState> {
     _compressorEditStartSnapshot = null;
     _compressorEditTrackId = null;
     _compressorEditParameter = null;
+    _delayEditStartSnapshot = null;
+    _delayEditTrackId = null;
+    _delayEditParameter = null;
     _trackColorEditStartSnapshot = null;
     _trackColorEditTrackId = null;
     _trackColorEditOriginalValue = null;
@@ -493,7 +500,8 @@ class EditorController extends Notifier<EditorState> {
           leftTrack.isSolo != rightTrack.isSolo ||
           leftTrack.filterFx != rightTrack.filterFx ||
           leftTrack.eqFx != rightTrack.eqFx ||
-          leftTrack.compressorFx != rightTrack.compressorFx) {
+          leftTrack.compressorFx != rightTrack.compressorFx ||
+          leftTrack.delayFx != rightTrack.delayFx) {
         return false;
       }
       if (!hasSameTrackFxChainOrder(
@@ -995,7 +1003,10 @@ class EditorController extends Notifier<EditorState> {
     _playheadTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
       final position = _audioEngine.currentPositionSeconds;
 
-      final duration = state.projectDurationSeconds;
+      final duration = calculateProjectRenderDurationSeconds(
+        state.tracks,
+        bpm: ref.read(tempoControllerProvider).bpm,
+      );
 
       if (!state.isLoopEnabled && duration > 0 && position >= duration) {
         _playheadTimer?.cancel();
@@ -3092,6 +3103,160 @@ class EditorController extends Notifier<EditorState> {
       ],
     );
     _audioEngine.syncTrackCompressorFx(state.tracks);
+  }
+
+  void toggleTrackDelay(String trackId) {
+    final track = state.tracks
+        .where((candidate) => candidate.id == trackId)
+        .firstOrNull;
+    if (track == null) return;
+    final before = _captureProjectSnapshot();
+    _setTrackDelayFx(
+      trackId,
+      track.delayFx.copyWith(enabled: !track.delayFx.enabled),
+    );
+    _recordEdit('Toggle Delay', before);
+  }
+
+  void beginTrackDelayChange(String trackId, TrackDelayParameter parameter) {
+    if (_delayEditStartSnapshot != null ||
+        !state.tracks.any((track) => track.id == trackId)) {
+      return;
+    }
+    _delayEditStartSnapshot = _captureProjectSnapshot();
+    _delayEditTrackId = trackId;
+    _delayEditParameter = parameter;
+  }
+
+  void previewTrackDelayChange(
+    String trackId,
+    TrackDelayParameter parameter,
+    double value,
+  ) {
+    if (_delayEditTrackId != trackId || _delayEditParameter != parameter) {
+      return;
+    }
+    _audioEngine.syncTrackDelayFx([
+      for (final track in state.tracks)
+        track.id == trackId
+            ? track.copyWith(
+                delayFx: _delayWithParameter(track.delayFx, parameter, value),
+              )
+            : track,
+    ]);
+  }
+
+  void commitTrackDelayChange(
+    String trackId,
+    TrackDelayParameter parameter,
+    double value,
+  ) {
+    if (_delayEditTrackId != trackId || _delayEditParameter != parameter) {
+      return;
+    }
+    final before = _delayEditStartSnapshot;
+    _delayEditStartSnapshot = null;
+    _delayEditTrackId = null;
+    _delayEditParameter = null;
+    final track = state.tracks
+        .where((candidate) => candidate.id == trackId)
+        .firstOrNull;
+    if (track == null || before == null) return;
+    _setTrackDelayFx(
+      trackId,
+      _delayWithParameter(track.delayFx, parameter, value),
+    );
+    _recordEdit(_delayParameterHistoryLabel(parameter), before);
+  }
+
+  void resetTrackDelayParameter(String trackId, TrackDelayParameter parameter) {
+    final track = state.tracks
+        .where((candidate) => candidate.id == trackId)
+        .firstOrNull;
+    if (track == null) return;
+    final before = _delayEditTrackId == trackId
+        ? _delayEditStartSnapshot
+        : _captureProjectSnapshot();
+    _delayEditStartSnapshot = null;
+    _delayEditTrackId = null;
+    _delayEditParameter = null;
+    final defaultValue = switch (parameter) {
+      TrackDelayParameter.time => defaultDelayTimeSeconds,
+      TrackDelayParameter.feedback => defaultDelayFeedback,
+      TrackDelayParameter.mix => defaultDelayMix,
+    };
+    _setTrackDelayFx(
+      trackId,
+      _delayWithParameter(track.delayFx, parameter, defaultValue),
+    );
+    if (before != null) {
+      _recordEdit(_delayParameterHistoryLabel(parameter), before);
+    }
+  }
+
+  void toggleTrackDelaySync(String trackId) {
+    final track = state.tracks
+        .where((candidate) => candidate.id == trackId)
+        .firstOrNull;
+    if (track == null) return;
+    final before = _captureProjectSnapshot();
+    _setTrackDelayFx(
+      trackId,
+      track.delayFx.copyWith(syncToBpm: !track.delayFx.syncToBpm),
+    );
+    _recordEdit('Toggle Delay Sync', before);
+  }
+
+  void setTrackDelayDivision(String trackId, DelaySyncDivision division) {
+    final track = state.tracks
+        .where((candidate) => candidate.id == trackId)
+        .firstOrNull;
+    if (track == null || track.delayFx.syncDivision == division) return;
+    final before = _captureProjectSnapshot();
+    _setTrackDelayFx(trackId, track.delayFx.copyWith(syncDivision: division));
+    _recordEdit('Change Delay Division', before);
+  }
+
+  void resetTrackDelay(String trackId) {
+    final track = state.tracks
+        .where((candidate) => candidate.id == trackId)
+        .firstOrNull;
+    if (track == null) return;
+    final reset = const TrackDelayFx().copyWith(enabled: track.delayFx.enabled);
+    if (reset == track.delayFx) return;
+    final before = _captureProjectSnapshot();
+    _setTrackDelayFx(trackId, reset);
+    _recordEdit('Reset Delay', before);
+  }
+
+  TrackDelayFx _delayWithParameter(
+    TrackDelayFx delay,
+    TrackDelayParameter parameter,
+    double value,
+  ) {
+    return switch (parameter) {
+      TrackDelayParameter.time => delay.copyWith(timeSeconds: value),
+      TrackDelayParameter.feedback => delay.copyWith(feedback: value),
+      TrackDelayParameter.mix => delay.copyWith(mix: value),
+    };
+  }
+
+  String _delayParameterHistoryLabel(TrackDelayParameter parameter) {
+    return switch (parameter) {
+      TrackDelayParameter.time => 'Change Delay Time',
+      TrackDelayParameter.feedback => 'Change Delay Feedback',
+      TrackDelayParameter.mix => 'Change Delay Mix',
+    };
+  }
+
+  void _setTrackDelayFx(String trackId, TrackDelayFx delayFx) {
+    state = state.copyWith(
+      tracks: [
+        for (final track in state.tracks)
+          track.id == trackId ? track.copyWith(delayFx: delayFx) : track,
+      ],
+    );
+    _audioEngine.syncTrackDelayFx(state.tracks);
   }
 
   void setTempoBpm(double bpm) {

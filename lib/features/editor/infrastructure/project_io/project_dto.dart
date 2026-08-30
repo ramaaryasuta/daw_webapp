@@ -4,6 +4,7 @@ import '../../domain/musical_timing.dart';
 import '../../domain/track_filter_fx.dart';
 import '../../domain/track_eq_fx.dart';
 import '../../domain/track_compressor_fx.dart';
+import '../../domain/track_delay_fx.dart';
 import '../../domain/track_fx_chain.dart';
 
 const String flaudioProjectFormat = 'flaudioproject';
@@ -287,6 +288,7 @@ class ProjectTrackDto {
     this.filterFx = const TrackFilterFx(),
     this.eqFx = const TrackEqFx(),
     this.compressorFx = const TrackCompressorFx(),
+    this.delayFx = const TrackDelayFx(),
     this.fxChainOrder = defaultTrackFxChainOrder,
   });
 
@@ -301,6 +303,7 @@ class ProjectTrackDto {
   final TrackFilterFx filterFx;
   final TrackEqFx eqFx;
   final TrackCompressorFx compressorFx;
+  final TrackDelayFx delayFx;
   final List<TrackFxType> fxChainOrder;
 
   Map<String, Object?> toJson() => {
@@ -342,6 +345,14 @@ class ProjectTrackDto {
       'releaseSeconds': compressorFx.releaseSeconds,
       'makeupGainDb': compressorFx.makeupGainDb,
     },
+    'delayFx': {
+      'enabled': delayFx.enabled,
+      'syncToBpm': delayFx.syncToBpm,
+      'timeSeconds': delayFx.timeSeconds,
+      'syncDivision': delayFx.syncDivision.name,
+      'feedback': delayFx.feedback,
+      'mix': delayFx.mix,
+    },
   };
 
   factory ProjectTrackDto.fromJson(Map<String, Object?> json) =>
@@ -358,6 +369,7 @@ class ProjectTrackDto {
         filterFx: _trackFilterFx(json),
         eqFx: _trackEqFx(json),
         compressorFx: _trackCompressorFx(json),
+        delayFx: _trackDelayFx(json),
       );
 }
 
@@ -382,10 +394,53 @@ List<TrackFxType> _trackFxChainOrder(Map<String, Object?> trackJson) {
     }
     order.add(effect);
   }
+  final legacyOrder =
+      order.length == 3 &&
+      order.toSet().length == 3 &&
+      order.toSet().containsAll(const [
+        TrackFxType.filter,
+        TrackFxType.eq,
+        TrackFxType.compressor,
+      ]);
+  if (legacyOrder) {
+    order.add(TrackFxType.delay);
+  }
   if (!isValidTrackFxChainOrder(order)) {
     _invalid('fxChainOrder must contain each built-in effect exactly once.');
   }
   return List<TrackFxType>.unmodifiable(order);
+}
+
+TrackDelayFx _trackDelayFx(Map<String, Object?> trackJson) {
+  if (!trackJson.containsKey('delayFx')) {
+    return const TrackDelayFx();
+  }
+  final json = _requiredMap(trackJson, 'delayFx');
+  final divisionName = _requiredString(json, 'syncDivision');
+  final division = DelaySyncDivision.values
+      .where((candidate) => candidate.name == divisionName)
+      .firstOrNull;
+  if (division == null) {
+    _invalid('Unknown Delay sync division: $divisionName.');
+  }
+  return TrackDelayFx(
+    enabled: _requiredBool(json, 'enabled'),
+    syncToBpm: _requiredBool(json, 'syncToBpm'),
+    timeSeconds: _boundedNumber(
+      json,
+      'timeSeconds',
+      minimumDelayTimeSeconds,
+      maximumDelayTimeSeconds,
+    ),
+    syncDivision: division,
+    feedback: _boundedNumber(
+      json,
+      'feedback',
+      minimumDelayFeedback,
+      maximumDelayFeedback,
+    ),
+    mix: _boundedNumber(json, 'mix', minimumDelayMix, maximumDelayMix),
+  );
 }
 
 TrackCompressorFx _trackCompressorFx(Map<String, Object?> trackJson) {

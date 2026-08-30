@@ -8,6 +8,7 @@ import 'package:daw_webapp/features/editor/domain/track_color.dart';
 import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_compressor_fx.dart';
+import 'package:daw_webapp/features/editor/domain/track_delay_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_fx_chain.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -80,8 +81,16 @@ void main() {
           releaseSeconds: 0.3,
           makeupGainDb: 2,
         ),
+        delayFx: const TrackDelayFx(
+          enabled: true,
+          syncToBpm: true,
+          syncDivision: DelaySyncDivision.sixteenth,
+          feedback: 0.55,
+          mix: 0.3,
+        ),
         fxChainOrder: const [
           TrackFxType.eq,
+          TrackFxType.delay,
           TrackFxType.compressor,
           TrackFxType.filter,
         ],
@@ -128,6 +137,7 @@ void main() {
       expect(duplicate.filterFx, source.filterFx);
       expect(duplicate.eqFx, source.eqFx);
       expect(duplicate.compressorFx, source.compressorFx);
+      expect(duplicate.delayFx, source.delayFx);
       expect(duplicate.fxChainOrder, source.fxChainOrder);
       expect(duplicate.clips.map((clip) => clip.id), ['clip-10', 'clip-11']);
       expect(duplicate.clips.map((clip) => clip.id).toSet(), hasLength(2));

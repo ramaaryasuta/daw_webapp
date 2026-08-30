@@ -1,6 +1,7 @@
 import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_compressor_fx.dart';
+import 'package:daw_webapp/features/editor/domain/track_delay_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_fx_chain.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/project_dto.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -25,6 +26,7 @@ void main() {
     expect(track.eqFx, const TrackEqFx());
     expect(track.eqFx.isProcessing, isFalse);
     expect(track.compressorFx, const TrackCompressorFx());
+    expect(track.delayFx, const TrackDelayFx());
     expect(track.fxChainOrder, defaultTrackFxChainOrder);
   });
 
@@ -59,8 +61,17 @@ void main() {
         releaseSeconds: 0.4,
         makeupGainDb: 3,
       ),
+      delayFx: const TrackDelayFx(
+        enabled: true,
+        syncToBpm: true,
+        timeSeconds: 0.72,
+        syncDivision: DelaySyncDivision.dottedEighth,
+        feedback: 0.62,
+        mix: 0.4,
+      ),
       fxChainOrder: const [
         TrackFxType.compressor,
+        TrackFxType.delay,
         TrackFxType.filter,
         TrackFxType.eq,
       ],
@@ -71,8 +82,29 @@ void main() {
     expect(restored.filterFx, original.filterFx);
     expect(restored.eqFx, original.eqFx);
     expect(restored.compressorFx, original.compressorFx);
+    expect(restored.delayFx, original.delayFx);
     expect(restored.fxChainOrder, original.fxChainOrder);
-    expect(original.toJson()['fxChainOrder'], ['compressor', 'filter', 'eq']);
+    expect(original.toJson()['fxChainOrder'], [
+      'compressor',
+      'delay',
+      'filter',
+      'eq',
+    ]);
+  });
+
+  test('legacy three-effect order appends bypassed Delay', () {
+    final restored = ProjectTrackDto.fromJson({
+      ...baseTrackJson(),
+      'fxChainOrder': ['compressor', 'filter', 'eq'],
+    });
+
+    expect(restored.delayFx, const TrackDelayFx());
+    expect(restored.fxChainOrder, const [
+      TrackFxType.compressor,
+      TrackFxType.filter,
+      TrackFxType.eq,
+      TrackFxType.delay,
+    ]);
   });
 
   test('FX order rejects missing, duplicate, or unknown effects', () {

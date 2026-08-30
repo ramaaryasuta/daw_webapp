@@ -14,6 +14,7 @@ import '../domain/track_mixer.dart';
 import '../domain/track_filter_fx.dart';
 import '../domain/track_eq_fx.dart';
 import '../domain/track_compressor_fx.dart';
+import '../domain/track_delay_fx.dart';
 import '../domain/track_fx_chain.dart';
 import 'web_metronome_scheduler.dart';
 
@@ -72,6 +73,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
   final Map<String, _TrackFilterRuntime> _trackFilters = {};
   final Map<String, _TrackEqRuntime> _trackEqs = {};
   final Map<String, _TrackCompressorRuntime> _trackCompressors = {};
+  final Map<String, _TrackDelayRuntime> _trackDelays = {};
   final Map<String, web.GainNode> _trackFxInputs = {};
   final Map<String, List<TrackFxType>> _trackFxOrders = {};
 
@@ -83,6 +85,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
   double _contextStartTime = 0;
 
   double _projectDurationSeconds = 0;
+  double _tempoBpm = 120;
 
   LoopRegion? _activeLoopRegion;
   List<DawTrack> _scheduledTracks = const [];
@@ -99,6 +102,8 @@ class WebAudioEngine implements AudioMeterPeakSource {
   double get sampleRate => _audioContext.sampleRate;
 
   double get masterVolumeDb => _masterVolumeDb;
+
+  double get tempoBpm => _tempoBpm;
 
   void setMasterVolumeDb(double volumeDb) {
     _masterVolumeDb = clampMasterVolumeDb(volumeDb);
@@ -234,7 +239,10 @@ class WebAudioEngine implements AudioMeterPeakSource {
     required double fromSeconds,
     LoopRegion? loopRegion,
   }) async {
-    final projectDuration = calculateProjectDurationSeconds(tracks);
+    final projectDuration = calculateProjectRenderDurationSeconds(
+      tracks,
+      bpm: _tempoBpm,
+    );
     if (projectDuration <= 0 && loopRegion == null) {
       return;
     }
@@ -326,6 +334,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
         _trackFilters[track.id]!.update(track.filterFx, this);
         _trackEqs[track.id]!.update(track.eqFx, this);
         _trackCompressors[track.id]!.update(track.compressorFx, this);
+        _trackDelays[track.id]!.update(track.delayFx, _tempoBpm, this);
         _rebuildTrackFxRoutingIfNeeded(track);
         continue;
       }
@@ -337,6 +346,11 @@ class WebAudioEngine implements AudioMeterPeakSource {
         _audioContext,
         track.compressorFx,
       );
+      final delay = _TrackDelayRuntime.create(
+        _audioContext,
+        track.delayFx,
+        _tempoBpm,
+      );
       final gain = _audioContext.createGain();
       final panner = _audioContext.createStereoPanner();
       gain.gain.value = effectiveTrackGain(track, hasSolo: hasSolo);
@@ -347,6 +361,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
       _trackFilters[track.id] = filter;
       _trackEqs[track.id] = eq;
       _trackCompressors[track.id] = compressor;
+      _trackDelays[track.id] = delay;
       _trackGains[track.id] = gain;
       _trackPanners[track.id] = panner;
       _trackMeterTaps[track.id] = _StereoMeterTap.create(_audioContext, panner);
@@ -442,6 +457,9 @@ class WebAudioEngine implements AudioMeterPeakSource {
     _cleanUpFinishedSources(now);
     final windowEnd = now + _loopLookAheadSeconds;
 
+    // Delay feedback remains continuous across loop wraps. The persistent
+    // module and <= 0.90 feedback clamp make this bounded and predictable;
+    // pause, stop, and seek clear its memory through [stopSources].
     while (_nextLoopContextTime <= windowEnd) {
       if (_nextLoopContextTime >= now + _minimumScheduleLeadSeconds) {
         _scheduleSegment(
@@ -483,7 +501,10 @@ class WebAudioEngine implements AudioMeterPeakSource {
     required double positionSeconds,
     LoopRegion? loopRegion,
   }) async {
-    _projectDurationSeconds = calculateProjectDurationSeconds(tracks);
+    _projectDurationSeconds = calculateProjectRenderDurationSeconds(
+      tracks,
+      bpm: _tempoBpm,
+    );
     _activeLoopRegion = loopRegion;
 
     final transportEnd = math.max(
@@ -554,12 +575,26 @@ class WebAudioEngine implements AudioMeterPeakSource {
     }
 
     _activeSources.clear();
+    for (final delay in _trackDelays.values) {
+      delay.resetTail();
+    }
     _scheduledTracks = const [];
     _contextStartTime = 0;
   }
 
   void setTempoBpm(double tempoBpm) {
+    if (!tempoBpm.isFinite || tempoBpm <= 0) return;
+    _tempoBpm = tempoBpm;
     _metronomeScheduler.setTempoBpm(tempoBpm);
+    for (final delay in _trackDelays.values) {
+      delay.update(delay.settings, _tempoBpm, this);
+    }
+    if (_scheduledTracks.isNotEmpty) {
+      _projectDurationSeconds = calculateProjectRenderDurationSeconds(
+        _scheduledTracks,
+        bpm: _tempoBpm,
+      );
+    }
   }
 
   void setTimeSignature(TimeSignature timeSignature) {
@@ -588,6 +623,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
       _trackFilters[track.id]?.update(track.filterFx, this);
       _trackEqs[track.id]?.update(track.eqFx, this);
       _trackCompressors[track.id]?.update(track.compressorFx, this);
+      _trackDelays[track.id]?.update(track.delayFx, _tempoBpm, this);
       _rebuildTrackFxRoutingIfNeeded(track);
     }
     _scheduledTracks = List<DawTrack>.unmodifiable(tracks);
@@ -614,6 +650,17 @@ class WebAudioEngine implements AudioMeterPeakSource {
     _scheduledTracks = List<DawTrack>.unmodifiable(tracks);
   }
 
+  void syncTrackDelayFx(List<DawTrack> tracks) {
+    for (final track in tracks) {
+      _trackDelays[track.id]?.update(track.delayFx, _tempoBpm, this);
+    }
+    _scheduledTracks = List<DawTrack>.unmodifiable(tracks);
+    _projectDurationSeconds = calculateProjectRenderDurationSeconds(
+      tracks,
+      bpm: _tempoBpm,
+    );
+  }
+
   void _rebuildTrackFxRoutingIfNeeded(DawTrack track) {
     final currentOrder = _trackFxOrders[track.id];
     if (currentOrder == null ||
@@ -628,11 +675,13 @@ class WebAudioEngine implements AudioMeterPeakSource {
     final filter = _trackFilters[trackId];
     final eq = _trackEqs[trackId];
     final compressor = _trackCompressors[trackId];
+    final delay = _trackDelays[trackId];
     if (fxInput == null ||
         gain == null ||
         filter == null ||
         eq == null ||
-        compressor == null) {
+        compressor == null ||
+        delay == null) {
       return;
     }
 
@@ -640,6 +689,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
       TrackFxType.filter: filter,
       TrackFxType.eq: eq,
       TrackFxType.compressor: compressor,
+      TrackFxType.delay: delay,
     };
     try {
       fxInput.disconnect();
@@ -734,6 +784,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
     final filter = _trackFilters.remove(trackId);
     final eq = _trackEqs.remove(trackId);
     final compressor = _trackCompressors.remove(trackId);
+    final delay = _trackDelays.remove(trackId);
     final fxInput = _trackFxInputs.remove(trackId);
     _trackFxOrders.remove(trackId);
 
@@ -759,6 +810,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
     filter?.dispose();
     eq?.dispose();
     compressor?.dispose();
+    delay?.dispose();
   }
 
   void _disposeAllTrackMixerNodes() {
@@ -773,6 +825,9 @@ class WebAudioEngine implements AudioMeterPeakSource {
     }
     for (final compressor in _trackCompressors.values) {
       compressor.dispose();
+    }
+    for (final delay in _trackDelays.values) {
+      delay.dispose();
     }
     for (final fxInput in _trackFxInputs.values) {
       try {
@@ -792,6 +847,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
     _trackFilters.clear();
     _trackEqs.clear();
     _trackCompressors.clear();
+    _trackDelays.clear();
     _trackFxInputs.clear();
     _trackFxOrders.clear();
     _trackGains.clear();
@@ -1221,6 +1277,130 @@ class _TrackCompressorRuntime implements _TrackFxRuntimeModule {
 
   void dispose() {
     for (final node in nodes) {
+      try {
+        node.disconnect();
+      } catch (_) {}
+    }
+  }
+}
+
+class _TrackDelayRuntime implements _TrackFxRuntimeModule {
+  _TrackDelayRuntime._({
+    required this.context,
+    required this.input,
+    required this.output,
+    required this.dryGain,
+    required this.wetInput,
+    required this.settings,
+    required this.bpm,
+  });
+
+  factory _TrackDelayRuntime.create(
+    web.BaseAudioContext context,
+    TrackDelayFx settings,
+    double bpm,
+  ) {
+    final input = context.createGain();
+    final output = context.createGain();
+    final dryGain = context.createGain();
+    final wetInput = context.createGain();
+    input.connect(dryGain);
+    dryGain.connect(output);
+    input.connect(wetInput);
+    final runtime = _TrackDelayRuntime._(
+      context: context,
+      input: input,
+      output: output,
+      dryGain: dryGain,
+      wetInput: wetInput,
+      settings: settings,
+      bpm: bpm,
+    );
+    runtime._createWetBranch();
+    runtime._setImmediateValues();
+    return runtime;
+  }
+
+  final web.BaseAudioContext context;
+  @override
+  final web.GainNode input;
+  @override
+  final web.GainNode output;
+  final web.GainNode dryGain;
+  final web.GainNode wetInput;
+  late web.DelayNode delayNode;
+  late web.GainNode feedbackGain;
+  late web.GainNode wetGain;
+  TrackDelayFx settings;
+  double bpm;
+
+  void _createWetBranch() {
+    delayNode = context.createDelay(5);
+    feedbackGain = context.createGain();
+    wetGain = context.createGain();
+    wetInput.connect(delayNode);
+    delayNode.connect(wetGain);
+    wetGain.connect(output);
+    delayNode.connect(feedbackGain);
+    feedbackGain.connect(delayNode);
+  }
+
+  void _setImmediateValues() {
+    final enabled = settings.enabled;
+    delayNode.delayTime.value = effectiveDelayTimeSeconds(settings, bpm);
+    dryGain.gain.value = enabled ? delayDryGain(settings.mix) : 1;
+    wetInput.gain.value = enabled ? 1 : 0;
+    wetGain.gain.value = enabled ? delayWetGain(settings.mix) : 0;
+    feedbackGain.gain.value = enabled
+        ? clampDelayFeedback(settings.feedback)
+        : 0;
+  }
+
+  void update(TrackDelayFx next, double nextBpm, WebAudioEngine engine) {
+    final enabledChanged = next.enabled != settings.enabled;
+    settings = next;
+    bpm = nextBpm;
+    if (enabledChanged) {
+      resetTail();
+      return;
+    }
+    final enabled = settings.enabled;
+    engine._smoothAudioParamTo(
+      delayNode.delayTime,
+      effectiveDelayTimeSeconds(settings, bpm),
+    );
+    engine._smoothGainTo(dryGain, enabled ? delayDryGain(settings.mix) : 1);
+    engine._smoothGainTo(wetInput, enabled ? 1 : 0);
+    engine._smoothGainTo(wetGain, enabled ? delayWetGain(settings.mix) : 0);
+    engine._smoothGainTo(
+      feedbackGain,
+      enabled ? clampDelayFeedback(settings.feedback) : 0,
+    );
+  }
+
+  void resetTail() {
+    try {
+      wetInput.disconnect();
+    } catch (_) {}
+    for (final node in [delayNode, feedbackGain, wetGain]) {
+      try {
+        node.disconnect();
+      } catch (_) {}
+    }
+    _createWetBranch();
+    _setImmediateValues();
+  }
+
+  void dispose() {
+    for (final node in [
+      input,
+      output,
+      dryGain,
+      wetInput,
+      delayNode,
+      feedbackGain,
+      wetGain,
+    ]) {
       try {
         node.disconnect();
       } catch (_) {}

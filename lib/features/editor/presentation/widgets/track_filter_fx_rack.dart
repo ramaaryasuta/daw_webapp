@@ -5,10 +5,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/editor_controller.dart';
+import '../../application/tempo_controller.dart';
 import '../../domain/daw_track.dart';
 import '../../domain/track_filter_fx.dart';
 import '../../domain/track_eq_fx.dart';
 import '../../domain/track_compressor_fx.dart';
+import '../../domain/track_delay_fx.dart';
 import '../../domain/track_fx_chain.dart';
 import '../controllers/audio_meter_controller.dart';
 import '../editor_shortcut_policy.dart';
@@ -32,6 +34,7 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
   TrackFilterFx? _filterPreview;
   TrackEqFx? _eqPreview;
   TrackCompressorFx? _compressorPreview;
+  TrackDelayFx? _delayPreview;
   TrackFxType _selectedModule = TrackFxType.filter;
 
   @override
@@ -49,6 +52,8 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
     final filter = _filterPreview ?? track.filterFx;
     final eq = _eqPreview ?? track.eqFx;
     final compressor = _compressorPreview ?? track.compressorFx;
+    final delay = _delayPreview ?? track.delayFx;
+    final bpm = ref.watch(tempoControllerProvider.select((state) => state.bpm));
     final colorScheme = Theme.of(context).colorScheme;
     final accent = Color(track.colorValue);
 
@@ -68,7 +73,11 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
               children: [
                 _TrackFxRackHeader(
                   trackName: track.name,
-                  enabled: filter.enabled || eq.enabled || compressor.enabled,
+                  enabled:
+                      filter.enabled ||
+                      eq.enabled ||
+                      compressor.enabled ||
+                      delay.enabled,
                   accent: accent,
                 ),
                 Divider(height: 1, color: colorScheme.outlineVariant),
@@ -78,12 +87,14 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
                   filterActive: filter.enabled,
                   eqActive: eq.enabled,
                   compressorActive: compressor.enabled,
+                  delayActive: delay.enabled,
                   accent: accent,
                   onSelected: (module) => setState(() {
                     _selectedModule = module;
                     _filterPreview = null;
                     _eqPreview = null;
                     _compressorPreview = null;
+                    _delayPreview = null;
                   }),
                   onReorder: (oldIndex, newIndex) =>
                       _reorderFx(track.fxChainOrder, oldIndex, newIndex),
@@ -364,7 +375,7 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
                       ),
                     ),
                   ),
-                ] else ...[
+                ] else if (_selectedModule == TrackFxType.compressor) ...[
                   _EffectHeader(
                     title: 'COMPRESSOR',
                     enabled: compressor.enabled,
@@ -476,6 +487,140 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
                           ),
                         ],
                       ),
+                    ),
+                  ),
+                ] else ...[
+                  _EffectHeader(
+                    title: 'DELAY',
+                    enabled: delay.enabled,
+                    accent: const Color(0xFF7CD7C4),
+                    toggleKey: const ValueKey('track-delay-toggle'),
+                    onToggle: () => ref
+                        .read(editorControllerProvider.notifier)
+                        .toggleTrackDelay(widget.trackId),
+                    onReset: () => ref
+                        .read(editorControllerProvider.notifier)
+                        .resetTrackDelay(widget.trackId),
+                    resetKey: const ValueKey('track-delay-reset'),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 9),
+                    child: Container(
+                      height: 82,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF101615),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: colorScheme.outlineVariant),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x44000000),
+                            blurRadius: 4,
+                            offset: Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: CustomPaint(
+                          key: const ValueKey('track-delay-repeats'),
+                          painter: _DelayRepeatsPainter(
+                            delayTimeSeconds: effectiveDelayTimeSeconds(
+                              delay,
+                              bpm,
+                            ),
+                            feedback: delay.feedback,
+                            active: delay.enabled,
+                            accent: const Color(0xFF7CD7C4),
+                            gridColor: colorScheme.outlineVariant,
+                          ),
+                          child: const SizedBox.expand(),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Divider(height: 1, color: colorScheme.outlineVariant),
+                  AnimatedOpacity(
+                    duration: const Duration(milliseconds: 100),
+                    opacity: delay.enabled ? 1 : 0.5,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          Opacity(
+                            opacity: delay.syncToBpm ? 0.42 : 1,
+                            child: IgnorePointer(
+                              ignoring: delay.syncToBpm,
+                              child: _delayKnob(
+                                track: track,
+                                delay: delay,
+                                parameter: TrackDelayParameter.time,
+                                label: 'TIME',
+                                value: delay.timeSeconds,
+                                minimum: minimumDelayTimeSeconds,
+                                maximum: maximumDelayTimeSeconds,
+                                logarithmic: true,
+                                valueLabel: delay.syncToBpm
+                                    ? delay.syncDivision.label
+                                    : formatDelayTime(delay.timeSeconds),
+                              ),
+                            ),
+                          ),
+                          _delayKnob(
+                            track: track,
+                            delay: delay,
+                            parameter: TrackDelayParameter.feedback,
+                            label: 'FEEDBACK',
+                            value: delay.feedback,
+                            minimum: minimumDelayFeedback,
+                            maximum: maximumDelayFeedback,
+                            valueLabel: formatDelayPercent(delay.feedback),
+                          ),
+                          _delayKnob(
+                            track: track,
+                            delay: delay,
+                            parameter: TrackDelayParameter.mix,
+                            label: 'MIX',
+                            value: delay.mix,
+                            minimum: minimumDelayMix,
+                            maximum: maximumDelayMix,
+                            valueLabel: formatDelayPercent(delay.mix),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Divider(height: 1, color: colorScheme.outlineVariant),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 9, 12, 11),
+                    child: Row(
+                      children: [
+                        Tooltip(
+                          message: 'Sync delay time to project BPM',
+                          child: _CompactPowerButton(
+                            key: const ValueKey('track-delay-sync'),
+                            label: delay.syncToBpm ? 'SYNC ON' : 'SYNC OFF',
+                            enabled: delay.syncToBpm,
+                            accent: const Color(0xFF7CD7C4),
+                            onPressed: () => ref
+                                .read(editorControllerProvider.notifier)
+                                .toggleTrackDelaySync(widget.trackId),
+                          ),
+                        ),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: _DelayDivisionSelector(
+                            selected: delay.syncDivision,
+                            enabled: delay.syncToBpm,
+                            onSelected: (division) => ref
+                                .read(editorControllerProvider.notifier)
+                                .setTrackDelayDivision(
+                                  widget.trackId,
+                                  division,
+                                ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -614,6 +759,73 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
     );
   }
 
+  Widget _delayKnob({
+    required DawTrack track,
+    required TrackDelayFx delay,
+    required TrackDelayParameter parameter,
+    required String label,
+    required double value,
+    required double minimum,
+    required double maximum,
+    required String valueLabel,
+    bool logarithmic = false,
+  }) {
+    final hint = switch (parameter) {
+      TrackDelayParameter.time =>
+        'Drag vertically to adjust delay time. Double-click to reset.',
+      TrackDelayParameter.feedback => 'Controls how many echoes repeat',
+      TrackDelayParameter.mix => 'Blend dry and delayed signal',
+    };
+    return Tooltip(
+      message: hint,
+      child: _RotaryKnob(
+        key: ValueKey('$parameter-knob'),
+        label: label,
+        semanticLabel: switch (parameter) {
+          TrackDelayParameter.time => 'Delay time',
+          TrackDelayParameter.feedback => 'Delay feedback',
+          TrackDelayParameter.mix => 'Delay mix',
+        },
+        value: value,
+        minimum: minimum,
+        maximum: maximum,
+        logarithmic: logarithmic,
+        valueLabel: valueLabel,
+        valueFormatter: switch (parameter) {
+          TrackDelayParameter.time => formatDelayTime,
+          TrackDelayParameter.feedback ||
+          TrackDelayParameter.mix => formatDelayPercent,
+        },
+        active: delay.enabled,
+        accent: const Color(0xFF7CD7C4),
+        onChangeStart: () => ref
+            .read(editorControllerProvider.notifier)
+            .beginTrackDelayChange(widget.trackId, parameter),
+        onChanged: (value) {
+          final base = _delayPreview ?? track.delayFx;
+          setState(
+            () => _delayPreview = _withDelayParameter(base, parameter, value),
+          );
+          ref
+              .read(editorControllerProvider.notifier)
+              .previewTrackDelayChange(widget.trackId, parameter, value);
+        },
+        onChangeEnd: (value) {
+          ref
+              .read(editorControllerProvider.notifier)
+              .commitTrackDelayChange(widget.trackId, parameter, value);
+          if (mounted) setState(() => _delayPreview = null);
+        },
+        onReset: () {
+          ref
+              .read(editorControllerProvider.notifier)
+              .resetTrackDelayParameter(widget.trackId, parameter);
+          setState(() => _delayPreview = null);
+        },
+      ),
+    );
+  }
+
   void _beginParameter(TrackFilterParameter parameter) {
     ref
         .read(editorControllerProvider.notifier)
@@ -692,6 +904,18 @@ TrackCompressorFx _withCompressorParameter(
     TrackCompressorParameter.makeupGain => compressor.copyWith(
       makeupGainDb: value,
     ),
+  };
+}
+
+TrackDelayFx _withDelayParameter(
+  TrackDelayFx delay,
+  TrackDelayParameter parameter,
+  double value,
+) {
+  return switch (parameter) {
+    TrackDelayParameter.time => delay.copyWith(timeSeconds: value),
+    TrackDelayParameter.feedback => delay.copyWith(feedback: value),
+    TrackDelayParameter.mix => delay.copyWith(mix: value),
   };
 }
 
@@ -893,6 +1117,136 @@ class _GainReductionMeter extends StatelessWidget {
   }
 }
 
+class _DelayDivisionSelector extends StatelessWidget {
+  const _DelayDivisionSelector({
+    required this.selected,
+    required this.enabled,
+    required this.onSelected,
+  });
+
+  final DelaySyncDivision selected;
+  final bool enabled;
+  final ValueChanged<DelaySyncDivision> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    const accent = Color(0xFF7CD7C4);
+    return Opacity(
+      opacity: enabled ? 1 : 0.4,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          for (final division in DelaySyncDivision.values)
+            Padding(
+              padding: const EdgeInsets.only(left: 3),
+              child: InkWell(
+                key: ValueKey('delay-division-${division.name}'),
+                onTap: enabled ? () => onSelected(division) : null,
+                borderRadius: BorderRadius.circular(3),
+                child: Container(
+                  height: 24,
+                  constraints: const BoxConstraints(minWidth: 40),
+                  padding: const EdgeInsets.symmetric(horizontal: 5),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: selected == division
+                        ? accent.withValues(alpha: 0.18)
+                        : scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(3),
+                    border: Border.all(
+                      color: selected == division
+                          ? accent.withValues(alpha: 0.8)
+                          : scheme.outlineVariant,
+                    ),
+                  ),
+                  child: Text(
+                    division.label,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      color: selected == division
+                          ? accent
+                          : scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DelayRepeatsPainter extends CustomPainter {
+  const _DelayRepeatsPainter({
+    required this.delayTimeSeconds,
+    required this.feedback,
+    required this.active,
+    required this.accent,
+    required this.gridColor,
+  });
+
+  final double delayTimeSeconds;
+  final double feedback;
+  final bool active;
+  final Color accent;
+  final Color gridColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final baseline = size.height * 0.68;
+    final timeRatio =
+        math.log(
+          delayTimeSeconds.clamp(
+                minimumDelayTimeSeconds,
+                maximumSynchronizedDelayTimeSeconds,
+              ) /
+              minimumDelayTimeSeconds,
+        ) /
+        math.log(maximumSynchronizedDelayTimeSeconds / minimumDelayTimeSeconds);
+    final spacing = 25 + 48 * timeRatio;
+    final repeatCount = math.min(5, ((size.width - 30) / spacing).floor() + 1);
+    final paintColor = active ? accent : gridColor.withValues(alpha: 0.65);
+    canvas.drawLine(
+      Offset(16, baseline),
+      Offset(size.width - 16, baseline),
+      Paint()
+        ..color = gridColor.withValues(alpha: 0.45)
+        ..strokeWidth = 1,
+    );
+    for (var index = 0; index < repeatCount; index++) {
+      final amplitude = index == 0
+          ? 1.0
+          : math.pow(clampDelayFeedback(feedback), index).toDouble();
+      final x = 20 + spacing * index;
+      final height = 8 + 35 * amplitude;
+      canvas.drawLine(
+        Offset(x, baseline),
+        Offset(x, baseline - height),
+        Paint()
+          ..color = paintColor.withValues(alpha: 0.3 + 0.7 * amplitude)
+          ..strokeWidth = 3
+          ..strokeCap = StrokeCap.round,
+      );
+      canvas.drawCircle(
+        Offset(x, baseline - height),
+        3.2,
+        Paint()..color = paintColor.withValues(alpha: 0.35 + 0.65 * amplitude),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DelayRepeatsPainter oldDelegate) =>
+      oldDelegate.delayTimeSeconds != delayTimeSeconds ||
+      oldDelegate.feedback != feedback ||
+      oldDelegate.active != active ||
+      oldDelegate.accent != accent ||
+      oldDelegate.gridColor != gridColor;
+}
+
 class _FxChainSlots extends StatelessWidget {
   const _FxChainSlots({
     required this.order,
@@ -900,6 +1254,7 @@ class _FxChainSlots extends StatelessWidget {
     required this.filterActive,
     required this.eqActive,
     required this.compressorActive,
+    required this.delayActive,
     required this.accent,
     required this.onSelected,
     required this.onReorder,
@@ -910,6 +1265,7 @@ class _FxChainSlots extends StatelessWidget {
   final bool filterActive;
   final bool eqActive;
   final bool compressorActive;
+  final bool delayActive;
   final Color accent;
   final ValueChanged<TrackFxType> onSelected;
   final void Function(int oldIndex, int newIndex) onReorder;
@@ -952,11 +1308,13 @@ class _FxChainSlots extends StatelessWidget {
                 TrackFxType.filter => filterActive,
                 TrackFxType.eq => eqActive,
                 TrackFxType.compressor => compressorActive,
+                TrackFxType.delay => delayActive,
               };
               final effectAccent = switch (effect) {
                 TrackFxType.filter => accent,
                 TrackFxType.eq => const Color(0xFF79B8FF),
                 TrackFxType.compressor => const Color(0xFFFFB45E),
+                TrackFxType.delay => const Color(0xFF7CD7C4),
               };
               return Padding(
                 key: ValueKey('track-fx-slot-${effect.name}'),

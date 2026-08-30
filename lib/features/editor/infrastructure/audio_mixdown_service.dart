@@ -9,6 +9,7 @@ import '../domain/daw_track.dart';
 import '../domain/track_mixer.dart';
 import '../domain/track_eq_fx.dart';
 import '../domain/track_compressor_fx.dart';
+import '../domain/track_delay_fx.dart';
 import '../domain/track_fx_chain.dart';
 import 'audio_render_duration.dart';
 import 'generated_export.dart';
@@ -40,7 +41,10 @@ class AudioMixdownService implements AudioExportGenerator {
       throw const AudioMixdownException('The project has no audio to export.');
     }
 
-    final durationSeconds = calculateProjectDurationSeconds(tracks);
+    final durationSeconds = calculateProjectRenderDurationSeconds(
+      tracks,
+      bpm: _audioEngine.tempoBpm,
+    );
     if (!durationSeconds.isFinite ||
         durationSeconds <= 0 ||
         durationSeconds > _maximumDurationSeconds) {
@@ -145,6 +149,32 @@ class AudioMixdownService implements AudioExportGenerator {
               fxTail.connect(compressor);
               compressor.connect(makeupGain);
               fxTail = makeupGain;
+            }
+            break;
+          case TrackFxType.delay:
+            if (track.delayFx.enabled) {
+              final delayInput = offlineContext.createGain();
+              final delayOutput = offlineContext.createGain();
+              final dryGain = offlineContext.createGain()
+                ..gain.value = delayDryGain(track.delayFx.mix);
+              final delayNode = offlineContext.createDelay(5)
+                ..delayTime.value = effectiveDelayTimeSeconds(
+                  track.delayFx,
+                  _audioEngine.tempoBpm,
+                );
+              final feedbackGain = offlineContext.createGain()
+                ..gain.value = clampDelayFeedback(track.delayFx.feedback);
+              final wetGain = offlineContext.createGain()
+                ..gain.value = delayWetGain(track.delayFx.mix);
+              fxTail.connect(delayInput);
+              delayInput.connect(dryGain);
+              dryGain.connect(delayOutput);
+              delayInput.connect(delayNode);
+              delayNode.connect(wetGain);
+              wetGain.connect(delayOutput);
+              delayNode.connect(feedbackGain);
+              feedbackGain.connect(delayNode);
+              fxTail = delayOutput;
             }
             break;
         }

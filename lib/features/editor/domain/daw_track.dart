@@ -1,9 +1,12 @@
+import 'dart:math' as math;
+
 import 'audio_clip.dart';
 import 'track_color.dart';
 import 'track_filter_fx.dart';
 import 'track_eq_fx.dart';
 import 'track_compressor_fx.dart';
 import 'track_fx_chain.dart';
+import 'track_delay_fx.dart';
 
 const int maximumTrackNameLength = 80;
 
@@ -20,6 +23,7 @@ class DawTrack {
     this.filterFx = const TrackFilterFx(),
     this.eqFx = const TrackEqFx(),
     this.compressorFx = const TrackCompressorFx(),
+    this.delayFx = const TrackDelayFx(),
     this.fxChainOrder = defaultTrackFxChainOrder,
   }) : colorValue = 0xFF000000 | (colorValue & 0x00FFFFFF),
        pan = pan != pan ? 0 : (pan < -1 ? -1 : (pan > 1 ? 1 : pan));
@@ -40,6 +44,7 @@ class DawTrack {
   final TrackFilterFx filterFx;
   final TrackEqFx eqFx;
   final TrackCompressorFx compressorFx;
+  final TrackDelayFx delayFx;
   final List<TrackFxType> fxChainOrder;
 
   double get endTimeSeconds {
@@ -64,6 +69,7 @@ class DawTrack {
     TrackFilterFx? filterFx,
     TrackEqFx? eqFx,
     TrackCompressorFx? compressorFx,
+    TrackDelayFx? delayFx,
     List<TrackFxType>? fxChainOrder,
   }) {
     return DawTrack(
@@ -78,9 +84,24 @@ class DawTrack {
       filterFx: filterFx ?? this.filterFx,
       eqFx: eqFx ?? this.eqFx,
       compressorFx: compressorFx ?? this.compressorFx,
+      delayFx: delayFx ?? this.delayFx,
       fxChainOrder: fxChainOrder ?? this.fxChainOrder,
     );
   }
+}
+
+double calculateProjectRenderDurationSeconds(
+  Iterable<DawTrack> tracks, {
+  required double bpm,
+}) {
+  var duration = 0.0;
+  for (final track in tracks) {
+    duration = math.max(
+      duration,
+      track.endTimeSeconds + estimateDelayTailSeconds(track.delayFx, bpm),
+    );
+  }
+  return duration;
 }
 
 double calculateProjectDurationSeconds(Iterable<DawTrack> tracks) {

@@ -6,6 +6,7 @@ import 'package:daw_webapp/features/editor/domain/musical_timing.dart';
 import 'package:daw_webapp/features/editor/domain/track_color.dart';
 import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_compressor_fx.dart';
+import 'package:daw_webapp/features/editor/domain/track_delay_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_fx_chain.dart';
 import 'package:daw_webapp/features/editor/domain/timeline_marker.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -106,6 +107,7 @@ void main() {
         track.copyWith(
           fxChainOrder: const [
             TrackFxType.compressor,
+            TrackFxType.delay,
             TrackFxType.eq,
             TrackFxType.filter,
           ],
@@ -125,6 +127,42 @@ void main() {
     expect(
       history.undo(after)!.snapshot.tracks.single.fxChainOrder,
       defaultTrackFxChainOrder,
+    );
+  });
+
+  test('Delay metadata participates in project history', () {
+    const track = DawTrack(id: 'track-1', name: 'Vocals', clips: []);
+    final before = ProjectSnapshot(
+      tracks: const [track],
+      bpm: 120,
+      selectedTrackId: track.id,
+    );
+    final after = ProjectSnapshot(
+      tracks: [
+        track.copyWith(
+          delayFx: const TrackDelayFx(
+            enabled: true,
+            syncToBpm: true,
+            syncDivision: DelaySyncDivision.dottedQuarter,
+            feedback: 0.7,
+            mix: 0.45,
+          ),
+        ),
+      ],
+      bpm: 120,
+      selectedTrackId: track.id,
+    );
+
+    final history = EditorHistory().record(
+      label: 'Change Delay Feedback',
+      before: before,
+      after: after,
+    );
+
+    expect(history.past.single.label, 'Change Delay Feedback');
+    expect(
+      history.undo(after)!.snapshot.tracks.single.delayFx,
+      const TrackDelayFx(),
     );
   });
 

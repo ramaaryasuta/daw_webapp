@@ -5,6 +5,7 @@ import 'package:daw_webapp/features/editor/application/editor_controller.dart';
 import 'package:daw_webapp/features/editor/domain/track_color.dart';
 import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
+import 'package:daw_webapp/features/editor/domain/track_delay_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_fx_chain.dart';
 import 'package:daw_webapp/features/editor/presentation/editor_page.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/audio_level_meter.dart';
@@ -17,6 +18,55 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('Delay edits are atomic and duplicate with chain position', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final controller = container.read(editorControllerProvider.notifier);
+    final trackId = controller.addTrack();
+
+    controller.toggleTrackDelay(trackId);
+    controller.toggleTrackDelaySync(trackId);
+    controller.setTrackDelayDivision(trackId, DelaySyncDivision.dottedEighth);
+    final historyBeforeDrag = container
+        .read(editorControllerProvider)
+        .history
+        .past
+        .length;
+    controller.beginTrackDelayChange(trackId, TrackDelayParameter.feedback);
+    controller.previewTrackDelayChange(
+      trackId,
+      TrackDelayParameter.feedback,
+      0.5,
+    );
+    controller.previewTrackDelayChange(
+      trackId,
+      TrackDelayParameter.feedback,
+      0.65,
+    );
+    controller.commitTrackDelayChange(
+      trackId,
+      TrackDelayParameter.feedback,
+      0.65,
+    );
+    controller.reorderTrackFx(trackId, const [
+      TrackFxType.delay,
+      TrackFxType.compressor,
+      TrackFxType.eq,
+      TrackFxType.filter,
+    ]);
+
+    expect(
+      container.read(editorControllerProvider).history.past,
+      hasLength(historyBeforeDrag + 2),
+    );
+    final duplicateId = await controller.duplicateTrack(trackId);
+    final tracks = container.read(editorControllerProvider).tracks;
+    final source = tracks.firstWhere((track) => track.id == trackId);
+    final duplicate = tracks.firstWhere((track) => track.id == duplicateId);
+    expect(duplicate.delayFx, source.delayFx);
+    expect(duplicate.fxChainOrder, source.fxChainOrder);
+  });
+
   test(
     'Filter FX gestures commit once and duplicate persistent settings',
     () async {
@@ -234,9 +284,9 @@ void main() {
     );
     expect(cutoffSemantics.value, isNotEmpty);
     expect(find.byKey(const ValueKey('track-fx-chain')), findsOneWidget);
-    expect(find.byTooltip('Drag to reorder effect'), findsNWidgets(3));
+    expect(find.byTooltip('Drag to reorder effect'), findsNWidgets(4));
     expect(
-      find.bySemanticsLabel('FILTER, effect slot 1 of 3, bypassed'),
+      find.bySemanticsLabel('FILTER, effect slot 1 of 4, bypassed'),
       findsOneWidget,
     );
 
@@ -260,7 +310,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       container.read(editorControllerProvider).tracks.single.fxChainOrder,
-      const [TrackFxType.compressor, TrackFxType.filter, TrackFxType.eq],
+      const [
+        TrackFxType.compressor,
+        TrackFxType.filter,
+        TrackFxType.eq,
+        TrackFxType.delay,
+      ],
     );
     expect(
       container.read(editorControllerProvider).history.past,
@@ -279,7 +334,12 @@ void main() {
     await container.read(editorControllerProvider.notifier).redo();
     expect(
       container.read(editorControllerProvider).tracks.single.fxChainOrder,
-      const [TrackFxType.compressor, TrackFxType.filter, TrackFxType.eq],
+      const [
+        TrackFxType.compressor,
+        TrackFxType.filter,
+        TrackFxType.eq,
+        TrackFxType.delay,
+      ],
     );
 
     await tester.tap(find.byKey(const ValueKey('track-fx-eq-tab')));
@@ -293,6 +353,26 @@ void main() {
     expect(
       container.read(editorControllerProvider).tracks.single.eqFx.enabled,
       isTrue,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('track-fx-delay-tab')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('track-delay-repeats')), findsOneWidget);
+    expect(find.bySemanticsLabel('Delay time'), findsOneWidget);
+    expect(find.bySemanticsLabel('Delay feedback'), findsOneWidget);
+    expect(find.bySemanticsLabel('Delay mix'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('track-delay-toggle')));
+    await tester.tap(find.byKey(const ValueKey('track-delay-sync')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('delay-division-dottedEighth')));
+    await tester.pump();
+    expect(
+      container.read(editorControllerProvider).tracks.single.delayFx,
+      const TrackDelayFx(
+        enabled: true,
+        syncToBpm: true,
+        syncDivision: DelaySyncDivision.dottedEighth,
+      ),
     );
 
     await tester.tap(find.byKey(const ValueKey('track-fx-filter-tab')));

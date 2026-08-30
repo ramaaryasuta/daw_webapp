@@ -10,6 +10,7 @@ import 'package:daw_webapp/features/editor/domain/daw_track.dart';
 import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_compressor_fx.dart';
+import 'package:daw_webapp/features/editor/domain/track_delay_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_fx_chain.dart';
 import 'package:daw_webapp/features/editor/infrastructure/audio_mixdown_service.dart';
 import 'package:daw_webapp/features/editor/infrastructure/wav_encoder.dart';
@@ -61,6 +62,7 @@ void main() {
     TrackFilterFx filterFx = const TrackFilterFx(),
     TrackEqFx eqFx = const TrackEqFx(),
     TrackCompressorFx compressorFx = const TrackCompressorFx(),
+    TrackDelayFx delayFx = const TrackDelayFx(),
     List<TrackFxType> fxChainOrder = defaultTrackFxChainOrder,
   }) {
     return DawTrack(
@@ -73,6 +75,7 @@ void main() {
       filterFx: filterFx,
       eqFx: eqFx,
       compressorFx: compressorFx,
+      delayFx: delayFx,
       fxChainOrder: fxChainOrder,
       clips: [
         AudioClip(
@@ -469,6 +472,7 @@ void main() {
             TrackFxType.eq,
             TrackFxType.compressor,
             TrackFxType.filter,
+            TrackFxType.delay,
           ],
         ),
       ])).wavBytes,
@@ -483,12 +487,34 @@ void main() {
             TrackFxType.compressor,
             TrackFxType.eq,
             TrackFxType.filter,
+            TrackFxType.delay,
           ],
         ),
       ])).wavBytes,
     );
 
     expect(compressorThenEq / eqThenCompressor, greaterThan(1.3));
+  });
+
+  test('offline WAV includes the enabled Delay tail', () async {
+    const delay = TrackDelayFx(
+      enabled: true,
+      timeSeconds: 0.02,
+      feedback: 0.5,
+      mix: 1,
+    );
+    final generated = await mixdown.generateWavExport([
+      track('delay-tail', delayFx: delay),
+    ]);
+    final expected = durationSeconds + estimateDelayTailSeconds(delay, 120);
+
+    expect(generated.durationSeconds, closeTo(expected, 1 / sampleRate));
+    final samples = _leftChannelSamples(generated.wavBytes);
+    final tailStart = (durationSeconds * sampleRate).ceil();
+    expect(
+      samples.skip(tailStart).any((sample) => sample.abs() > 0.002),
+      isTrue,
+    );
   });
 
   test('repeated live Track FX reorder keeps transport running', () async {
@@ -513,6 +539,7 @@ void main() {
                   TrackFxType.compressor,
                   TrackFxType.filter,
                   TrackFxType.eq,
+                  TrackFxType.delay,
                 ]
               : defaultTrackFxChainOrder,
         ),

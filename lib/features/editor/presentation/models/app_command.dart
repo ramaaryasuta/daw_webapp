@@ -322,6 +322,34 @@ abstract final class EditorCommands {
     tip: _trackFxKnobTip,
   );
 
+  static const trackDelay = AppCommand(
+    title: 'Track Delay',
+    description:
+        'Create repeating echoes on a track with adjustable time, feedback, mix, and tempo sync.',
+    shortcutParts: ['Track Actions', 'Track FX', 'Delay'],
+    category: AppCommandCategory.mixer,
+    searchTerms: [
+      'delay',
+      'echo',
+      'feedback',
+      'wet',
+      'dry',
+      'tempo sync',
+      'bpm',
+      'repeat',
+      'fx',
+    ],
+    usageSteps: [
+      'Enable Delay.',
+      'Adjust Time or enable BPM Sync.',
+      'Increase Feedback for more repeats.',
+      'Adjust Mix for the desired dry/wet balance.',
+      'Reorder Delay in the FX Chain to change how other effects interact with it.',
+    ],
+    tip:
+        'Delay before Compressor sounds different from Compressor before Delay.',
+  );
+
   static const reorderTrackFx = AppCommand(
     title: 'Reorder Track FX',
     description:
@@ -338,6 +366,7 @@ abstract final class EditorCommands {
       'filter',
       'eq',
       'compressor',
+      'delay',
     ],
     usageSteps: [
       'Open Track FX.',
@@ -518,6 +547,7 @@ abstract final class EditorCommands {
     trackFilterFx,
     trackEqFx,
     trackCompressor,
+    trackDelay,
     reorderTrackFx,
     deleteTrack,
     reorderTrack,
