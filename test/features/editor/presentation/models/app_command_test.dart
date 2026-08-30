@@ -266,6 +266,20 @@ void main() {
     expect(command.usageSteps, hasLength(5));
   });
 
+  test('Help commands document Track FX chain reordering', () {
+    final command = EditorCommands.all.singleWhere(
+      (command) => command.title == 'Reorder Track FX',
+    );
+
+    expect(command.shortcutParts, ['Drag FX Slot']);
+    expect(
+      command.searchTerms,
+      containsAll(['fx chain', 'effect order', 'signal flow', 'insert', 'rack']),
+    );
+    expect(command.usageSteps, hasLength(4));
+    expect(command.tip, contains('Compressor before EQ'));
+  });
+
   test('Help commands define the track reorder handle gesture once', () {
     final matches = EditorCommands.all.where(
       (command) => command.title == 'Reorder Track',

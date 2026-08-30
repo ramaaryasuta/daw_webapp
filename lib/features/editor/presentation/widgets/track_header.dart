@@ -96,7 +96,10 @@ class _TrackHeaderState extends State<TrackHeader> {
   final FocusNode _nameFocusNode = FocusNode();
   final MenuController _colorMenuController = MenuController();
   final MenuController _propertiesMenuController = MenuController();
-  final MenuController _fxMenuController = MenuController();
+  final OverlayPortalController _fxOverlayController = OverlayPortalController(
+    debugLabel: 'track-fx-rack',
+  );
+  final ScrollController _fxOverlayScrollController = ScrollController();
 
   bool _isRenaming = false;
   bool _colorEditActive = false;
@@ -112,6 +115,7 @@ class _TrackHeaderState extends State<TrackHeader> {
     _nameFocusNode.removeListener(_handleNameFocusChange);
     _nameFocusNode.dispose();
     _nameController.dispose();
+    _fxOverlayScrollController.dispose();
     super.dispose();
   }
 
@@ -233,9 +237,67 @@ class _TrackHeaderState extends State<TrackHeader> {
     _propertiesMenuController.close();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _fxMenuController.open();
+        _fxOverlayController.show();
       }
     });
+  }
+
+  void _closeFxRack() {
+    if (_fxOverlayController.isShowing) {
+      _fxOverlayController.hide();
+    }
+  }
+
+  Widget _buildFxOverlay(
+    BuildContext context,
+    OverlayChildLayoutInfo layoutInfo,
+  ) {
+    final anchorRect = MatrixUtils.transformRect(
+      layoutInfo.childPaintTransform,
+      Offset.zero & layoutInfo.childSize,
+    );
+    final maximumRackHeight = layoutInfo.overlaySize.height - 16;
+
+    return Positioned.fill(
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.escape): _closeFxRack,
+        },
+        child: Focus(
+          autofocus: true,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: ModalBarrier(
+                  color: Colors.transparent,
+                  dismissible: true,
+                  onDismiss: _closeFxRack,
+                ),
+              ),
+              CustomSingleChildLayout(
+                delegate: _TrackFxRackLayoutDelegate(anchorRect: anchorRect),
+                child: Material(
+                  color: Colors.transparent,
+                  elevation: 8,
+                  shadowColor: Colors.black54,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: maximumRackHeight),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(7),
+                      child: SingleChildScrollView(
+                        key: const ValueKey('track-fx-overlay-scroll-view'),
+                        controller: _fxOverlayScrollController,
+                        child: widget.trackFxRack!,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -342,94 +404,71 @@ class _TrackHeaderState extends State<TrackHeader> {
                           const SizedBox(width: 4),
                           Expanded(child: _buildTrackName(context)),
 
-                          MenuAnchor(
-                            controller: _fxMenuController,
-                            useRootOverlay: true,
-                            consumeOutsideTap: true,
-                            style: MenuStyle(
-                              padding: const WidgetStatePropertyAll(
-                                EdgeInsets.zero,
-                              ),
-                              backgroundColor: WidgetStatePropertyAll(
-                                colorScheme.surfaceContainerHigh,
-                              ),
-                              elevation: const WidgetStatePropertyAll(8),
-                              shape: WidgetStatePropertyAll(
-                                RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(7),
-                                  side: BorderSide(
-                                    color: colorScheme.outlineVariant,
+                          OverlayPortal.overlayChildLayoutBuilder(
+                            controller: _fxOverlayController,
+                            overlayLocation: OverlayChildLocation.rootOverlay,
+                            overlayChildBuilder: _buildFxOverlay,
+                            child: MenuAnchor(
+                              controller: _propertiesMenuController,
+                              useRootOverlay: true,
+                              consumeOutsideTap: true,
+                              style: MenuStyle(
+                                padding: const WidgetStatePropertyAll(
+                                  EdgeInsets.zero,
+                                ),
+                                backgroundColor: WidgetStatePropertyAll(
+                                  colorScheme.surfaceContainerHigh,
+                                ),
+                                elevation: const WidgetStatePropertyAll(8),
+                                shape: WidgetStatePropertyAll(
+                                  RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(7),
+                                    side: BorderSide(
+                                      color: colorScheme.outlineVariant,
+                                    ),
                                   ),
                                 ),
                               ),
+                              menuChildren: [
+                                TrackPropertiesPopover(
+                                  key: const ValueKey(
+                                    'track-properties-popover',
+                                  ),
+                                  trackName: widget.name,
+                                  colorValue: widget.colorValue,
+                                  pan: widget.pan,
+                                  onRename: _renameFromProperties,
+                                  onColorSelected: widget.onColorSelected,
+                                  onPanChangeStart: widget.onPanChangeStart,
+                                  onPanChanged: widget.onPanChanged,
+                                  onPanChangeEnd: widget.onPanChangeEnd,
+                                  onPanReset: widget.onPanReset,
+                                  onTrackFx: widget.trackFxRack == null
+                                      ? null
+                                      : _openFxFromProperties,
+                                  onDuplicate: _duplicateFromProperties,
+                                  onDelete: _deleteFromProperties,
+                                ),
+                              ],
+                              builder: (context, controller, child) =>
+                                  IconButton(
+                                    key: const ValueKey(
+                                      'track-properties-button',
+                                    ),
+                                    tooltip: 'Track actions',
+                                    iconSize: 18,
+                                    visualDensity: VisualDensity.compact,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints.tightFor(
+                                      width: 32,
+                                      height: 32,
+                                    ),
+                                    onPressed: () => controller.isOpen
+                                        ? controller.close()
+                                        : controller.open(),
+                                    icon: const Icon(Icons.more_horiz),
+                                  ),
                             ),
-                            menuChildren: [
-                              if (widget.trackFxRack != null)
-                                widget.trackFxRack!,
-                            ],
-                            builder: (context, fxController, child) =>
-                                MenuAnchor(
-                                  controller: _propertiesMenuController,
-                                  useRootOverlay: true,
-                                  consumeOutsideTap: true,
-                                  style: MenuStyle(
-                                    padding: const WidgetStatePropertyAll(
-                                      EdgeInsets.zero,
-                                    ),
-                                    backgroundColor: WidgetStatePropertyAll(
-                                      colorScheme.surfaceContainerHigh,
-                                    ),
-                                    elevation: const WidgetStatePropertyAll(8),
-                                    shape: WidgetStatePropertyAll(
-                                      RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(7),
-                                        side: BorderSide(
-                                          color: colorScheme.outlineVariant,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  menuChildren: [
-                                    TrackPropertiesPopover(
-                                      key: const ValueKey(
-                                        'track-properties-popover',
-                                      ),
-                                      trackName: widget.name,
-                                      colorValue: widget.colorValue,
-                                      pan: widget.pan,
-                                      onRename: _renameFromProperties,
-                                      onColorSelected: widget.onColorSelected,
-                                      onPanChangeStart: widget.onPanChangeStart,
-                                      onPanChanged: widget.onPanChanged,
-                                      onPanChangeEnd: widget.onPanChangeEnd,
-                                      onPanReset: widget.onPanReset,
-                                      onTrackFx: widget.trackFxRack == null
-                                          ? null
-                                          : _openFxFromProperties,
-                                      onDuplicate: _duplicateFromProperties,
-                                      onDelete: _deleteFromProperties,
-                                    ),
-                                  ],
-                                  builder: (context, controller, child) =>
-                                      IconButton(
-                                        key: const ValueKey(
-                                          'track-properties-button',
-                                        ),
-                                        tooltip: 'Track actions',
-                                        iconSize: 18,
-                                        visualDensity: VisualDensity.compact,
-                                        padding: EdgeInsets.zero,
-                                        constraints:
-                                            const BoxConstraints.tightFor(
-                                              width: 32,
-                                              height: 32,
-                                            ),
-                                        onPressed: () => controller.isOpen
-                                            ? controller.close()
-                                            : controller.open(),
-                                        icon: const Icon(Icons.more_horiz),
-                                      ),
-                                ),
                           ),
                         ],
                       ),
@@ -555,6 +594,48 @@ class _TrackHeaderState extends State<TrackHeader> {
       ),
     );
   }
+}
+
+class _TrackFxRackLayoutDelegate extends SingleChildLayoutDelegate {
+  const _TrackFxRackLayoutDelegate({required this.anchorRect});
+
+  static const double _edgePadding = 8;
+  static const double _anchorGap = 4;
+
+  final Rect anchorRect;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
+      constraints.loosen();
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final desiredLeft = anchorRect.right - childSize.width;
+    final maximumLeft = size.width - childSize.width - _edgePadding;
+    final left = maximumLeft < _edgePadding
+        ? _edgePadding
+        : desiredLeft.clamp(_edgePadding, maximumLeft).toDouble();
+
+    final below = anchorRect.bottom + _anchorGap;
+    final above = anchorRect.top - childSize.height - _anchorGap;
+    final maximumTop = size.height - childSize.height - _edgePadding;
+    final double top;
+    if (below + childSize.height <= size.height - _edgePadding) {
+      top = below;
+    } else if (above >= _edgePadding) {
+      top = above;
+    } else if (maximumTop < _edgePadding) {
+      top = _edgePadding;
+    } else {
+      top = anchorRect.top.clamp(_edgePadding, maximumTop).toDouble();
+    }
+
+    return Offset(left, top);
+  }
+
+  @override
+  bool shouldRelayout(_TrackFxRackLayoutDelegate oldDelegate) =>
+      oldDelegate.anchorRect != anchorRect;
 }
 
 class _TrackReorderHandle extends StatelessWidget {

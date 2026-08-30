@@ -19,6 +19,10 @@ abstract final class DawInteractionHints {
     title: 'Drag to reorder track',
   );
 
+  static const fxReorder = DawInteractionHintData(
+    title: 'Drag to reorder effect',
+  );
+
   static const section = DawInteractionHintData(
     title: 'Double-click · Section Properties',
     detail: 'Drag · Move   Drag edges · Resize',

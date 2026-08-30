@@ -1,6 +1,7 @@
 import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_compressor_fx.dart';
+import 'package:daw_webapp/features/editor/domain/track_fx_chain.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/project_dto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -24,6 +25,7 @@ void main() {
     expect(track.eqFx, const TrackEqFx());
     expect(track.eqFx.isProcessing, isFalse);
     expect(track.compressorFx, const TrackCompressorFx());
+    expect(track.fxChainOrder, defaultTrackFxChainOrder);
   });
 
   test('Filter FX metadata round-trips all authoritative values', () {
@@ -57,6 +59,11 @@ void main() {
         releaseSeconds: 0.4,
         makeupGainDb: 3,
       ),
+      fxChainOrder: const [
+        TrackFxType.compressor,
+        TrackFxType.filter,
+        TrackFxType.eq,
+      ],
     );
 
     final restored = ProjectTrackDto.fromJson(original.toJson());
@@ -64,5 +71,24 @@ void main() {
     expect(restored.filterFx, original.filterFx);
     expect(restored.eqFx, original.eqFx);
     expect(restored.compressorFx, original.compressorFx);
+    expect(restored.fxChainOrder, original.fxChainOrder);
+    expect(original.toJson()['fxChainOrder'], ['compressor', 'filter', 'eq']);
+  });
+
+  test('FX order rejects missing, duplicate, or unknown effects', () {
+    expect(
+      () => ProjectTrackDto.fromJson({
+        ...baseTrackJson(),
+        'fxChainOrder': ['filter', 'filter', 'compressor'],
+      }),
+      throwsA(isA<FlaudioProjectException>()),
+    );
+    expect(
+      () => ProjectTrackDto.fromJson({
+        ...baseTrackJson(),
+        'fxChainOrder': ['filter', 'eq', 'reverb'],
+      }),
+      throwsA(isA<FlaudioProjectException>()),
+    );
   });
 }

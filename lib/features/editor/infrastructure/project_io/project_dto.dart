@@ -4,6 +4,7 @@ import '../../domain/musical_timing.dart';
 import '../../domain/track_filter_fx.dart';
 import '../../domain/track_eq_fx.dart';
 import '../../domain/track_compressor_fx.dart';
+import '../../domain/track_fx_chain.dart';
 
 const String flaudioProjectFormat = 'flaudioproject';
 const String projectFileExtension = '.$flaudioProjectFormat';
@@ -286,6 +287,7 @@ class ProjectTrackDto {
     this.filterFx = const TrackFilterFx(),
     this.eqFx = const TrackEqFx(),
     this.compressorFx = const TrackCompressorFx(),
+    this.fxChainOrder = defaultTrackFxChainOrder,
   });
 
   final String id;
@@ -299,6 +301,7 @@ class ProjectTrackDto {
   final TrackFilterFx filterFx;
   final TrackEqFx eqFx;
   final TrackCompressorFx compressorFx;
+  final List<TrackFxType> fxChainOrder;
 
   Map<String, Object?> toJson() => {
     'id': id,
@@ -309,6 +312,7 @@ class ProjectTrackDto {
     'mute': muted,
     'solo': solo,
     'pan': pan,
+    'fxChainOrder': [for (final effect in fxChainOrder) effect.name],
     'filterFx': {
       'enabled': filterFx.enabled,
       'highPass': {
@@ -350,10 +354,38 @@ class ProjectTrackDto {
         muted: _requiredBool(json, 'mute'),
         solo: _requiredBool(json, 'solo'),
         pan: _boundedNumber(json, 'pan', -1, 1),
+        fxChainOrder: _trackFxChainOrder(json),
         filterFx: _trackFilterFx(json),
         eqFx: _trackEqFx(json),
         compressorFx: _trackCompressorFx(json),
       );
+}
+
+List<TrackFxType> _trackFxChainOrder(Map<String, Object?> trackJson) {
+  if (!trackJson.containsKey('fxChainOrder')) {
+    return defaultTrackFxChainOrder;
+  }
+  final value = trackJson['fxChainOrder'];
+  if (value is! List<Object?>) {
+    _invalid('fxChainOrder must be a list.');
+  }
+  final order = <TrackFxType>[];
+  for (final item in value) {
+    if (item is! String) {
+      _invalid('fxChainOrder contains a non-string value.');
+    }
+    final effect = TrackFxType.values
+        .where((candidate) => candidate.name == item)
+        .firstOrNull;
+    if (effect == null) {
+      _invalid('Unknown Track FX type: $item.');
+    }
+    order.add(effect);
+  }
+  if (!isValidTrackFxChainOrder(order)) {
+    _invalid('fxChainOrder must contain each built-in effect exactly once.');
+  }
+  return List<TrackFxType>.unmodifiable(order);
 }
 
 TrackCompressorFx _trackCompressorFx(Map<String, Object?> trackJson) {

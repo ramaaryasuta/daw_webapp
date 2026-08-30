@@ -13,6 +13,7 @@ import 'package:daw_webapp/features/editor/domain/timeline_section.dart';
 import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_compressor_fx.dart';
+import 'package:daw_webapp/features/editor/domain/track_fx_chain.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/flaudio_project_archive.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/flaudio_project_codec.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/flaudio_project_io_service.dart';
@@ -101,6 +102,11 @@ void main() {
             releaseSeconds: 0.32,
             makeupGainDb: 2.5,
           ),
+          fxChainOrder: const [
+            TrackFxType.compressor,
+            TrackFxType.eq,
+            TrackFxType.filter,
+          ],
           clips: [
             AudioClip(
               id: 'clip-a',
@@ -194,6 +200,10 @@ void main() {
     expect(
       restored.tracks.single.compressorFx,
       snapshot.tracks.single.compressorFx,
+    );
+    expect(
+      restored.tracks.single.fxChainOrder,
+      snapshot.tracks.single.fxChainOrder,
     );
     expect(restored.tracks.single.clips.map((clip) => clip.id), [
       'clip-a',

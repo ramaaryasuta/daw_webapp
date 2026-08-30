@@ -6,6 +6,7 @@ import 'package:daw_webapp/features/editor/domain/musical_timing.dart';
 import 'package:daw_webapp/features/editor/domain/track_color.dart';
 import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_compressor_fx.dart';
+import 'package:daw_webapp/features/editor/domain/track_fx_chain.dart';
 import 'package:daw_webapp/features/editor/domain/timeline_marker.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -90,6 +91,40 @@ void main() {
     expect(
       history.undo(after)!.snapshot.tracks.single.compressorFx,
       const TrackCompressorFx(),
+    );
+  });
+
+  test('Track FX order participates in project history', () {
+    const track = DawTrack(id: 'track-1', name: 'Vocals', clips: []);
+    final before = ProjectSnapshot(
+      tracks: const [track],
+      bpm: 120,
+      selectedTrackId: track.id,
+    );
+    final after = ProjectSnapshot(
+      tracks: [
+        track.copyWith(
+          fxChainOrder: const [
+            TrackFxType.compressor,
+            TrackFxType.eq,
+            TrackFxType.filter,
+          ],
+        ),
+      ],
+      bpm: 120,
+      selectedTrackId: track.id,
+    );
+
+    final history = EditorHistory().record(
+      label: 'Reorder Track FX',
+      before: before,
+      after: after,
+    );
+
+    expect(history.past.single.label, 'Reorder Track FX');
+    expect(
+      history.undo(after)!.snapshot.tracks.single.fxChainOrder,
+      defaultTrackFxChainOrder,
     );
   });
 

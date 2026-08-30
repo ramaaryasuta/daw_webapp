@@ -10,6 +10,7 @@ import 'package:daw_webapp/features/editor/domain/daw_track.dart';
 import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_compressor_fx.dart';
+import 'package:daw_webapp/features/editor/domain/track_fx_chain.dart';
 import 'package:daw_webapp/features/editor/infrastructure/audio_mixdown_service.dart';
 import 'package:daw_webapp/features/editor/infrastructure/wav_encoder.dart';
 import 'package:daw_webapp/features/editor/infrastructure/web_audio_engine.dart';
@@ -60,6 +61,7 @@ void main() {
     TrackFilterFx filterFx = const TrackFilterFx(),
     TrackEqFx eqFx = const TrackEqFx(),
     TrackCompressorFx compressorFx = const TrackCompressorFx(),
+    List<TrackFxType> fxChainOrder = defaultTrackFxChainOrder,
   }) {
     return DawTrack(
       id: id,
@@ -71,6 +73,7 @@ void main() {
       filterFx: filterFx,
       eqFx: eqFx,
       compressorFx: compressorFx,
+      fxChainOrder: fxChainOrder,
       clips: [
         AudioClip(
           id: 'clip-$id',
@@ -418,6 +421,106 @@ void main() {
 
     expect(engine.isPlaying, isTrue);
     expect(after, greaterThanOrEqualTo(before));
+    engine.pause();
+  });
+
+  test('offline WAV follows authoritative Track FX order', () async {
+    final frameCount = sampleRate * durationSeconds ~/ 1;
+    final tone = Float32List(frameCount);
+    for (var index = 0; index < frameCount; index++) {
+      tone[index] = 0.1 * math.sin(2 * math.pi * 1000 * index / sampleRate);
+    }
+    final bytes = WavEncoder.encodePcm16(
+      channels: [tone, tone],
+      sampleRate: sampleRate,
+    );
+    final decoded = await engine.decode(assetId: 'asset-order', bytes: bytes);
+    asset = AudioAsset(
+      id: 'asset-order',
+      name: 'order.wav',
+      extension: 'wav',
+      size: bytes.length,
+      durationSeconds: decoded.durationSeconds,
+      sampleRate: decoded.sampleRate,
+      numberOfChannels: decoded.numberOfChannels,
+      waveformPeaks: decoded.waveformPeaks,
+    );
+    const eq = TrackEqFx(
+      enabled: true,
+      midGainDb: 12,
+      midFrequencyHz: 1000,
+      midQ: 3,
+    );
+    const compressor = TrackCompressorFx(
+      enabled: true,
+      thresholdDb: -35,
+      ratio: 20,
+      attackSeconds: 0.001,
+      releaseSeconds: 0.02,
+    );
+
+    final eqThenCompressor = _leftChannelRms(
+      (await mixdown.generateWavExport([
+        track(
+          'eq-then-comp',
+          eqFx: eq,
+          compressorFx: compressor,
+          fxChainOrder: const [
+            TrackFxType.eq,
+            TrackFxType.compressor,
+            TrackFxType.filter,
+          ],
+        ),
+      ])).wavBytes,
+    );
+    final compressorThenEq = _leftChannelRms(
+      (await mixdown.generateWavExport([
+        track(
+          'comp-then-eq',
+          eqFx: eq,
+          compressorFx: compressor,
+          fxChainOrder: const [
+            TrackFxType.compressor,
+            TrackFxType.eq,
+            TrackFxType.filter,
+          ],
+        ),
+      ])).wavBytes,
+    );
+
+    expect(compressorThenEq / eqThenCompressor, greaterThan(1.3));
+  });
+
+  test('repeated live Track FX reorder keeps transport running', () async {
+    final liveTrack = track(
+      'live-order',
+      eqFx: const TrackEqFx(enabled: true, midGainDb: 6),
+      compressorFx: const TrackCompressorFx(
+        enabled: true,
+        thresholdDb: -30,
+        ratio: 8,
+      ),
+    );
+    await engine.play(tracks: [liveTrack], fromSeconds: 0);
+    await Future<void>.delayed(const Duration(milliseconds: 15));
+    final before = engine.currentPositionSeconds;
+
+    for (var index = 0; index < 24; index++) {
+      engine.syncMixer([
+        liveTrack.copyWith(
+          fxChainOrder: index.isEven
+              ? const [
+                  TrackFxType.compressor,
+                  TrackFxType.filter,
+                  TrackFxType.eq,
+                ]
+              : defaultTrackFxChainOrder,
+        ),
+      ]);
+    }
+
+    expect(engine.isPlaying, isTrue);
+    expect(engine.currentPositionSeconds, greaterThanOrEqualTo(before));
     engine.pause();
   });
 

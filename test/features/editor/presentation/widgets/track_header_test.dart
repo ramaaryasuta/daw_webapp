@@ -255,30 +255,59 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Track FX swaps the actions menu for an anchored rack', (
+  testWidgets('Track FX opens a reorderable rack outside the actions menu', (
     tester,
   ) async {
     await pumpHeader(
       tester,
       onRename: (_) {},
-      trackFxRack: const SizedBox(
-        key: ValueKey('test-filter-rack'),
+      trackFxRack: SizedBox(
+        key: const ValueKey('test-filter-rack'),
         width: 320,
-        child: Text('FILTER RACK'),
+        child: ReorderableListView.builder(
+          key: const ValueKey('test-fx-reorderable-list'),
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: 3,
+          onReorderItem: (_, _) {},
+          itemBuilder: (context, index) => SizedBox(
+            key: ValueKey('test-fx-slot-$index'),
+            height: 32,
+            child: Text('FX SLOT $index'),
+          ),
+        ),
       ),
     );
 
-    await tester.tap(find.byKey(const ValueKey('track-properties-button')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('track-properties-fx')));
-    await tester.pumpAndSettle();
+    for (var index = 0; index < 3; index++) {
+      await tester.tap(find.byKey(const ValueKey('track-properties-button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Track Actions'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('test-fx-reorderable-list')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
 
-    expect(
-      find.byKey(const ValueKey('track-properties-popover')),
-      findsNothing,
-    );
-    expect(find.byKey(const ValueKey('test-filter-rack')), findsOneWidget);
-    expect(tester.takeException(), isNull);
+      await tester.tap(find.byKey(const ValueKey('track-properties-fx')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('track-properties-popover')),
+        findsNothing,
+      );
+      expect(find.byKey(const ValueKey('test-filter-rack')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('test-fx-reorderable-list')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('test-filter-rack')), findsNothing);
+      expect(tester.takeException(), isNull);
+    }
   });
 
   testWidgets(

@@ -14,6 +14,7 @@ import '../domain/track_mixer.dart';
 import '../domain/track_filter_fx.dart';
 import '../domain/track_eq_fx.dart';
 import '../domain/track_compressor_fx.dart';
+import '../domain/track_fx_chain.dart';
 import 'web_metronome_scheduler.dart';
 
 class DecodedAudioInfo {
@@ -71,6 +72,8 @@ class WebAudioEngine implements AudioMeterPeakSource {
   final Map<String, _TrackFilterRuntime> _trackFilters = {};
   final Map<String, _TrackEqRuntime> _trackEqs = {};
   final Map<String, _TrackCompressorRuntime> _trackCompressors = {};
+  final Map<String, web.GainNode> _trackFxInputs = {};
+  final Map<String, List<TrackFxType>> _trackFxOrders = {};
 
   bool _isPlaying = false;
   double _masterVolumeDb = unityMasterVolumeDb;
@@ -323,9 +326,11 @@ class WebAudioEngine implements AudioMeterPeakSource {
         _trackFilters[track.id]!.update(track.filterFx, this);
         _trackEqs[track.id]!.update(track.eqFx, this);
         _trackCompressors[track.id]!.update(track.compressorFx, this);
+        _rebuildTrackFxRoutingIfNeeded(track);
         continue;
       }
 
+      final fxInput = _audioContext.createGain();
       final filter = _TrackFilterRuntime.create(_audioContext, track.filterFx);
       final eq = _TrackEqRuntime.create(_audioContext, track.eqFx);
       final compressor = _TrackCompressorRuntime.create(
@@ -336,17 +341,16 @@ class WebAudioEngine implements AudioMeterPeakSource {
       final panner = _audioContext.createStereoPanner();
       gain.gain.value = effectiveTrackGain(track, hasSolo: hasSolo);
       panner.pan.value = clampTrackPan(track.pan);
-      filter.output.connect(eq.input);
-      eq.output.connect(compressor.input);
-      compressor.output.connect(gain);
       gain.connect(panner);
       panner.connect(_masterMix);
+      _trackFxInputs[track.id] = fxInput;
       _trackFilters[track.id] = filter;
       _trackEqs[track.id] = eq;
       _trackCompressors[track.id] = compressor;
       _trackGains[track.id] = gain;
       _trackPanners[track.id] = panner;
       _trackMeterTaps[track.id] = _StereoMeterTap.create(_audioContext, panner);
+      _rebuildTrackFxRouting(track.id, track.fxChainOrder);
     }
   }
 
@@ -361,8 +365,8 @@ class WebAudioEngine implements AudioMeterPeakSource {
     }
 
     for (final track in tracks) {
-      final filter = _trackFilters[track.id];
-      if (filter == null) {
+      final fxInput = _trackFxInputs[track.id];
+      if (fxInput == null) {
         continue;
       }
       for (final clip in track.clips) {
@@ -399,7 +403,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
         source.buffer = buffer;
         source.connect(fadeGain);
         fadeGain.connect(clipGain);
-        clipGain.connect(filter.input);
+        clipGain.connect(fxInput);
         clipGain.gain.value = clipGainDbToLinear(clip.gainDb);
         final sourceStartTime = contextStartTime + playbackTiming.delaySeconds;
         final clipLocalStartSeconds =
@@ -584,6 +588,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
       _trackFilters[track.id]?.update(track.filterFx, this);
       _trackEqs[track.id]?.update(track.eqFx, this);
       _trackCompressors[track.id]?.update(track.compressorFx, this);
+      _rebuildTrackFxRoutingIfNeeded(track);
     }
     _scheduledTracks = List<DawTrack>.unmodifiable(tracks);
   }
@@ -607,6 +612,52 @@ class WebAudioEngine implements AudioMeterPeakSource {
       _trackCompressors[track.id]?.update(track.compressorFx, this);
     }
     _scheduledTracks = List<DawTrack>.unmodifiable(tracks);
+  }
+
+  void _rebuildTrackFxRoutingIfNeeded(DawTrack track) {
+    final currentOrder = _trackFxOrders[track.id];
+    if (currentOrder == null ||
+        !hasSameTrackFxChainOrder(currentOrder, track.fxChainOrder)) {
+      _rebuildTrackFxRouting(track.id, track.fxChainOrder);
+    }
+  }
+
+  void _rebuildTrackFxRouting(String trackId, List<TrackFxType> order) {
+    final fxInput = _trackFxInputs[trackId];
+    final gain = _trackGains[trackId];
+    final filter = _trackFilters[trackId];
+    final eq = _trackEqs[trackId];
+    final compressor = _trackCompressors[trackId];
+    if (fxInput == null ||
+        gain == null ||
+        filter == null ||
+        eq == null ||
+        compressor == null) {
+      return;
+    }
+
+    final modules = <TrackFxType, _TrackFxRuntimeModule>{
+      TrackFxType.filter: filter,
+      TrackFxType.eq: eq,
+      TrackFxType.compressor: compressor,
+    };
+    try {
+      fxInput.disconnect();
+    } catch (_) {}
+    for (final module in modules.values) {
+      try {
+        module.output.disconnect();
+      } catch (_) {}
+    }
+
+    web.AudioNode tail = fxInput;
+    for (final effect in order) {
+      final module = modules[effect]!;
+      tail.connect(module.input);
+      tail = module.output;
+    }
+    tail.connect(gain);
+    _trackFxOrders[trackId] = List<TrackFxType>.unmodifiable(order);
   }
 
   void setClipGain(String clipId, double gainDb) {
@@ -683,6 +734,14 @@ class WebAudioEngine implements AudioMeterPeakSource {
     final filter = _trackFilters.remove(trackId);
     final eq = _trackEqs.remove(trackId);
     final compressor = _trackCompressors.remove(trackId);
+    final fxInput = _trackFxInputs.remove(trackId);
+    _trackFxOrders.remove(trackId);
+
+    if (fxInput != null) {
+      try {
+        fxInput.disconnect();
+      } catch (_) {}
+    }
 
     if (gain != null) {
       try {
@@ -715,6 +774,11 @@ class WebAudioEngine implements AudioMeterPeakSource {
     for (final compressor in _trackCompressors.values) {
       compressor.dispose();
     }
+    for (final fxInput in _trackFxInputs.values) {
+      try {
+        fxInput.disconnect();
+      } catch (_) {}
+    }
     for (final gain in _trackGains.values) {
       try {
         gain.disconnect();
@@ -728,6 +792,8 @@ class WebAudioEngine implements AudioMeterPeakSource {
     _trackFilters.clear();
     _trackEqs.clear();
     _trackCompressors.clear();
+    _trackFxInputs.clear();
+    _trackFxOrders.clear();
     _trackGains.clear();
     _trackPanners.clear();
     _trackMeterTaps.clear();
@@ -839,7 +905,12 @@ class WebAudioEngine implements AudioMeterPeakSource {
   }
 }
 
-class _TrackFilterRuntime {
+abstract interface class _TrackFxRuntimeModule {
+  web.AudioNode get input;
+  web.AudioNode get output;
+}
+
+class _TrackFilterRuntime implements _TrackFxRuntimeModule {
   _TrackFilterRuntime({
     required this.input,
     required this.output,
@@ -926,7 +997,9 @@ class _TrackFilterRuntime {
     );
   }
 
+  @override
   final web.GainNode input;
+  @override
   final web.GainNode output;
   final web.BiquadFilterNode highPass;
   final web.BiquadFilterNode lowPass;
@@ -985,7 +1058,7 @@ class _TrackFilterRuntime {
   }
 }
 
-class _TrackEqRuntime {
+class _TrackEqRuntime implements _TrackFxRuntimeModule {
   _TrackEqRuntime({
     required this.input,
     required this.output,
@@ -1028,7 +1101,9 @@ class _TrackEqRuntime {
     );
   }
 
+  @override
   final web.GainNode input;
+  @override
   final web.GainNode output;
   final web.BiquadFilterNode low;
   final web.BiquadFilterNode mid;
@@ -1061,7 +1136,7 @@ class _TrackEqRuntime {
   }
 }
 
-class _TrackCompressorRuntime {
+class _TrackCompressorRuntime implements _TrackFxRuntimeModule {
   _TrackCompressorRuntime({
     required this.input,
     required this.output,
@@ -1108,7 +1183,9 @@ class _TrackCompressorRuntime {
     );
   }
 
+  @override
   final web.GainNode input;
+  @override
   final web.GainNode output;
   final web.DynamicsCompressorNode compressor;
   final web.GainNode makeupGain;

@@ -322,6 +322,34 @@ abstract final class EditorCommands {
     tip: _trackFxKnobTip,
   );
 
+  static const reorderTrackFx = AppCommand(
+    title: 'Reorder Track FX',
+    description:
+        'Change the order in which built-in effects process the track.',
+    shortcutParts: ['Drag FX Slot'],
+    category: AppCommandCategory.mixer,
+    searchTerms: [
+      'fx chain',
+      'effect order',
+      'reorder',
+      'signal flow',
+      'insert',
+      'rack',
+      'filter',
+      'eq',
+      'compressor',
+    ],
+    usageSteps: [
+      'Open Track FX.',
+      'Drag an FX slot by its grip.',
+      'Drop it at the desired position.',
+      'Audio processing follows the new top-to-bottom order.',
+    ],
+    tip:
+        'Effect order changes the sound. For example, Compressor before EQ '
+        'can behave differently from EQ before Compressor.',
+  );
+
   static const reorderTrack = AppCommand(
     title: 'Reorder Track',
     description: 'Change the vertical order of an audio track.',
@@ -490,6 +518,7 @@ abstract final class EditorCommands {
     trackFilterFx,
     trackEqFx,
     trackCompressor,
+    reorderTrackFx,
     deleteTrack,
     reorderTrack,
     trackMixerControls,

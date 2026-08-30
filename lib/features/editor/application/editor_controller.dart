@@ -19,6 +19,7 @@ import '../domain/track_mixer.dart';
 import '../domain/track_filter_fx.dart';
 import '../domain/track_eq_fx.dart';
 import '../domain/track_compressor_fx.dart';
+import '../domain/track_fx_chain.dart';
 import '../domain/timeline_snapper.dart';
 import '../infrastructure/web_audio_engine.dart';
 import '../infrastructure/project_io/flaudio_project_codec.dart';
@@ -495,6 +496,12 @@ class EditorController extends Notifier<EditorState> {
           leftTrack.compressorFx != rightTrack.compressorFx) {
         return false;
       }
+      if (!hasSameTrackFxChainOrder(
+        leftTrack.fxChainOrder,
+        rightTrack.fxChainOrder,
+      )) {
+        return false;
+      }
     }
 
     return true;
@@ -824,6 +831,31 @@ class EditorController extends Notifier<EditorState> {
       tracks: [for (final trackId in orderedTrackIds) tracksById[trackId]!],
     );
     _recordEdit('Reorder Tracks', before);
+  }
+
+  void reorderTrackFx(String trackId, List<TrackFxType> orderedFx) {
+    if (!isValidTrackFxChainOrder(orderedFx)) return;
+    final track = state.tracks
+        .where((candidate) => candidate.id == trackId)
+        .firstOrNull;
+    if (track == null ||
+        hasSameTrackFxChainOrder(track.fxChainOrder, orderedFx)) {
+      return;
+    }
+
+    final before = _captureProjectSnapshot();
+    state = state.copyWith(
+      tracks: [
+        for (final candidate in state.tracks)
+          candidate.id == trackId
+              ? candidate.copyWith(
+                  fxChainOrder: List<TrackFxType>.unmodifiable(orderedFx),
+                )
+              : candidate,
+      ],
+    );
+    _audioEngine.syncMixer(state.tracks);
+    _recordEdit('Reorder Track FX', before);
   }
 
   static bool _hasSameTrackOrder(

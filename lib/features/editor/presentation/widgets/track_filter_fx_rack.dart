@@ -9,11 +9,10 @@ import '../../domain/daw_track.dart';
 import '../../domain/track_filter_fx.dart';
 import '../../domain/track_eq_fx.dart';
 import '../../domain/track_compressor_fx.dart';
+import '../../domain/track_fx_chain.dart';
 import '../controllers/audio_meter_controller.dart';
 import '../editor_shortcut_policy.dart';
 import 'daw_interaction_hint.dart';
-
-enum _TrackFxModule { filter, eq, compressor }
 
 class TrackFilterFxRack extends ConsumerStatefulWidget {
   const TrackFilterFxRack({
@@ -33,7 +32,7 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
   TrackFilterFx? _filterPreview;
   TrackEqFx? _eqPreview;
   TrackCompressorFx? _compressorPreview;
-  _TrackFxModule _selectedModule = _TrackFxModule.filter;
+  TrackFxType _selectedModule = TrackFxType.filter;
 
   @override
   Widget build(BuildContext context) {
@@ -69,14 +68,14 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
               children: [
                 _TrackFxRackHeader(
                   trackName: track.name,
-                  enabled:
-                      filter.isProcessing || eq.enabled || compressor.enabled,
+                  enabled: filter.enabled || eq.enabled || compressor.enabled,
                   accent: accent,
                 ),
                 Divider(height: 1, color: colorScheme.outlineVariant),
-                _ModuleTabs(
+                _FxChainSlots(
+                  order: track.fxChainOrder,
                   selected: _selectedModule,
-                  filterActive: filter.isProcessing,
+                  filterActive: filter.enabled,
                   eqActive: eq.enabled,
                   compressorActive: compressor.enabled,
                   accent: accent,
@@ -86,9 +85,11 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
                     _eqPreview = null;
                     _compressorPreview = null;
                   }),
+                  onReorder: (oldIndex, newIndex) =>
+                      _reorderFx(track.fxChainOrder, oldIndex, newIndex),
                 ),
                 Divider(height: 1, color: colorScheme.outlineVariant),
-                if (_selectedModule == _TrackFxModule.filter) ...[
+                if (_selectedModule == TrackFxType.filter) ...[
                   _EffectHeader(
                     title: 'FILTER',
                     enabled: filter.enabled,
@@ -214,7 +215,7 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
                       ],
                     ),
                   ),
-                ] else if (_selectedModule == _TrackFxModule.eq) ...[
+                ] else if (_selectedModule == TrackFxType.eq) ...[
                   _EffectHeader(
                     title: '3-BAND EQ',
                     enabled: eq.enabled,
@@ -513,6 +514,13 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
       maximum: maximum,
       logarithmic: logarithmic,
       valueLabel: valueLabel,
+      valueFormatter: switch (parameter) {
+        TrackEqParameter.lowGain ||
+        TrackEqParameter.midGain ||
+        TrackEqParameter.highGain => formatEqGain,
+        TrackEqParameter.midFrequency => formatEqFrequency,
+        TrackEqParameter.midQ => (value) => value.toStringAsFixed(2),
+      },
       active: eq.enabled,
       accent: accent,
       onChangeStart: () => ref
@@ -566,6 +574,13 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
       maximum: maximum,
       logarithmic: logarithmic,
       valueLabel: valueLabel,
+      valueFormatter: switch (parameter) {
+        TrackCompressorParameter.threshold => formatCompressorThreshold,
+        TrackCompressorParameter.ratio => formatCompressorRatio,
+        TrackCompressorParameter.attack => formatCompressorAttack,
+        TrackCompressorParameter.release => formatCompressorRelease,
+        TrackCompressorParameter.makeupGain => formatCompressorMakeup,
+      },
       active: compressor.enabled,
       accent: const Color(0xFFFFB45E),
       onChangeStart: () => ref
@@ -631,6 +646,16 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
         .read(editorControllerProvider.notifier)
         .resetTrackFilterParameter(widget.trackId, parameter);
     setState(() => _filterPreview = null);
+  }
+
+  void _reorderFx(List<TrackFxType> current, int oldIndex, int newIndex) {
+    if (oldIndex == newIndex) return;
+    final reordered = [...current];
+    final effect = reordered.removeAt(oldIndex);
+    reordered.insert(newIndex, effect);
+    ref
+        .read(editorControllerProvider.notifier)
+        .reorderTrackFx(widget.trackId, reordered);
   }
 }
 
@@ -868,60 +893,85 @@ class _GainReductionMeter extends StatelessWidget {
   }
 }
 
-class _ModuleTabs extends StatelessWidget {
-  const _ModuleTabs({
+class _FxChainSlots extends StatelessWidget {
+  const _FxChainSlots({
+    required this.order,
     required this.selected,
     required this.filterActive,
     required this.eqActive,
     required this.compressorActive,
     required this.accent,
     required this.onSelected,
+    required this.onReorder,
   });
 
-  final _TrackFxModule selected;
+  final List<TrackFxType> order;
+  final TrackFxType selected;
   final bool filterActive;
   final bool eqActive;
   final bool compressorActive;
   final Color accent;
-  final ValueChanged<_TrackFxModule> onSelected;
+  final ValueChanged<TrackFxType> onSelected;
+  final void Function(int oldIndex, int newIndex) onReorder;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(8),
-      child: Row(
+      padding: const EdgeInsets.fromLTRB(8, 7, 8, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: _ModuleTab(
-              key: const ValueKey('track-fx-filter-tab'),
-              label: 'FILTER',
-              selected: selected == _TrackFxModule.filter,
-              active: filterActive,
-              accent: accent,
-              onTap: () => onSelected(_TrackFxModule.filter),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 5),
+            child: Text(
+              'SIGNAL FLOW  -  TOP TO BOTTOM',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.05,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
-          const SizedBox(width: 7),
-          Expanded(
-            child: _ModuleTab(
-              key: const ValueKey('track-fx-eq-tab'),
-              label: '3-BAND EQ',
-              selected: selected == _TrackFxModule.eq,
-              active: eqActive,
-              accent: const Color(0xFF79B8FF),
-              onTap: () => onSelected(_TrackFxModule.eq),
+          ReorderableListView.builder(
+            key: const ValueKey('track-fx-chain'),
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            buildDefaultDragHandles: false,
+            itemCount: order.length,
+            onReorderItem: onReorder,
+            proxyDecorator: (child, index, animation) => Material(
+              color: Colors.transparent,
+              elevation: 6,
+              shadowColor: Colors.black54,
+              child: child,
             ),
-          ),
-          const SizedBox(width: 7),
-          Expanded(
-            child: _ModuleTab(
-              key: const ValueKey('track-fx-compressor-tab'),
-              label: 'COMP',
-              selected: selected == _TrackFxModule.compressor,
-              active: compressorActive,
-              accent: const Color(0xFFFFB45E),
-              onTap: () => onSelected(_TrackFxModule.compressor),
-            ),
+            itemBuilder: (context, index) {
+              final effect = order[index];
+              final active = switch (effect) {
+                TrackFxType.filter => filterActive,
+                TrackFxType.eq => eqActive,
+                TrackFxType.compressor => compressorActive,
+              };
+              final effectAccent = switch (effect) {
+                TrackFxType.filter => accent,
+                TrackFxType.eq => const Color(0xFF79B8FF),
+                TrackFxType.compressor => const Color(0xFFFFB45E),
+              };
+              return Padding(
+                key: ValueKey('track-fx-slot-${effect.name}'),
+                padding: const EdgeInsets.only(bottom: 3),
+                child: _FxSlotRow(
+                  effect: effect,
+                  index: index,
+                  slotCount: order.length,
+                  selected: selected == effect,
+                  active: active,
+                  accent: effectAccent,
+                  onTap: () => onSelected(effect),
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -929,17 +979,20 @@ class _ModuleTabs extends StatelessWidget {
   }
 }
 
-class _ModuleTab extends StatelessWidget {
-  const _ModuleTab({
-    super.key,
-    required this.label,
+class _FxSlotRow extends StatelessWidget {
+  const _FxSlotRow({
+    required this.effect,
+    required this.index,
+    required this.slotCount,
     required this.selected,
     required this.active,
     required this.accent,
     required this.onTap,
   });
 
-  final String label;
+  final TrackFxType effect;
+  final int index;
+  final int slotCount;
   final bool selected;
   final bool active;
   final Color accent;
@@ -948,46 +1001,115 @@ class _ModuleTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(4),
-      child: Container(
-        height: 30,
-        padding: const EdgeInsets.symmetric(horizontal: 9),
-        decoration: BoxDecoration(
-          color: selected
-              ? scheme.surfaceContainerHighest
-              : scheme.surface.withValues(alpha: 0.35),
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(
-            color: selected
-                ? accent.withValues(alpha: 0.72)
-                : scheme.outlineVariant,
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              label,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.7,
+    final label = effect.displayName;
+    return Semantics(
+      label:
+          '$label, effect slot ${index + 1} of $slotCount, '
+          '${active ? 'enabled' : 'bypassed'}',
+      selected: selected,
+      button: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: ValueKey('track-fx-${effect.name}-tab'),
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(3),
+          child: Container(
+            height: 34,
+            padding: const EdgeInsets.only(right: 9),
+            decoration: BoxDecoration(
+              color: selected
+                  ? Color.alphaBlend(
+                      accent.withValues(alpha: 0.1),
+                      scheme.surfaceContainerHighest,
+                    )
+                  : scheme.surface.withValues(alpha: 0.42),
+              borderRadius: BorderRadius.circular(3),
+              border: Border.all(
+                color: selected
+                    ? accent.withValues(alpha: 0.68)
+                    : scheme.outlineVariant,
               ),
             ),
-            if (active) ...[
-              const SizedBox(width: 7),
-              Container(
-                width: 5,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: accent,
-                  shape: BoxShape.circle,
+            child: Row(
+              children: [
+                DawInteractionHint(
+                  data: DawInteractionHints.fxReorder,
+                  child: Semantics(
+                    label: 'Reorder $label effect',
+                    child: ReorderableDragStartListener(
+                      key: ValueKey('track-fx-reorder-${effect.name}'),
+                      index: index,
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.grab,
+                        child: SizedBox(
+                          width: 30,
+                          height: 34,
+                          child: Icon(
+                            Icons.drag_indicator,
+                            size: 17,
+                            color: scheme.onSurfaceVariant.withValues(
+                              alpha: 0.76,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ],
-          ],
+                Container(width: 1, height: 20, color: scheme.outlineVariant),
+                SizedBox(
+                  width: 30,
+                  child: Text(
+                    '${index + 1}',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 10,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.75,
+                    ),
+                  ),
+                ),
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: active
+                        ? accent
+                        : scheme.onSurfaceVariant.withValues(alpha: 0.28),
+                    shape: BoxShape.circle,
+                    border: active
+                        ? null
+                        : Border.all(
+                            color: scheme.onSurfaceVariant.withValues(
+                              alpha: 0.55,
+                            ),
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  active ? 'ON' : 'OFF',
+                  style: TextStyle(
+                    color: active ? accent : scheme.onSurfaceVariant,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1130,6 +1252,7 @@ class _FilterModulePanel extends StatelessWidget {
                   maximum: maximumFilterFrequencyHz,
                   logarithmic: true,
                   valueLabel: formatFilterFrequency(frequencyHz),
+                  valueFormatter: formatFilterFrequency,
                   active: active,
                   accent: accent,
                   onChangeStart: () => onBegin(frequencyParameter),
@@ -1146,6 +1269,7 @@ class _FilterModulePanel extends StatelessWidget {
                   maximum: maximumFilterQ,
                   logarithmic: false,
                   valueLabel: 'Q ${q.toStringAsFixed(2)}',
+                  valueFormatter: (value) => 'Q ${value.toStringAsFixed(2)}',
                   active: active,
                   accent: accent,
                   onChangeStart: () => onBegin(qParameter),
@@ -1223,6 +1347,7 @@ class _RotaryKnob extends StatefulWidget {
     required this.maximum,
     required this.logarithmic,
     required this.valueLabel,
+    required this.valueFormatter,
     required this.active,
     required this.accent,
     required this.onChangeStart,
@@ -1238,6 +1363,7 @@ class _RotaryKnob extends StatefulWidget {
   final double maximum;
   final bool logarithmic;
   final String valueLabel;
+  final String Function(double value) valueFormatter;
   final bool active;
   final Color accent;
   final VoidCallback onChangeStart;
@@ -1276,6 +1402,8 @@ class _RotaryKnobState extends State<_RotaryKnob> {
         label: widget.semanticLabel,
         slider: true,
         value: widget.valueLabel,
+        increasedValue: _adjustedValueLabel(.02),
+        decreasedValue: _adjustedValueLabel(-.02),
         onIncrease: () => _adjustBy(.02),
         onDecrease: () => _adjustBy(-.02),
         child: MouseRegion(
@@ -1358,6 +1486,11 @@ class _RotaryKnobState extends State<_RotaryKnob> {
     widget.onChanged(value);
     widget.onChangeEnd(value);
     if (mounted) setState(() {});
+  }
+
+  String _adjustedValueLabel(double delta) {
+    final normalized = (_normalize(widget.value) + delta).clamp(0.0, 1.0);
+    return widget.valueFormatter(_denormalize(normalized));
   }
 
   double _normalize(double value) {

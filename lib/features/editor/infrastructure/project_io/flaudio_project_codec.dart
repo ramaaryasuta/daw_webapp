@@ -172,6 +172,7 @@ class FlaudioProjectCodec {
             filterFx: snapshot.tracks[index].filterFx,
             eqFx: snapshot.tracks[index].eqFx,
             compressorFx: snapshot.tracks[index].compressorFx,
+            fxChainOrder: snapshot.tracks[index].fxChainOrder,
           ),
       ],
       clips: [
@@ -285,6 +286,7 @@ class FlaudioProjectCodec {
           filterFx: track.filterFx,
           eqFx: track.eqFx,
           compressorFx: track.compressorFx,
+          fxChainOrder: track.fxChainOrder,
         ),
       );
     }

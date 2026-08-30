@@ -9,6 +9,7 @@ import '../domain/daw_track.dart';
 import '../domain/track_mixer.dart';
 import '../domain/track_eq_fx.dart';
 import '../domain/track_compressor_fx.dart';
+import '../domain/track_fx_chain.dart';
 import 'audio_render_duration.dart';
 import 'generated_export.dart';
 import 'wav_encoder.dart';
@@ -87,60 +88,70 @@ class AudioMixdownService implements AudioExportGenerator {
 
       final gain = offlineContext.createGain();
       final panner = offlineContext.createStereoPanner();
-      final filterInput = offlineContext.createGain();
-      web.AudioNode filterTail = filterInput;
-      if (track.filterFx.enabled && track.filterFx.highPass.enabled) {
-        final highPass = offlineContext.createBiquadFilter()
-          ..type = 'highpass'
-          ..frequency.value = track.filterFx.highPass.frequencyHz
-          ..Q.value = track.filterFx.highPass.q;
-        filterTail.connect(highPass);
-        filterTail = highPass;
-      }
-      if (track.filterFx.enabled && track.filterFx.lowPass.enabled) {
-        final lowPass = offlineContext.createBiquadFilter()
-          ..type = 'lowpass'
-          ..frequency.value = track.filterFx.lowPass.frequencyHz
-          ..Q.value = track.filterFx.lowPass.q;
-        filterTail.connect(lowPass);
-        filterTail = lowPass;
-      }
-      if (track.eqFx.enabled) {
-        final lowEq = offlineContext.createBiquadFilter()
-          ..type = 'lowshelf'
-          ..frequency.value = defaultEqLowFrequencyHz
-          ..gain.value = track.eqFx.lowGainDb;
-        final midEq = offlineContext.createBiquadFilter()
-          ..type = 'peaking'
-          ..frequency.value = track.eqFx.midFrequencyHz
-          ..Q.value = track.eqFx.midQ
-          ..gain.value = track.eqFx.midGainDb;
-        final highEq = offlineContext.createBiquadFilter()
-          ..type = 'highshelf'
-          ..frequency.value = defaultEqHighFrequencyHz
-          ..gain.value = track.eqFx.highGainDb;
-        filterTail.connect(lowEq);
-        lowEq.connect(midEq);
-        midEq.connect(highEq);
-        filterTail = highEq;
-      }
-      if (track.compressorFx.enabled) {
-        final compressor = offlineContext.createDynamicsCompressor()
-          ..threshold.value = track.compressorFx.thresholdDb
-          ..ratio.value = track.compressorFx.ratio
-          ..attack.value = track.compressorFx.attackSeconds
-          ..release.value = track.compressorFx.releaseSeconds;
-        final makeupGain = offlineContext.createGain()
-          ..gain.value = compressorMakeupDbToLinear(
-            track.compressorFx.makeupGainDb,
-          );
-        filterTail.connect(compressor);
-        compressor.connect(makeupGain);
-        filterTail = makeupGain;
+      final fxInput = offlineContext.createGain();
+      web.AudioNode fxTail = fxInput;
+      for (final effect in track.fxChainOrder) {
+        switch (effect) {
+          case TrackFxType.filter:
+            if (track.filterFx.enabled && track.filterFx.highPass.enabled) {
+              final highPass = offlineContext.createBiquadFilter()
+                ..type = 'highpass'
+                ..frequency.value = track.filterFx.highPass.frequencyHz
+                ..Q.value = track.filterFx.highPass.q;
+              fxTail.connect(highPass);
+              fxTail = highPass;
+            }
+            if (track.filterFx.enabled && track.filterFx.lowPass.enabled) {
+              final lowPass = offlineContext.createBiquadFilter()
+                ..type = 'lowpass'
+                ..frequency.value = track.filterFx.lowPass.frequencyHz
+                ..Q.value = track.filterFx.lowPass.q;
+              fxTail.connect(lowPass);
+              fxTail = lowPass;
+            }
+            break;
+          case TrackFxType.eq:
+            if (track.eqFx.enabled) {
+              final lowEq = offlineContext.createBiquadFilter()
+                ..type = 'lowshelf'
+                ..frequency.value = defaultEqLowFrequencyHz
+                ..gain.value = track.eqFx.lowGainDb;
+              final midEq = offlineContext.createBiquadFilter()
+                ..type = 'peaking'
+                ..frequency.value = track.eqFx.midFrequencyHz
+                ..Q.value = track.eqFx.midQ
+                ..gain.value = track.eqFx.midGainDb;
+              final highEq = offlineContext.createBiquadFilter()
+                ..type = 'highshelf'
+                ..frequency.value = defaultEqHighFrequencyHz
+                ..gain.value = track.eqFx.highGainDb;
+              fxTail.connect(lowEq);
+              lowEq.connect(midEq);
+              midEq.connect(highEq);
+              fxTail = highEq;
+            }
+            break;
+          case TrackFxType.compressor:
+            if (track.compressorFx.enabled) {
+              final compressor = offlineContext.createDynamicsCompressor()
+                ..threshold.value = track.compressorFx.thresholdDb
+                ..ratio.value = track.compressorFx.ratio
+                ..attack.value = track.compressorFx.attackSeconds
+                ..release.value = track.compressorFx.releaseSeconds;
+              final makeupGain = offlineContext.createGain()
+                ..gain.value = compressorMakeupDbToLinear(
+                  track.compressorFx.makeupGainDb,
+                );
+              fxTail.connect(compressor);
+              compressor.connect(makeupGain);
+              fxTail = makeupGain;
+            }
+            break;
+        }
       }
       gain.gain.value = gainValue;
       panner.pan.value = clampTrackPan(track.pan);
-      filterTail.connect(gain);
+      fxTail.connect(gain);
       gain.connect(panner);
       panner.connect(masterGain);
 
@@ -158,7 +169,7 @@ class AudioMixdownService implements AudioExportGenerator {
         source.buffer = buffer;
         source.connect(fadeGain);
         fadeGain.connect(clipGain);
-        clipGain.connect(filterInput);
+        clipGain.connect(fxInput);
         clipGain.gain.value = clipGainDbToLinear(clip.gainDb);
         final fadePoints = clipFadeEnvelopeForSegment(
           clip: clip,

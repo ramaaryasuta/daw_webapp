@@ -3,6 +3,7 @@ import 'track_color.dart';
 import 'track_filter_fx.dart';
 import 'track_eq_fx.dart';
 import 'track_compressor_fx.dart';
+import 'track_fx_chain.dart';
 
 const int maximumTrackNameLength = 80;
 
@@ -19,6 +20,7 @@ class DawTrack {
     this.filterFx = const TrackFilterFx(),
     this.eqFx = const TrackEqFx(),
     this.compressorFx = const TrackCompressorFx(),
+    this.fxChainOrder = defaultTrackFxChainOrder,
   }) : colorValue = 0xFF000000 | (colorValue & 0x00FFFFFF),
        pan = pan != pan ? 0 : (pan < -1 ? -1 : (pan > 1 ? 1 : pan));
 
@@ -38,6 +40,7 @@ class DawTrack {
   final TrackFilterFx filterFx;
   final TrackEqFx eqFx;
   final TrackCompressorFx compressorFx;
+  final List<TrackFxType> fxChainOrder;
 
   double get endTimeSeconds {
     var end = 0.0;
@@ -61,6 +64,7 @@ class DawTrack {
     TrackFilterFx? filterFx,
     TrackEqFx? eqFx,
     TrackCompressorFx? compressorFx,
+    List<TrackFxType>? fxChainOrder,
   }) {
     return DawTrack(
       id: id ?? this.id,
@@ -74,6 +78,7 @@ class DawTrack {
       filterFx: filterFx ?? this.filterFx,
       eqFx: eqFx ?? this.eqFx,
       compressorFx: compressorFx ?? this.compressorFx,
+      fxChainOrder: fxChainOrder ?? this.fxChainOrder,
     );
   }
 }

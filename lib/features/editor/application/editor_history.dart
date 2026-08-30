@@ -4,6 +4,7 @@ import '../domain/daw_track.dart';
 import '../domain/musical_timing.dart';
 import '../domain/timeline_marker.dart';
 import '../domain/timeline_section.dart';
+import '../domain/track_fx_chain.dart';
 
 /// Maximum number of committed project edits retained for undo.
 const int editorHistoryLimit = 100;
@@ -94,6 +95,10 @@ class ProjectSnapshot {
           leftTrack.filterFx != rightTrack.filterFx ||
           leftTrack.eqFx != rightTrack.eqFx ||
           leftTrack.compressorFx != rightTrack.compressorFx ||
+          !hasSameTrackFxChainOrder(
+            leftTrack.fxChainOrder,
+            rightTrack.fxChainOrder,
+          ) ||
           leftTrack.clips.length != rightTrack.clips.length) {
         return false;
       }

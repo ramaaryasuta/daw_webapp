@@ -5,6 +5,7 @@ import 'package:daw_webapp/features/editor/application/editor_controller.dart';
 import 'package:daw_webapp/features/editor/domain/track_color.dart';
 import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
+import 'package:daw_webapp/features/editor/domain/track_fx_chain.dart';
 import 'package:daw_webapp/features/editor/presentation/editor_page.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/audio_level_meter.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/daw_interaction_hint.dart';
@@ -232,6 +233,54 @@ void main() {
       find.bySemanticsLabel('HIGH PASS cutoff'),
     );
     expect(cutoffSemantics.value, isNotEmpty);
+    expect(find.byKey(const ValueKey('track-fx-chain')), findsOneWidget);
+    expect(find.byTooltip('Drag to reorder effect'), findsNWidgets(3));
+    expect(
+      find.bySemanticsLabel('FILTER, effect slot 1 of 3, bypassed'),
+      findsOneWidget,
+    );
+
+    final historyBeforeReorder = container
+        .read(editorControllerProvider)
+        .history
+        .past
+        .length;
+    final reorderGesture = await tester.startGesture(
+      tester.getCenter(
+        find.byKey(const ValueKey('track-fx-reorder-compressor')),
+      ),
+    );
+    await reorderGesture.moveBy(const Offset(0, -82));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(
+      container.read(editorControllerProvider).tracks.single.fxChainOrder,
+      defaultTrackFxChainOrder,
+    );
+    await reorderGesture.up();
+    await tester.pumpAndSettle();
+    expect(
+      container.read(editorControllerProvider).tracks.single.fxChainOrder,
+      const [TrackFxType.compressor, TrackFxType.filter, TrackFxType.eq],
+    );
+    expect(
+      container.read(editorControllerProvider).history.past,
+      hasLength(historyBeforeReorder + 1),
+    );
+    expect(
+      container.read(editorControllerProvider).history.past.last.label,
+      'Reorder Track FX',
+    );
+
+    await container.read(editorControllerProvider.notifier).undo();
+    expect(
+      container.read(editorControllerProvider).tracks.single.fxChainOrder,
+      defaultTrackFxChainOrder,
+    );
+    await container.read(editorControllerProvider.notifier).redo();
+    expect(
+      container.read(editorControllerProvider).tracks.single.fxChainOrder,
+      const [TrackFxType.compressor, TrackFxType.filter, TrackFxType.eq],
+    );
 
     await tester.tap(find.byKey(const ValueKey('track-fx-eq-tab')));
     await tester.pump();
