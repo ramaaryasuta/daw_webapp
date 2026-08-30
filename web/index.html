@@ -18,21 +18,120 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="Flaudio digital audio workstation.">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Flaudio — a free, private, browser-based digital audio workstation.">
+  <meta name="theme-color" content="#090a0e">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="Flaudio">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" href="flaudio.webp">
 
   <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
+  <link rel="icon" type="image/webp" href="flaudio.webp">
 
   <title>Flaudio</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: #090a0e;
+    }
+
+    #flaudio-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: grid;
+      place-items: center;
+      color: #f3f1f8;
+      background:
+        radial-gradient(circle at 50% 46%, rgba(113, 67, 205, .16), transparent 34%),
+        #090a0e;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      transition: opacity 220ms ease, visibility 220ms ease;
+    }
+
+    #flaudio-splash.is-ready {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .flaudio-splash-content {
+      display: flex;
+      align-items: center;
+      flex-direction: column;
+      animation: splash-in 520ms cubic-bezier(.2, .8, .2, 1) both;
+    }
+
+    .flaudio-splash-logo {
+      width: 82px;
+      height: 82px;
+      object-fit: contain;
+    }
+
+    .flaudio-splash-name {
+      margin-top: 15px;
+      font-size: 12px;
+      font-weight: 750;
+      letter-spacing: .34em;
+      text-indent: .34em;
+    }
+
+    .flaudio-meter {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      height: 18px;
+      margin-top: 24px;
+    }
+
+    .flaudio-meter span {
+      width: 3px;
+      height: 5px;
+      border-radius: 1px;
+      background: #a98cff;
+      opacity: .65;
+      animation: meter 900ms ease-in-out infinite alternate;
+      transform-origin: center;
+    }
+
+    .flaudio-meter span:nth-child(2), .flaudio-meter span:nth-child(6) { animation-delay: -260ms; }
+    .flaudio-meter span:nth-child(3), .flaudio-meter span:nth-child(5) { animation-delay: -520ms; }
+    .flaudio-meter span:nth-child(4) { animation-delay: -760ms; }
+
+    @keyframes splash-in {
+      from { opacity: 0; transform: translateY(8px) scale(.985); }
+      to { opacity: 1; transform: none; }
+    }
+
+    @keyframes meter {
+      from { transform: scaleY(.55); opacity: .35; }
+      to { transform: scaleY(2.8); opacity: .9; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #flaudio-splash, .flaudio-splash-content, .flaudio-meter span {
+        animation: none;
+        transition: none;
+      }
+    }
+  </style>
 </head>
 <body>
+  <div id="flaudio-splash" role="status" aria-label="Loading Flaudio">
+    <div class="flaudio-splash-content">
+      <img class="flaudio-splash-logo" src="flaudio.webp" alt="Flaudio">
+      <div class="flaudio-splash-name">FLAUDIO</div>
+      <div class="flaudio-meter" aria-hidden="true">
+        <span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span>
+      </div>
+    </div>
+  </div>
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader
@@ -41,6 +140,14 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      const splash = document.getElementById('flaudio-splash');
+      if (!splash) return;
+      splash.classList.add('is-ready');
+      window.setTimeout(function () { splash.remove(); }, 260);
+    });
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

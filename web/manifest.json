@@ -3,12 +3,18 @@
     "short_name": "Flaudio",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "Flaudio digital audio workstation.",
-    "orientation": "portrait-primary",
+    "background_color": "#090A0E",
+    "theme_color": "#090A0E",
+    "description": "Free browser-based digital audio workstation.",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
+        {
+            "src": "flaudio.webp",
+            "sizes": "1280x1280",
+            "type": "image/webp",
+            "purpose": "any"
+        },
         {
             "src": "icons/Icon-192.png",
             "sizes": "192x192",
