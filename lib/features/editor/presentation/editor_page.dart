@@ -372,12 +372,16 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   }
 
   void _openExportDialog() {
+    final editor = ref.read(editorControllerProvider);
     showExportDialog(
       context,
       createTracksSnapshot: () => List<DawTrack>.unmodifiable(
         ref.read(editorControllerProvider).tracks,
       ),
       exportGenerator: ref.read(audioMixdownServiceProvider),
+      projectName: editor.projectName,
+      readProjectRevision: () =>
+          ref.read(editorControllerProvider).projectRevision,
       onPreviewWillPlay: () {
         if (!mounted || !ref.read(editorControllerProvider).isPlaying) {
           return;

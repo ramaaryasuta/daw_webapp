@@ -51,6 +51,25 @@ abstract final class EditorCommands {
     category: AppCommandCategory.file,
   );
 
+  static const exportAudio = AppCommand(
+    title: 'Export Audio',
+    description:
+        'Render your project locally as lossless WAV or compressed MP3.',
+    shortcutParts: ['File', 'Export...'],
+    category: AppCommandCategory.file,
+    details: 'MP3 supports multiple quality levels and optional ID3 metadata.',
+    searchTerms: [
+      'export',
+      'wav',
+      'mp3',
+      'download',
+      'render',
+      'metadata',
+      'bitrate',
+      'audio',
+    ],
+  );
+
   static const undo = AppCommand(
     title: 'Undo',
     description: 'Undo the most recent editing action.',
@@ -590,6 +609,7 @@ abstract final class EditorCommands {
     redo,
     openProject,
     saveProject,
+    exportAudio,
     copyAudioClip,
     pasteAudioClip,
     duplicateAudioClip,

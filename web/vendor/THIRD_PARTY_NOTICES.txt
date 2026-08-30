@@ -1,0 +1,11 @@
+Flaudio MP3 export uses wasm-media-encoders 0.7.0
+https://github.com/arseneyr/wasm-media-encoders
+Copyright (c) 2020-2024 arseneyr
+Licensed under the MIT License. See wasm-media-encoders-LICENSE.txt.
+
+The MP3 WebAssembly binary contains the LAME encoder.
+https://github.com/arseneyr/lame
+https://lame.sourceforge.io/
+LAME is licensed under the GNU Library General Public License, version 2 or
+later. See LAME-LGPL-2.0.txt. No Flaudio-specific modifications were made to
+LAME or the wasm-media-encoders binary.

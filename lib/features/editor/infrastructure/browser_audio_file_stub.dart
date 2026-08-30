@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 class BrowserAudioFile {
   BrowserAudioFile.wav(Uint8List bytes);
+  BrowserAudioFile(Uint8List bytes, {required String mimeType});
 
   double get currentPositionSeconds => 0;
 

@@ -5,13 +5,12 @@ import 'package:web/web.dart' as web;
 
 /// Owns the Blob URL and media element used to preview and download one render.
 class BrowserAudioFile {
-  BrowserAudioFile.wav(Uint8List bytes)
+  BrowserAudioFile.wav(Uint8List bytes) : this(bytes, mimeType: 'audio/wav');
+
+  BrowserAudioFile(Uint8List bytes, {required String mimeType})
     : _audioElement = web.HTMLAudioElement(),
       _objectUrl = web.URL.createObjectURL(
-        web.Blob(
-          <JSAny>[bytes.toJS].toJS,
-          web.BlobPropertyBag(type: 'audio/wav'),
-        ),
+        web.Blob(<JSAny>[bytes.toJS].toJS, web.BlobPropertyBag(type: mimeType)),
       ) {
     _audioElement
       ..src = _objectUrl

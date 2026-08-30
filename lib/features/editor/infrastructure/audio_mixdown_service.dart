@@ -6,6 +6,7 @@ import 'package:web/web.dart' as web;
 
 import '../domain/audio_clip.dart';
 import '../domain/daw_track.dart';
+import '../domain/export_settings.dart';
 import '../domain/master_limiter.dart';
 import '../domain/track_mixer.dart';
 import '../domain/track_eq_fx.dart';
@@ -15,6 +16,9 @@ import '../domain/track_reverb_fx.dart';
 import '../domain/track_fx_chain.dart';
 import 'audio_render_duration.dart';
 import 'generated_export.dart';
+import 'id3_tag_writer.dart';
+import 'mp3_encoder.dart';
+import 'rendered_pcm_audio.dart';
 import 'reverb_impulse_buffer_web.dart';
 import 'wav_encoder.dart';
 import 'web_audio_engine.dart';
@@ -30,7 +34,8 @@ class AudioMixdownException implements Exception {
   String toString() => message;
 }
 
-class AudioMixdownService implements AudioExportGenerator {
+class AudioMixdownService
+    implements AudioExportGenerator, ExportStudioGenerator {
   const AudioMixdownService(this._audioEngine);
 
   static const int _channelCount = 2;
@@ -39,7 +44,72 @@ class AudioMixdownService implements AudioExportGenerator {
   final WebAudioEngine _audioEngine;
 
   @override
+  ExportRenderInfo describeExport(List<DawTrack> tracks) {
+    final durationSeconds = calculateProjectRenderDurationSeconds(
+      tracks,
+      bpm: _audioEngine.tempoBpm,
+    );
+    final sampleRate = _audioEngine.sampleRate.round();
+    return ExportRenderInfo(
+      durationSeconds: durationSeconds,
+      sampleRate: sampleRate,
+      channelCount: _channelCount,
+    );
+  }
+
+  @override
   Future<GeneratedExport> generateWavExport(List<DawTrack> tracks) async {
+    final rendered = await _renderPcm(tracks);
+    final wavBytes = await WavEncoder.encodePcm16Async(
+      channels: rendered.channels,
+      sampleRate: rendered.sampleRate,
+    );
+    return GeneratedExport(
+      wavBytes: wavBytes,
+      durationSeconds: rendered.durationSeconds,
+      sampleRate: rendered.sampleRate,
+      channelCount: rendered.channelCount,
+      fileName: 'daw-export.wav',
+    );
+  }
+
+  @override
+  Future<GeneratedExport> generateExport(
+    List<DawTrack> tracks,
+    ExportSettings settings, {
+    void Function(ExportGenerationStage stage)? onStage,
+  }) async {
+    onStage?.call(ExportGenerationStage.rendering);
+    final rendered = await _renderPcm(tracks);
+    late final Uint8List bytes;
+    switch (settings.format) {
+      case ExportFormat.wav:
+        onStage?.call(ExportGenerationStage.preparingWav);
+        bytes = await WavEncoder.encodePcm16Async(
+          channels: rendered.channels,
+          sampleRate: rendered.sampleRate,
+        );
+      case ExportFormat.mp3:
+        onStage?.call(ExportGenerationStage.encodingMp3);
+        final encoded = await Mp3Encoder.encode(
+          channels: rendered.channels,
+          sampleRate: rendered.sampleRate,
+          bitrateKbps: settings.mp3BitrateKbps,
+        );
+        onStage?.call(ExportGenerationStage.metadata);
+        bytes = Id3TagWriter.prepend(encoded, settings.metadata);
+    }
+    return GeneratedExport.audio(
+      bytes: bytes,
+      format: settings.format,
+      durationSeconds: rendered.durationSeconds,
+      sampleRate: rendered.sampleRate,
+      channelCount: rendered.channelCount,
+      fileName: settings.outputFileName,
+    );
+  }
+
+  Future<RenderedPcmAudio> _renderPcm(List<DawTrack> tracks) async {
     if (tracks.isEmpty) {
       throw const AudioMixdownException('The project has no audio to export.');
     }
@@ -308,17 +378,10 @@ class AudioMixdownService implements AudioExportGenerator {
         renderedBuffer.getChannelData(channel).toDart,
     ];
     final renderedSampleRateInt = renderedSampleRate.round();
-    final wavBytes = await WavEncoder.encodePcm16Async(
+    return RenderedPcmAudio(
       channels: channels,
-      sampleRate: renderedSampleRateInt,
-    );
-
-    return GeneratedExport(
-      wavBytes: wavBytes,
       durationSeconds: renderedDurationSeconds,
       sampleRate: renderedSampleRateInt,
-      channelCount: renderedChannelCount,
-      fileName: 'daw-export.wav',
     );
   }
 
