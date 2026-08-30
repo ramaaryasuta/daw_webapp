@@ -6,6 +6,7 @@ import 'package:daw_webapp/features/editor/domain/audio_asset.dart';
 import 'package:daw_webapp/features/editor/domain/audio_clip.dart';
 import 'package:daw_webapp/features/editor/domain/daw_track.dart';
 import 'package:daw_webapp/features/editor/domain/loop_region.dart';
+import 'package:daw_webapp/features/editor/domain/master_limiter.dart';
 import 'package:daw_webapp/features/editor/domain/musical_timing.dart';
 import 'package:daw_webapp/features/editor/domain/snap_settings.dart';
 import 'package:daw_webapp/features/editor/domain/timeline_marker.dart';
@@ -66,6 +67,12 @@ void main() {
       isLoopEnabled: true,
       loopRegion: const LoopRegion(startSeconds: 1, endSeconds: 3.5),
       masterVolumeDb: -4.5,
+      masterLimiter: const MasterLimiterSettings(
+        enabled: true,
+        thresholdDb: -8.5,
+        ceilingDb: -0.5,
+        releaseSeconds: 0.35,
+      ),
       tracks: [
         DawTrack(
           id: 'track-b',
@@ -208,6 +215,7 @@ void main() {
     expect(restored.isLoopEnabled, isTrue);
     expect(restored.loopRegion, snapshot.loopRegion);
     expect(restored.masterVolumeDb, -4.5);
+    expect(restored.masterLimiter, snapshot.masterLimiter);
     expect(restored.tracks.single.id, 'track-b');
     expect(restored.tracks.single.colorValue, 0xff123456);
     expect(restored.tracks.single.volumeDb, -3);
@@ -394,6 +402,13 @@ void main() {
       () => FlaudioProjectManifest.fromJson(manifest),
       throwsA(isA<FlaudioProjectException>()),
     );
+  });
+
+  test('older manifest without Master Limiter defaults it off', () {
+    final manifest = FlaudioProjectManifest.fromJson(_emptyManifest());
+
+    expect(manifest.project.masterLimiter, const MasterLimiterSettings());
+    expect(manifest.project.masterLimiter.enabled, isFalse);
   });
 }
 

@@ -4,6 +4,7 @@ library;
 import 'package:daw_webapp/features/editor/application/editor_controller.dart';
 import 'package:daw_webapp/features/editor/application/tempo_controller.dart';
 import 'package:daw_webapp/features/editor/domain/musical_timing.dart';
+import 'package:daw_webapp/features/editor/domain/master_limiter.dart';
 import 'package:daw_webapp/features/editor/domain/snap_settings.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/flaudio_project_codec.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/project_autosave_store.dart';
@@ -70,6 +71,12 @@ void main() {
         isLoopEnabled: false,
         loopRegion: null,
         masterVolumeDb: 0,
+        masterLimiter: MasterLimiterSettings(
+          enabled: true,
+          thresholdDb: -7,
+          ceilingDb: -1,
+          releaseSeconds: .25,
+        ),
         tracks: [],
         markers: [],
       ),
@@ -82,6 +89,15 @@ void main() {
     expect(
       restoredDocument.manifest.project.timeSignature,
       TimeSignature.sixEight,
+    );
+    expect(
+      restoredDocument.manifest.project.masterLimiter,
+      const MasterLimiterSettings(
+        enabled: true,
+        thresholdDb: -7,
+        ceilingDb: -1,
+        releaseSeconds: .25,
+      ),
     );
   });
 }

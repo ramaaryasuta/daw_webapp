@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:daw_webapp/features/editor/domain/audio_asset.dart';
 import 'package:daw_webapp/features/editor/domain/audio_clip.dart';
 import 'package:daw_webapp/features/editor/domain/daw_track.dart';
+import 'package:daw_webapp/features/editor/domain/master_limiter.dart';
 import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_compressor_fx.dart';
@@ -165,6 +166,51 @@ void main() {
     );
 
     expect(quieter / unity, closeTo(0.501187, 0.015));
+  });
+
+  test(
+    'offline WAV applies limiter ceiling without extending export',
+    () async {
+      final drivenTracks = [
+        for (var index = 0; index < 16; index++) track('lim-$index'),
+      ];
+      final bypassed = await mixdown.generateWavExport(drivenTracks);
+
+      engine.setMasterLimiter(
+        const MasterLimiterSettings(
+          enabled: true,
+          thresholdDb: -6,
+          ceilingDb: -6,
+          releaseSeconds: .12,
+        ),
+      );
+      final limited = await mixdown.generateWavExport(drivenTracks);
+      final limitedPeak = _leftChannelSamples(
+        limited.wavBytes,
+      ).map((sample) => sample.abs()).reduce(math.max);
+
+      expect(
+        limitedPeak,
+        lessThanOrEqualTo(masterLimiterCeilingLinear(-6) + .001),
+      );
+      expect(limitedPeak, lessThan(.55));
+      expect(limited.durationSeconds, bypassed.durationSeconds);
+    },
+  );
+
+  test('live limiter updates do not restart transport', () async {
+    final liveTrack = track('live-limiter');
+    await engine.play(tracks: [liveTrack], fromSeconds: 0);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    final before = engine.currentPositionSeconds;
+
+    engine.setMasterLimiter(
+      const MasterLimiterSettings(enabled: true, thresholdDb: -8),
+    );
+
+    expect(engine.isPlaying, isTrue);
+    expect(engine.currentPositionSeconds, greaterThanOrEqualTo(before));
+    engine.pause();
   });
 
   test('offline WAV applies clip fade envelopes', () async {

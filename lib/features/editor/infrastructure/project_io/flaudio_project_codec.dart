@@ -5,6 +5,7 @@ import '../../domain/audio_asset.dart';
 import '../../domain/audio_clip.dart';
 import '../../domain/daw_track.dart';
 import '../../domain/loop_region.dart';
+import '../../domain/master_limiter.dart';
 import '../../domain/musical_timing.dart';
 import '../../domain/snap_settings.dart';
 import '../../domain/timeline_marker.dart';
@@ -22,6 +23,7 @@ class FlaudioProjectSnapshot {
     required this.isLoopEnabled,
     required this.loopRegion,
     required this.masterVolumeDb,
+    this.masterLimiter = const MasterLimiterSettings(),
     required this.tracks,
     required this.markers,
     this.sections = const [],
@@ -35,6 +37,7 @@ class FlaudioProjectSnapshot {
   final bool isLoopEnabled;
   final LoopRegion? loopRegion;
   final double masterVolumeDb;
+  final MasterLimiterSettings masterLimiter;
   final List<DawTrack> tracks;
   final List<TimelineMarker> markers;
   final List<TimelineSection> sections;
@@ -73,6 +76,7 @@ class RestoredFlaudioProject {
     required this.isLoopEnabled,
     required this.loopRegion,
     required this.masterVolumeDb,
+    this.masterLimiter = const MasterLimiterSettings(),
     required this.tracks,
     required this.markers,
     this.sections = const [],
@@ -86,6 +90,7 @@ class RestoredFlaudioProject {
   final bool isLoopEnabled;
   final LoopRegion? loopRegion;
   final double masterVolumeDb;
+  final MasterLimiterSettings masterLimiter;
   final List<DawTrack> tracks;
   final List<TimelineMarker> markers;
   final List<TimelineSection> sections;
@@ -157,6 +162,7 @@ class FlaudioProjectCodec {
         loopStartSeconds: snapshot.loopRegion?.startSeconds,
         loopEndSeconds: snapshot.loopRegion?.endSeconds,
         masterVolumeDb: snapshot.masterVolumeDb,
+        masterLimiter: snapshot.masterLimiter,
       ),
       tracks: [
         for (var index = 0; index < snapshot.tracks.length; index++)
@@ -314,6 +320,7 @@ class FlaudioProjectCodec {
       isLoopEnabled: settings.loopEnabled,
       loopRegion: loopRegion,
       masterVolumeDb: settings.masterVolumeDb,
+      masterLimiter: settings.masterLimiter,
       tracks: List.unmodifiable(tracks),
       markers: List.unmodifiable([
         for (final marker in manifest.markers)

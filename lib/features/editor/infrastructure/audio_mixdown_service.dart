@@ -6,6 +6,7 @@ import 'package:web/web.dart' as web;
 
 import '../domain/audio_clip.dart';
 import '../domain/daw_track.dart';
+import '../domain/master_limiter.dart';
 import '../domain/track_mixer.dart';
 import '../domain/track_eq_fx.dart';
 import '../domain/track_compressor_fx.dart';
@@ -84,7 +85,23 @@ class AudioMixdownService implements AudioExportGenerator {
     final hasSolo = tracks.any((track) => track.isSolo);
     final masterGain = offlineContext.createGain();
     masterGain.gain.value = masterDbToLinearGain(_audioEngine.masterVolumeDb);
-    masterGain.connect(offlineContext.destination);
+    final limiter = _audioEngine.masterLimiterSettings.clamped();
+    if (limiter.enabled) {
+      final compressor = offlineContext.createDynamicsCompressor()
+        ..threshold.value = limiter.thresholdDb
+        ..knee.value = masterLimiterKneeDb
+        ..ratio.value = masterLimiterRatio
+        ..attack.value = masterLimiterAttackSeconds
+        ..release.value = limiter.releaseSeconds;
+      final ceiling = offlineContext.createWaveShaper()
+        ..curve = createMasterLimiterCeilingCurve(limiter.ceilingDb).toJS
+        ..oversample = 'none';
+      masterGain.connect(compressor);
+      compressor.connect(ceiling);
+      ceiling.connect(offlineContext.destination);
+    } else {
+      masterGain.connect(offlineContext.destination);
+    }
 
     for (final track in tracks) {
       final gainValue = effectiveTrackGain(track, hasSolo: hasSolo);

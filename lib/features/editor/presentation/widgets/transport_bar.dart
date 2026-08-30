@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/timeline_ruler_mode.dart';
 import '../controllers/audio_meter_controller.dart';
+import '../../domain/master_limiter.dart';
 import 'master_strip.dart';
 import 'tempo_controls.dart';
 import 'time_signature_control.dart';
@@ -26,6 +27,13 @@ class TransportBar extends StatelessWidget {
     this.onMasterVolumeChanged,
     this.onMasterVolumeChangeEnd,
     this.onMasterVolumeReset,
+    this.masterLimiter = const MasterLimiterSettings(),
+    this.onLimiterToggle,
+    this.onLimiterChangeStart,
+    this.onLimiterChanged,
+    this.onLimiterChangeEnd,
+    this.onLimiterParameterReset,
+    this.onLimiterReset,
   });
 
   final bool isPlaying;
@@ -35,6 +43,7 @@ class TransportBar extends StatelessWidget {
   final TimelineRulerMode rulerMode;
   final AudioMeterController? meterController;
   final double masterVolumeDb;
+  final MasterLimiterSettings masterLimiter;
 
   final VoidCallback onPlayPressed;
   final VoidCallback onStopPressed;
@@ -44,6 +53,12 @@ class TransportBar extends StatelessWidget {
   final ValueChanged<double>? onMasterVolumeChanged;
   final ValueChanged<double>? onMasterVolumeChangeEnd;
   final VoidCallback? onMasterVolumeReset;
+  final VoidCallback? onLimiterToggle;
+  final ValueChanged<MasterLimiterParameter>? onLimiterChangeStart;
+  final void Function(MasterLimiterParameter, double)? onLimiterChanged;
+  final void Function(MasterLimiterParameter, double)? onLimiterChangeEnd;
+  final ValueChanged<MasterLimiterParameter>? onLimiterParameterReset;
+  final VoidCallback? onLimiterReset;
 
   @override
   Widget build(BuildContext context) {
@@ -220,6 +235,16 @@ class TransportBar extends StatelessWidget {
                       onChanged: onMasterVolumeChanged ?? _ignoreValue,
                       onChangeEnd: onMasterVolumeChangeEnd ?? _ignoreValue,
                       onReset: onMasterVolumeReset ?? _doNothing,
+                      masterLimiter: masterLimiter,
+                      onLimiterToggle: onLimiterToggle ?? _doNothing,
+                      onLimiterChangeStart:
+                          onLimiterChangeStart ?? _ignoreLimiterParameter,
+                      onLimiterChanged: onLimiterChanged ?? _ignoreLimiterValue,
+                      onLimiterChangeEnd:
+                          onLimiterChangeEnd ?? _ignoreLimiterValue,
+                      onLimiterParameterReset:
+                          onLimiterParameterReset ?? _ignoreLimiterParameter,
+                      onLimiterReset: onLimiterReset ?? _doNothing,
                     ),
                   ),
                 ],
@@ -251,3 +276,7 @@ class TransportBar extends StatelessWidget {
 void _doNothing() {}
 
 void _ignoreValue(double _) {}
+
+void _ignoreLimiterParameter(MasterLimiterParameter _) {}
+
+void _ignoreLimiterValue(MasterLimiterParameter _, double _) {}

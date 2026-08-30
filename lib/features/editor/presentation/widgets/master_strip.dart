@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../domain/track_mixer.dart';
+import '../../domain/master_limiter.dart';
 import '../controllers/audio_meter_controller.dart';
 import 'audio_level_meter.dart';
+import 'master_limiter_panel.dart';
 
 class MasterStrip extends StatefulWidget {
   const MasterStrip({
@@ -16,6 +18,13 @@ class MasterStrip extends StatefulWidget {
     required this.onChanged,
     required this.onChangeEnd,
     required this.onReset,
+    this.masterLimiter = const MasterLimiterSettings(),
+    this.onLimiterToggle = _ignoreLimiterToggle,
+    this.onLimiterChangeStart = _ignoreLimiterParameter,
+    this.onLimiterChanged = _ignoreLimiterValue,
+    this.onLimiterChangeEnd = _ignoreLimiterValue,
+    this.onLimiterParameterReset = _ignoreLimiterParameter,
+    this.onLimiterReset = _ignoreLimiterToggle,
   });
 
   final double volumeDb;
@@ -24,12 +33,20 @@ class MasterStrip extends StatefulWidget {
   final ValueChanged<double> onChanged;
   final ValueChanged<double> onChangeEnd;
   final VoidCallback onReset;
+  final MasterLimiterSettings masterLimiter;
+  final VoidCallback onLimiterToggle;
+  final ValueChanged<MasterLimiterParameter> onLimiterChangeStart;
+  final void Function(MasterLimiterParameter, double) onLimiterChanged;
+  final void Function(MasterLimiterParameter, double) onLimiterChangeEnd;
+  final ValueChanged<MasterLimiterParameter> onLimiterParameterReset;
+  final VoidCallback onLimiterReset;
 
   @override
   State<MasterStrip> createState() => _MasterStripState();
 }
 
 class _MasterStripState extends State<MasterStrip> {
+  final MenuController _limiterMenuController = MenuController();
   late double _displayDb;
   bool _dragging = false;
   bool _hovered = false;
@@ -217,6 +234,81 @@ class _MasterStripState extends State<MasterStrip> {
                   showLabel: false,
                 ),
               ),
+              const SizedBox(width: 4),
+              MenuAnchor(
+                controller: _limiterMenuController,
+                useRootOverlay: true,
+                consumeOutsideTap: true,
+                alignmentOffset: const Offset(-272, 4),
+                style: MenuStyle(
+                  padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+                  backgroundColor: WidgetStatePropertyAll(
+                    colorScheme.surfaceContainerHigh,
+                  ),
+                  elevation: const WidgetStatePropertyAll(8),
+                  shape: WidgetStatePropertyAll(
+                    RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      side: BorderSide(color: colorScheme.outlineVariant),
+                    ),
+                  ),
+                ),
+                menuChildren: [
+                  MasterLimiterPanel(
+                    settings: widget.masterLimiter,
+                    meterController: widget.meterController,
+                    onToggle: widget.onLimiterToggle,
+                    onChangeStart: widget.onLimiterChangeStart,
+                    onChanged: widget.onLimiterChanged,
+                    onChangeEnd: widget.onLimiterChangeEnd,
+                    onParameterReset: widget.onLimiterParameterReset,
+                    onReset: widget.onLimiterReset,
+                  ),
+                ],
+                builder: (context, controller, child) => Tooltip(
+                  message: 'Protect the Master output from excessive peaks',
+                  child: Semantics(
+                    button: true,
+                    toggled: widget.masterLimiter.enabled,
+                    label:
+                        'Master Limiter, ${widget.masterLimiter.enabled ? 'enabled' : 'disabled'}',
+                    child: InkWell(
+                      key: const ValueKey('master-limiter-button'),
+                      onTap: () => controller.isOpen
+                          ? controller.close()
+                          : controller.open(),
+                      borderRadius: BorderRadius.circular(4),
+                      child: Container(
+                        width: 34,
+                        height: 28,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: widget.masterLimiter.enabled
+                              ? colorScheme.primaryContainer
+                              : colorScheme.surfaceContainerHighest,
+                          border: Border.all(
+                            color: widget.masterLimiter.enabled
+                                ? colorScheme.primary.withValues(alpha: .65)
+                                : colorScheme.outlineVariant,
+                          ),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          'LIM',
+                          style: TextStyle(
+                            color: widget.masterLimiter.enabled
+                                ? colorScheme.onPrimaryContainer
+                                : colorScheme.onSurfaceVariant,
+                            fontSize: 8,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: .5,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         );
@@ -224,6 +316,12 @@ class _MasterStripState extends State<MasterStrip> {
     );
   }
 }
+
+void _ignoreLimiterToggle() {}
+
+void _ignoreLimiterParameter(MasterLimiterParameter _) {}
+
+void _ignoreLimiterValue(MasterLimiterParameter _, double _) {}
 
 class _MasterKnobPainter extends CustomPainter {
   const _MasterKnobPainter({

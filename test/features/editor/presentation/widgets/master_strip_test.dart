@@ -1,4 +1,5 @@
 import 'package:daw_webapp/features/editor/domain/audio_meter.dart';
+import 'package:daw_webapp/features/editor/domain/master_limiter.dart';
 import 'package:daw_webapp/features/editor/presentation/controllers/audio_meter_controller.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/master_strip.dart';
 import 'package:flutter/material.dart';
@@ -77,6 +78,45 @@ void main() {
 
     expect(resets, 1);
     expect(find.text('0.0 dB'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('compact limiter action opens the mastering panel', (
+    tester,
+  ) async {
+    var toggles = 0;
+    await tester.pumpWidget(
+      _Harness(
+        width: 236,
+        child: MasterStrip(
+          volumeDb: 0,
+          meterController: meterController,
+          onChangeStart: () {},
+          onChanged: (_) {},
+          onChangeEnd: (_) {},
+          onReset: () {},
+          masterLimiter: const MasterLimiterSettings(),
+          onLimiterToggle: () => toggles++,
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('master-limiter-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('master-limiter-panel')), findsOneWidget);
+    expect(find.text('MASTER LIMITER'), findsOneWidget);
+    expect(find.text('-3.0 dB'), findsOneWidget);
+    expect(find.text('-1.0 dB'), findsOneWidget);
+    expect(find.text('120 ms'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('master-limiter-gr-meter')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('master-limiter-toggle')));
+    await tester.pump();
+    expect(toggles, 1);
     expect(tester.takeException(), isNull);
   });
 }

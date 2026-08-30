@@ -46,6 +46,7 @@ class AudioMeterController extends ChangeNotifier {
   final AudioMeterPeakSource _peakSource;
   final Map<String, _StereoBallistics> _tracks = {};
   final Map<String, _GainReductionBallistics> _compressors = {};
+  final _GainReductionBallistics _masterLimiter = _GainReductionBallistics();
   final _StereoBallistics _master = _StereoBallistics();
   late final Ticker _ticker = Ticker(_onTick);
 
@@ -59,6 +60,8 @@ class AudioMeterController extends ChangeNotifier {
 
   double compressorReductionForTrack(String trackId) =>
       _compressors[trackId]?.reductionDb ?? 0;
+
+  double get masterLimiterReductionDb => _masterLimiter.reductionDb;
 
   void setTransportActive(bool active) {
     _transportActive = active;
@@ -76,7 +79,8 @@ class AudioMeterController extends ChangeNotifier {
   bool get _isAtRest =>
       _master.isAtRest &&
       _tracks.values.every((track) => track.isAtRest) &&
-      _compressors.values.every((compressor) => compressor.isAtRest);
+      _compressors.values.every((compressor) => compressor.isAtRest) &&
+      _masterLimiter.isAtRest;
 
   void _onTick(Duration elapsed) {
     final previousElapsed = _lastElapsed;
@@ -88,6 +92,9 @@ class AudioMeterController extends ChangeNotifier {
               .toDouble();
     final peaks = _peakSource.readMeterPeaks();
     var changed = _master.update(peaks.master, deltaSeconds);
+    changed =
+        _masterLimiter.update(peaks.masterLimiterReductionDb, deltaSeconds) ||
+        changed;
 
     for (final entry in peaks.tracks.entries) {
       final track = _tracks.putIfAbsent(entry.key, _StereoBallistics.new);

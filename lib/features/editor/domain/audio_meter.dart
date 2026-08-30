@@ -12,11 +12,13 @@ class MeterPeaksSnapshot {
     required this.tracks,
     required this.master,
     this.compressorReductionDb = const {},
+    this.masterLimiterReductionDb = 0,
   });
 
   final Map<String, StereoPeak> tracks;
   final StereoPeak master;
   final Map<String, double> compressorReductionDb;
+  final double masterLimiterReductionDb;
 }
 
 abstract interface class AudioMeterPeakSource {

@@ -9,6 +9,7 @@ import '../domain/audio_clip.dart';
 import '../domain/audio_meter.dart';
 import '../domain/daw_track.dart';
 import '../domain/loop_region.dart';
+import '../domain/master_limiter.dart';
 import '../domain/musical_timing.dart';
 import '../domain/track_mixer.dart';
 import '../domain/track_filter_fx.dart';
@@ -52,15 +53,24 @@ class WebAudioEngine implements AudioMeterPeakSource {
     _masterMix = _audioContext.createGain();
     _masterGain = _audioContext.createGain();
     _masterGain.gain.value = masterDbToLinearGain(_masterVolumeDb);
+    _masterLimiter = _MasterLimiterRuntime.create(
+      _audioContext,
+      _masterLimiterSettings,
+    );
     _masterMix.connect(_masterGain);
-    _masterGain.connect(_audioContext.destination);
-    _masterMeterTap = _StereoMeterTap.create(_audioContext, _masterGain);
+    _masterGain.connect(_masterLimiter.input);
+    _masterLimiter.output.connect(_audioContext.destination);
+    _masterMeterTap = _StereoMeterTap.create(
+      _audioContext,
+      _masterLimiter.output,
+    );
     _metronomeScheduler = WebMetronomeScheduler(_audioContext, _masterMix);
   }
 
   final web.AudioContext _audioContext;
   late final web.GainNode _masterMix;
   late final web.GainNode _masterGain;
+  late final _MasterLimiterRuntime _masterLimiter;
   late final _StereoMeterTap _masterMeterTap;
   late final WebMetronomeScheduler _metronomeScheduler;
 
@@ -83,6 +93,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
 
   bool _isPlaying = false;
   double _masterVolumeDb = unityMasterVolumeDb;
+  MasterLimiterSettings _masterLimiterSettings = const MasterLimiterSettings();
   int _playRequestId = 0;
 
   double _timelineStartSeconds = 0;
@@ -107,11 +118,18 @@ class WebAudioEngine implements AudioMeterPeakSource {
 
   double get masterVolumeDb => _masterVolumeDb;
 
+  MasterLimiterSettings get masterLimiterSettings => _masterLimiterSettings;
+
   double get tempoBpm => _tempoBpm;
 
   void setMasterVolumeDb(double volumeDb) {
     _masterVolumeDb = clampMasterVolumeDb(volumeDb);
     _smoothGainTo(_masterGain, masterDbToLinearGain(_masterVolumeDb));
+  }
+
+  void setMasterLimiter(MasterLimiterSettings settings) {
+    _masterLimiterSettings = settings.clamped();
+    _masterLimiter.update(_masterLimiterSettings, this);
   }
 
   @override
@@ -122,6 +140,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
           entry.key: entry.value.readPeak(),
       },
       master: _masterMeterTap.readPeak(),
+      masterLimiterReductionDb: _masterLimiter.reductionDb,
       compressorReductionDb: {
         for (final entry in _trackCompressors.entries)
           entry.key: entry.value.reductionDb,
@@ -1010,6 +1029,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
     try {
       _masterGain.disconnect();
     } catch (_) {}
+    _masterLimiter.dispose();
     _buffers.clear();
     _reversedBuffers.clear();
 
@@ -1589,6 +1609,93 @@ class _TrackReverbRuntime implements _TrackFxRuntimeModule {
       damping,
       wetGain,
     ]) {
+      try {
+        node.disconnect();
+      } catch (_) {}
+    }
+  }
+}
+
+class _MasterLimiterRuntime {
+  _MasterLimiterRuntime({
+    required this.input,
+    required this.output,
+    required this.compressor,
+    required this.ceiling,
+    required this.dryGain,
+    required this.wetGain,
+    required this.settings,
+  });
+
+  factory _MasterLimiterRuntime.create(
+    web.BaseAudioContext context,
+    MasterLimiterSettings settings,
+  ) {
+    final clamped = settings.clamped();
+    final input = context.createGain();
+    final output = context.createGain();
+    final compressor = context.createDynamicsCompressor()
+      ..threshold.value = clamped.thresholdDb
+      ..knee.value = masterLimiterKneeDb
+      ..ratio.value = masterLimiterRatio
+      ..attack.value = masterLimiterAttackSeconds
+      ..release.value = clamped.releaseSeconds;
+    final ceiling = context.createWaveShaper()
+      ..curve = createMasterLimiterCeilingCurve(clamped.ceilingDb).toJS
+      ..oversample = 'none';
+    final dryGain = context.createGain()..gain.value = clamped.enabled ? 0 : 1;
+    final wetGain = context.createGain()..gain.value = clamped.enabled ? 1 : 0;
+
+    input.connect(dryGain);
+    dryGain.connect(output);
+    input.connect(compressor);
+    compressor.connect(ceiling);
+    ceiling.connect(wetGain);
+    wetGain.connect(output);
+
+    return _MasterLimiterRuntime(
+      input: input,
+      output: output,
+      compressor: compressor,
+      ceiling: ceiling,
+      dryGain: dryGain,
+      wetGain: wetGain,
+      settings: clamped,
+    );
+  }
+
+  final web.GainNode input;
+  final web.GainNode output;
+  final web.DynamicsCompressorNode compressor;
+  final web.WaveShaperNode ceiling;
+  final web.GainNode dryGain;
+  final web.GainNode wetGain;
+  MasterLimiterSettings settings;
+
+  double get reductionDb {
+    if (!settings.enabled) return 0;
+    final reduction = compressor.reduction;
+    if (!reduction.isFinite) return 0;
+    return reduction.clamp(-24.0, 0.0);
+  }
+
+  void update(MasterLimiterSettings next, WebAudioEngine engine) {
+    final clamped = next.clamped();
+    engine._smoothAudioParamTo(compressor.threshold, clamped.thresholdDb);
+    engine._smoothAudioParamTo(compressor.release, clamped.releaseSeconds);
+    if (clamped.ceilingDb != settings.ceilingDb) {
+      ceiling.curve = createMasterLimiterCeilingCurve(clamped.ceilingDb).toJS;
+    }
+    if (clamped.enabled != settings.enabled) {
+      final now = engine._audioContext.currentTime;
+      dryGain.gain.setValueAtTime(clamped.enabled ? 0 : 1, now);
+      wetGain.gain.setValueAtTime(clamped.enabled ? 1 : 0, now);
+    }
+    settings = clamped;
+  }
+
+  void dispose() {
+    for (final node in [input, output, compressor, ceiling, dryGain, wetGain]) {
       try {
         node.disconnect();
       } catch (_) {}

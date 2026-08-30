@@ -400,6 +400,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       isLoopEnabled: editor.isLoopEnabled,
       loopRegion: editor.loopRegion,
       masterVolumeDb: editor.masterVolumeDb,
+      masterLimiter: editor.masterLimiter,
       tracks: List<DawTrack>.unmodifiable(editor.tracks),
       markers: List.unmodifiable(editor.markers),
       sections: List.unmodifiable(editor.sections),
@@ -1567,6 +1568,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                   isLoopEnabled: editorState.isLoopEnabled,
                   positionSeconds: editorState.playheadSeconds,
                   masterVolumeDb: editorState.masterVolumeDb,
+                  masterLimiter: editorState.masterLimiter,
                   rulerMode: _rulerMode,
                   meterController: _audioMeterController,
                   onPlayPressed: controller.togglePlayback,
@@ -1576,6 +1578,13 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                   onMasterVolumeChanged: controller.previewMasterVolume,
                   onMasterVolumeChangeEnd: controller.commitMasterVolumeChange,
                   onMasterVolumeReset: controller.resetMasterVolume,
+                  onLimiterToggle: controller.toggleMasterLimiter,
+                  onLimiterChangeStart: controller.beginMasterLimiterChange,
+                  onLimiterChanged: controller.previewMasterLimiterChange,
+                  onLimiterChangeEnd: controller.commitMasterLimiterChange,
+                  onLimiterParameterReset:
+                      controller.resetMasterLimiterParameter,
+                  onLimiterReset: controller.resetMasterLimiter,
                   onRulerModeChanged: (mode) {
                     if (mode != _rulerMode) {
                       setState(() => _rulerMode = mode);

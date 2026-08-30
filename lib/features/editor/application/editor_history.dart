@@ -2,6 +2,7 @@ import 'dart:collection';
 
 import '../domain/daw_track.dart';
 import '../domain/musical_timing.dart';
+import '../domain/master_limiter.dart';
 import '../domain/timeline_marker.dart';
 import '../domain/timeline_section.dart';
 import '../domain/track_fx_chain.dart';
@@ -22,6 +23,7 @@ class ProjectSnapshot {
     required this.bpm,
     this.timeSignature = defaultTimeSignature,
     this.masterVolumeDb = 0,
+    this.masterLimiter = const MasterLimiterSettings(),
     required this.selectedTrackId,
     Set<String> selectedClipIds = const {},
     String? selectedClipId,
@@ -40,6 +42,7 @@ class ProjectSnapshot {
   final double bpm;
   final TimeSignature timeSignature;
   final double masterVolumeDb;
+  final MasterLimiterSettings masterLimiter;
 
   /// Selection is a restoration hint, not an independently undoable edit.
   final String? selectedTrackId;
@@ -53,6 +56,7 @@ class ProjectSnapshot {
     if (bpm != other.bpm ||
         timeSignature != other.timeSignature ||
         masterVolumeDb != other.masterVolumeDb ||
+        masterLimiter != other.masterLimiter ||
         tracks.length != other.tracks.length ||
         markers.length != other.markers.length ||
         sections.length != other.sections.length) {

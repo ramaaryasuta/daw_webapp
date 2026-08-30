@@ -10,6 +10,7 @@ import '../domain/clip_crossfade.dart';
 import '../domain/daw_track.dart';
 import '../domain/imported_audio_file.dart';
 import '../domain/loop_region.dart';
+import '../domain/master_limiter.dart';
 import '../domain/musical_timing.dart';
 import '../domain/timeline_scale.dart';
 import '../domain/timeline_marker.dart';
@@ -45,6 +46,7 @@ class EditorState {
     this.isLoopEnabled = false,
     this.loopRegion,
     this.masterVolumeDb = unityMasterVolumeDb,
+    this.masterLimiter = const MasterLimiterSettings(),
     this.tracks = const [],
     this.markers = const [],
     this.sections = const [],
@@ -75,6 +77,7 @@ class EditorState {
   final bool isLoopEnabled;
   final LoopRegion? loopRegion;
   final double masterVolumeDb;
+  final MasterLimiterSettings masterLimiter;
 
   final List<DawTrack> tracks;
   final List<TimelineMarker> markers;
@@ -167,6 +170,7 @@ class EditorState {
     bool? isLoopEnabled,
     LoopRegion? loopRegion,
     double? masterVolumeDb,
+    MasterLimiterSettings? masterLimiter,
     List<DawTrack>? tracks,
     List<TimelineMarker>? markers,
     List<TimelineSection>? sections,
@@ -194,6 +198,7 @@ class EditorState {
       isLoopEnabled: isLoopEnabled ?? this.isLoopEnabled,
       loopRegion: loopRegion ?? this.loopRegion,
       masterVolumeDb: masterVolumeDb ?? this.masterVolumeDb,
+      masterLimiter: masterLimiter ?? this.masterLimiter,
       tracks: tracks ?? this.tracks,
       markers: markers ?? this.markers,
       sections: sections ?? this.sections,
@@ -239,6 +244,8 @@ class EditorController extends Notifier<EditorState> {
   ProjectSnapshot? _volumeEditStartSnapshot;
   String? _volumeEditTrackId;
   ProjectSnapshot? _masterVolumeEditStartSnapshot;
+  ProjectSnapshot? _masterLimiterEditStartSnapshot;
+  MasterLimiterParameter? _masterLimiterEditParameter;
   ProjectSnapshot? _panEditStartSnapshot;
   String? _panEditTrackId;
   ProjectSnapshot? _filterEditStartSnapshot;
@@ -294,6 +301,7 @@ class EditorController extends Notifier<EditorState> {
       bpm: tempo.bpm,
       timeSignature: tempo.timeSignature,
       masterVolumeDb: state.masterVolumeDb,
+      masterLimiter: state.masterLimiter,
       selectedTrackId: state.selectedTrackId,
       selectedClipIds: state.selectedClipIds,
     );
@@ -318,6 +326,8 @@ class EditorController extends Notifier<EditorState> {
     _volumeEditStartSnapshot = null;
     _volumeEditTrackId = null;
     _masterVolumeEditStartSnapshot = null;
+    _masterLimiterEditStartSnapshot = null;
+    _masterLimiterEditParameter = null;
     _panEditStartSnapshot = null;
     _panEditTrackId = null;
     _filterEditStartSnapshot = null;
@@ -428,6 +438,7 @@ class EditorController extends Notifier<EditorState> {
       isLoopEnabled: state.isLoopEnabled,
       loopRegion: state.loopRegion,
       masterVolumeDb: snapshot.masterVolumeDb,
+      masterLimiter: snapshot.masterLimiter,
       tracks: snapshot.tracks,
       markers: snapshot.markers,
       sections: snapshot.sections,
@@ -443,6 +454,7 @@ class EditorController extends Notifier<EditorState> {
         .read(tempoControllerProvider.notifier)
         .setTimeSignature(snapshot.timeSignature);
     _audioEngine.setMasterVolumeDb(snapshot.masterVolumeDb);
+    _audioEngine.setMasterLimiter(snapshot.masterLimiter);
 
     if (arrangementChanged) {
       await _resynchronizeArrangement(
@@ -717,6 +729,7 @@ class EditorController extends Notifier<EditorState> {
     _clipEditRequestId++;
     _audioEngine.commitPreparedAudioSources(prepared);
     _audioEngine.setMasterVolumeDb(restored.masterVolumeDb);
+    _audioEngine.setMasterLimiter(restored.masterLimiter);
     ref.read(tempoControllerProvider.notifier).setBpm(restored.bpm);
     ref
         .read(tempoControllerProvider.notifier)
@@ -738,6 +751,7 @@ class EditorController extends Notifier<EditorState> {
       isLoopEnabled: restored.isLoopEnabled,
       loopRegion: restored.loopRegion,
       masterVolumeDb: restored.masterVolumeDb,
+      masterLimiter: restored.masterLimiter,
       tracks: restored.tracks,
       markers: restored.markers,
       sections: restored.sections,
@@ -2585,6 +2599,98 @@ class EditorController extends Notifier<EditorState> {
     final clamped = clampMasterVolumeDb(volumeDb);
     state = state.copyWith(masterVolumeDb: clamped);
     _audioEngine.setMasterVolumeDb(clamped);
+  }
+
+  void toggleMasterLimiter() {
+    final before = _captureProjectSnapshot();
+    _setMasterLimiter(
+      state.masterLimiter.copyWith(enabled: !state.masterLimiter.enabled),
+    );
+    _recordEdit('Toggle Master Limiter', before);
+  }
+
+  void beginMasterLimiterChange(MasterLimiterParameter parameter) {
+    if (_masterLimiterEditStartSnapshot != null) return;
+    _masterLimiterEditStartSnapshot = _captureProjectSnapshot();
+    _masterLimiterEditParameter = parameter;
+  }
+
+  void previewMasterLimiterChange(
+    MasterLimiterParameter parameter,
+    double value,
+  ) {
+    if (_masterLimiterEditParameter != parameter) return;
+    _audioEngine.setMasterLimiter(
+      _masterLimiterWithParameter(state.masterLimiter, parameter, value),
+    );
+  }
+
+  void commitMasterLimiterChange(
+    MasterLimiterParameter parameter,
+    double value,
+  ) {
+    if (_masterLimiterEditParameter != parameter) return;
+    final before = _masterLimiterEditStartSnapshot;
+    _masterLimiterEditStartSnapshot = null;
+    _masterLimiterEditParameter = null;
+    if (before == null) return;
+    _setMasterLimiter(
+      _masterLimiterWithParameter(state.masterLimiter, parameter, value),
+    );
+    _recordEdit(_masterLimiterParameterLabel(parameter), before);
+  }
+
+  void resetMasterLimiterParameter(MasterLimiterParameter parameter) {
+    final pendingBefore = _masterLimiterEditParameter == parameter
+        ? _masterLimiterEditStartSnapshot
+        : null;
+    _masterLimiterEditStartSnapshot = null;
+    _masterLimiterEditParameter = null;
+    final before = pendingBefore ?? _captureProjectSnapshot();
+    final defaultValue = switch (parameter) {
+      MasterLimiterParameter.threshold => defaultMasterLimiterThresholdDb,
+      MasterLimiterParameter.ceiling => defaultMasterLimiterCeilingDb,
+      MasterLimiterParameter.release => defaultMasterLimiterReleaseSeconds,
+    };
+    _setMasterLimiter(
+      _masterLimiterWithParameter(state.masterLimiter, parameter, defaultValue),
+    );
+    _recordEdit(_masterLimiterParameterLabel(parameter), before);
+  }
+
+  void resetMasterLimiter() {
+    _masterLimiterEditStartSnapshot = null;
+    _masterLimiterEditParameter = null;
+    final before = _captureProjectSnapshot();
+    _setMasterLimiter(
+      const MasterLimiterSettings(
+        enabled: false,
+      ).copyWith(enabled: state.masterLimiter.enabled),
+    );
+    _recordEdit('Reset Master Limiter', before);
+  }
+
+  MasterLimiterSettings _masterLimiterWithParameter(
+    MasterLimiterSettings settings,
+    MasterLimiterParameter parameter,
+    double value,
+  ) => switch (parameter) {
+    MasterLimiterParameter.threshold => settings.copyWith(thresholdDb: value),
+    MasterLimiterParameter.ceiling => settings.copyWith(ceilingDb: value),
+    MasterLimiterParameter.release => settings.copyWith(releaseSeconds: value),
+  };
+
+  String _masterLimiterParameterLabel(MasterLimiterParameter parameter) =>
+      switch (parameter) {
+        MasterLimiterParameter.threshold => 'Change Limiter Threshold',
+        MasterLimiterParameter.ceiling => 'Change Limiter Ceiling',
+        MasterLimiterParameter.release => 'Change Limiter Release',
+      };
+
+  void _setMasterLimiter(MasterLimiterSettings settings) {
+    final clamped = settings.clamped();
+    state = state.copyWith(masterLimiter: clamped);
+    _audioEngine.setMasterLimiter(clamped);
   }
 
   void beginPanChange(String trackId) {

@@ -3,6 +3,7 @@ import 'package:daw_webapp/features/editor/domain/audio_asset.dart';
 import 'package:daw_webapp/features/editor/domain/audio_clip.dart';
 import 'package:daw_webapp/features/editor/domain/daw_track.dart';
 import 'package:daw_webapp/features/editor/domain/musical_timing.dart';
+import 'package:daw_webapp/features/editor/domain/master_limiter.dart';
 import 'package:daw_webapp/features/editor/domain/track_color.dart';
 import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_compressor_fx.dart';
@@ -266,6 +267,7 @@ void main() {
     double duration = 10,
     double bpm = 120,
     double masterVolumeDb = 0,
+    MasterLimiterSettings masterLimiter = const MasterLimiterSettings(),
     bool split = false,
     String trackName = 'Track',
     int trackColorValue = TrackColors.purple,
@@ -314,6 +316,7 @@ void main() {
       ],
       bpm: bpm,
       masterVolumeDb: masterVolumeDb,
+      masterLimiter: masterLimiter,
       selectedTrackId: 'track-1',
       selectedClipId: split ? 'clip-2' : 'clip-1',
     );
@@ -549,6 +552,31 @@ void main() {
     expect(undo.snapshot.masterVolumeDb, 0);
     final redo = undo.history.redo(undo.snapshot)!;
     expect(redo.snapshot.masterVolumeDb, -12);
+  });
+
+  test('Master Limiter is exact undoable project state', () {
+    final bypassed = snapshot(start: 0);
+    final enabled = snapshot(
+      start: 0,
+      masterLimiter: const MasterLimiterSettings(
+        enabled: true,
+        thresholdDb: -8,
+        ceilingDb: -1,
+        releaseSeconds: .25,
+      ),
+    );
+    final history = EditorHistory().record(
+      label: 'Toggle Master Limiter',
+      before: bypassed,
+      after: enabled,
+    );
+
+    final undo = history.undo(enabled)!;
+    expect(undo.snapshot.masterLimiter.enabled, isFalse);
+    expect(
+      undo.history.redo(undo.snapshot)!.snapshot.masterLimiter,
+      enabled.masterLimiter,
+    );
   });
 
   test('clip fades are exact undoable arrangement state', () {

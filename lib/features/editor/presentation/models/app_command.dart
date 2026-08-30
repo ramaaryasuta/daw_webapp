@@ -322,6 +322,35 @@ abstract final class EditorCommands {
     tip: _trackFxKnobTip,
   );
 
+  static const masterLimiter = AppCommand(
+    title: 'Master Limiter',
+    description:
+        'Control excessive Master peaks before the final output and WAV export.',
+    shortcutParts: ['Master Strip', 'Limiter'],
+    category: AppCommandCategory.mixer,
+    searchTerms: [
+      'master',
+      'limiter',
+      'limit',
+      'clipping',
+      'peak',
+      'ceiling',
+      'threshold',
+      'gain reduction',
+      'mastering',
+      'output',
+    ],
+    usageSteps: [
+      'Enable Master Limiter.',
+      'Set Ceiling, typically around -1 dB.',
+      'Lower Threshold until occasional Gain Reduction appears.',
+      'Adjust Release if the limiting sounds too abrupt or too slow.',
+      'Watch the GR meter.',
+    ],
+    tip:
+        'Heavy constant gain reduction usually means the mix or Master level is being driven too hard.',
+  );
+
   static const trackDelay = AppCommand(
     title: 'Track Delay',
     description:
@@ -578,6 +607,7 @@ abstract final class EditorCommands {
     trackFilterFx,
     trackEqFx,
     trackCompressor,
+    masterLimiter,
     trackDelay,
     trackReverb,
     reorderTrackFx,

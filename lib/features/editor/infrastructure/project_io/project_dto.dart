@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../../domain/musical_timing.dart';
+import '../../domain/master_limiter.dart';
 import '../../domain/track_filter_fx.dart';
 import '../../domain/track_eq_fx.dart';
 import '../../domain/track_compressor_fx.dart';
@@ -169,6 +170,7 @@ class ProjectSettingsDto {
     required this.loopStartSeconds,
     required this.loopEndSeconds,
     required this.masterVolumeDb,
+    this.masterLimiter = const MasterLimiterSettings(),
   });
 
   final String name;
@@ -181,6 +183,7 @@ class ProjectSettingsDto {
   final double? loopStartSeconds;
   final double? loopEndSeconds;
   final double masterVolumeDb;
+  final MasterLimiterSettings masterLimiter;
 
   Map<String, Object?> toJson() => {
     'name': name,
@@ -199,6 +202,12 @@ class ProjectSettingsDto {
       },
     },
     'masterVolumeDb': masterVolumeDb,
+    'masterLimiter': {
+      'enabled': masterLimiter.enabled,
+      'thresholdDb': masterLimiter.thresholdDb,
+      'ceilingDb': masterLimiter.ceilingDb,
+      'releaseSeconds': masterLimiter.releaseSeconds,
+    },
   };
 
   factory ProjectSettingsDto.fromJson(Map<String, Object?> json) {
@@ -238,6 +247,10 @@ class ProjectSettingsDto {
     if (bpm < 20 || bpm > 300) {
       _invalid('BPM is outside the supported range.');
     }
+    final limiterJson = json['masterLimiter'];
+    final masterLimiter = limiterJson == null
+        ? const MasterLimiterSettings()
+        : _masterLimiterSettings(limiterJson);
     return ProjectSettingsDto(
       name: name,
       bpm: bpm,
@@ -249,8 +262,36 @@ class ProjectSettingsDto {
       loopStartSeconds: loopStart,
       loopEndSeconds: loopEnd,
       masterVolumeDb: _boundedNumber(json, 'masterVolumeDb', -60, 6),
+      masterLimiter: masterLimiter,
     );
   }
+}
+
+MasterLimiterSettings _masterLimiterSettings(Object? value) {
+  if (value is! Map<String, Object?>) {
+    _invalid('masterLimiter must be an object.');
+  }
+  return MasterLimiterSettings(
+    enabled: _requiredBool(value, 'enabled'),
+    thresholdDb: _boundedNumber(
+      value,
+      'thresholdDb',
+      minimumMasterLimiterThresholdDb,
+      maximumMasterLimiterThresholdDb,
+    ),
+    ceilingDb: _boundedNumber(
+      value,
+      'ceilingDb',
+      minimumMasterLimiterCeilingDb,
+      maximumMasterLimiterCeilingDb,
+    ),
+    releaseSeconds: _boundedNumber(
+      value,
+      'releaseSeconds',
+      minimumMasterLimiterReleaseSeconds,
+      maximumMasterLimiterReleaseSeconds,
+    ),
+  );
 }
 
 TimeSignature _timeSignature(Map<String, Object?> json) {
