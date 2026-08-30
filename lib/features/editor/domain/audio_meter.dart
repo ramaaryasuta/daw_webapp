@@ -8,10 +8,15 @@ class StereoPeak {
 }
 
 class MeterPeaksSnapshot {
-  const MeterPeaksSnapshot({required this.tracks, required this.master});
+  const MeterPeaksSnapshot({
+    required this.tracks,
+    required this.master,
+    this.compressorReductionDb = const {},
+  });
 
   final Map<String, StereoPeak> tracks;
   final StereoPeak master;
+  final Map<String, double> compressorReductionDb;
 }
 
 abstract interface class AudioMeterPeakSource {

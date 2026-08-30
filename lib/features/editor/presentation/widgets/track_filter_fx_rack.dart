@@ -8,14 +8,21 @@ import '../../application/editor_controller.dart';
 import '../../domain/daw_track.dart';
 import '../../domain/track_filter_fx.dart';
 import '../../domain/track_eq_fx.dart';
+import '../../domain/track_compressor_fx.dart';
+import '../controllers/audio_meter_controller.dart';
 import '../editor_shortcut_policy.dart';
 
-enum _TrackFxModule { filter, eq }
+enum _TrackFxModule { filter, eq, compressor }
 
 class TrackFilterFxRack extends ConsumerStatefulWidget {
-  const TrackFilterFxRack({super.key, required this.trackId});
+  const TrackFilterFxRack({
+    super.key,
+    required this.trackId,
+    required this.meterController,
+  });
 
   final String trackId;
+  final AudioMeterController meterController;
 
   @override
   ConsumerState<TrackFilterFxRack> createState() => _TrackFilterFxRackState();
@@ -24,6 +31,7 @@ class TrackFilterFxRack extends ConsumerStatefulWidget {
 class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
   TrackFilterFx? _filterPreview;
   TrackEqFx? _eqPreview;
+  TrackCompressorFx? _compressorPreview;
   _TrackFxModule _selectedModule = _TrackFxModule.filter;
 
   @override
@@ -40,6 +48,7 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
     }
     final filter = _filterPreview ?? track.filterFx;
     final eq = _eqPreview ?? track.eqFx;
+    final compressor = _compressorPreview ?? track.compressorFx;
     final colorScheme = Theme.of(context).colorScheme;
     final accent = Color(track.colorValue);
 
@@ -59,7 +68,8 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
               children: [
                 _TrackFxRackHeader(
                   trackName: track.name,
-                  enabled: filter.isProcessing || eq.enabled,
+                  enabled:
+                      filter.isProcessing || eq.enabled || compressor.enabled,
                   accent: accent,
                 ),
                 Divider(height: 1, color: colorScheme.outlineVariant),
@@ -67,11 +77,13 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
                   selected: _selectedModule,
                   filterActive: filter.isProcessing,
                   eqActive: eq.enabled,
+                  compressorActive: compressor.enabled,
                   accent: accent,
                   onSelected: (module) => setState(() {
                     _selectedModule = module;
                     _filterPreview = null;
                     _eqPreview = null;
+                    _compressorPreview = null;
                   }),
                 ),
                 Divider(height: 1, color: colorScheme.outlineVariant),
@@ -201,7 +213,7 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
                       ],
                     ),
                   ),
-                ] else ...[
+                ] else if (_selectedModule == _TrackFxModule.eq) ...[
                   _EffectHeader(
                     title: '3-BAND EQ',
                     enabled: eq.enabled,
@@ -350,6 +362,120 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
                       ),
                     ),
                   ),
+                ] else ...[
+                  _EffectHeader(
+                    title: 'COMPRESSOR',
+                    enabled: compressor.enabled,
+                    accent: const Color(0xFFFFB45E),
+                    toggleKey: const ValueKey('track-compressor-toggle'),
+                    onToggle: () => ref
+                        .read(editorControllerProvider.notifier)
+                        .toggleTrackCompressor(widget.trackId),
+                    onReset: () => ref
+                        .read(editorControllerProvider.notifier)
+                        .resetTrackCompressor(widget.trackId),
+                    resetKey: const ValueKey('track-compressor-reset'),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 4, 14, 10),
+                    child: _GainReductionMeter(
+                      trackId: widget.trackId,
+                      controller: widget.meterController,
+                      enabled: compressor.enabled,
+                      accent: const Color(0xFFFFB45E),
+                    ),
+                  ),
+                  Divider(height: 1, color: colorScheme.outlineVariant),
+                  AnimatedOpacity(
+                    duration: const Duration(milliseconds: 100),
+                    opacity: compressor.enabled ? 1 : 0.5,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 10, 8, 12),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _compressorKnob(
+                                track: track,
+                                compressor: compressor,
+                                parameter: TrackCompressorParameter.threshold,
+                                label: 'THRESHOLD',
+                                value: compressor.thresholdDb,
+                                minimum: minimumCompressorThresholdDb,
+                                maximum: maximumCompressorThresholdDb,
+                                valueLabel: formatCompressorThreshold(
+                                  compressor.thresholdDb,
+                                ),
+                              ),
+                              _compressorKnob(
+                                track: track,
+                                compressor: compressor,
+                                parameter: TrackCompressorParameter.ratio,
+                                label: 'RATIO',
+                                value: compressor.ratio,
+                                minimum: minimumCompressorRatio,
+                                maximum: maximumCompressorRatio,
+                                valueLabel: formatCompressorRatio(
+                                  compressor.ratio,
+                                ),
+                              ),
+                              _compressorKnob(
+                                track: track,
+                                compressor: compressor,
+                                parameter: TrackCompressorParameter.makeupGain,
+                                label: 'MAKEUP',
+                                value: compressor.makeupGainDb,
+                                minimum: minimumCompressorMakeupGainDb,
+                                maximum: maximumCompressorMakeupGainDb,
+                                valueLabel: formatCompressorMakeup(
+                                  compressor.makeupGainDb,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Container(
+                            height: 1,
+                            color: colorScheme.outlineVariant,
+                          ),
+                          const SizedBox(height: 9),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _compressorKnob(
+                                track: track,
+                                compressor: compressor,
+                                parameter: TrackCompressorParameter.attack,
+                                label: 'ATTACK',
+                                value: compressor.attackSeconds,
+                                minimum: minimumCompressorAttackSeconds,
+                                maximum: maximumCompressorAttackSeconds,
+                                logarithmic: true,
+                                valueLabel: formatCompressorAttack(
+                                  compressor.attackSeconds,
+                                ),
+                              ),
+                              const SizedBox(width: 30),
+                              _compressorKnob(
+                                track: track,
+                                compressor: compressor,
+                                parameter: TrackCompressorParameter.release,
+                                label: 'RELEASE',
+                                value: compressor.releaseSeconds,
+                                minimum: minimumCompressorReleaseSeconds,
+                                maximum: maximumCompressorReleaseSeconds,
+                                logarithmic: true,
+                                valueLabel: formatCompressorRelease(
+                                  compressor.releaseSeconds,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -406,6 +532,58 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
     );
   }
 
+  Widget _compressorKnob({
+    required DawTrack track,
+    required TrackCompressorFx compressor,
+    required TrackCompressorParameter parameter,
+    required String label,
+    required double value,
+    required double minimum,
+    required double maximum,
+    required String valueLabel,
+    bool logarithmic = false,
+  }) {
+    return _RotaryKnob(
+      key: ValueKey('$parameter-knob'),
+      label: label,
+      value: value,
+      minimum: minimum,
+      maximum: maximum,
+      logarithmic: logarithmic,
+      valueLabel: valueLabel,
+      active: compressor.enabled,
+      accent: const Color(0xFFFFB45E),
+      onChangeStart: () => ref
+          .read(editorControllerProvider.notifier)
+          .beginTrackCompressorChange(widget.trackId, parameter),
+      onChanged: (value) {
+        final base = _compressorPreview ?? track.compressorFx;
+        setState(
+          () => _compressorPreview = _withCompressorParameter(
+            base,
+            parameter,
+            value,
+          ),
+        );
+        ref
+            .read(editorControllerProvider.notifier)
+            .previewTrackCompressorChange(widget.trackId, parameter, value);
+      },
+      onChangeEnd: (value) {
+        ref
+            .read(editorControllerProvider.notifier)
+            .commitTrackCompressorChange(widget.trackId, parameter, value);
+        if (mounted) setState(() => _compressorPreview = null);
+      },
+      onReset: () {
+        ref
+            .read(editorControllerProvider.notifier)
+            .resetTrackCompressorParameter(widget.trackId, parameter);
+        setState(() => _compressorPreview = null);
+      },
+    );
+  }
+
   void _beginParameter(TrackFilterParameter parameter) {
     ref
         .read(editorControllerProvider.notifier)
@@ -452,6 +630,28 @@ TrackEqFx _withEqParameter(
     TrackEqParameter.midFrequency => eq.copyWith(midFrequencyHz: value),
     TrackEqParameter.midQ => eq.copyWith(midQ: value),
     TrackEqParameter.highGain => eq.copyWith(highGainDb: value),
+  };
+}
+
+TrackCompressorFx _withCompressorParameter(
+  TrackCompressorFx compressor,
+  TrackCompressorParameter parameter,
+  double value,
+) {
+  return switch (parameter) {
+    TrackCompressorParameter.threshold => compressor.copyWith(
+      thresholdDb: value,
+    ),
+    TrackCompressorParameter.ratio => compressor.copyWith(ratio: value),
+    TrackCompressorParameter.attack => compressor.copyWith(
+      attackSeconds: value,
+    ),
+    TrackCompressorParameter.release => compressor.copyWith(
+      releaseSeconds: value,
+    ),
+    TrackCompressorParameter.makeupGain => compressor.copyWith(
+      makeupGainDb: value,
+    ),
   };
 }
 
@@ -540,11 +740,125 @@ class _TrackFxRackHeader extends StatelessWidget {
   }
 }
 
+class _GainReductionMeter extends StatelessWidget {
+  const _GainReductionMeter({
+    required this.trackId,
+    required this.controller,
+    required this.enabled,
+    required this.accent,
+  });
+
+  final String trackId;
+  final AudioMeterController controller;
+  final bool enabled;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      height: 82,
+      padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFF101317),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: scheme.outlineVariant),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x48000000),
+            blurRadius: 4,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) {
+          final reduction = enabled
+              ? controller.compressorReductionForTrack(trackId)
+              : 0.0;
+          final fraction = (-reduction / 24).clamp(0.0, 1.0);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    'GAIN REDUCTION',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      fontSize: 9,
+                      letterSpacing: 1,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    'GR  ${reduction.toStringAsFixed(1)} dB',
+                    key: const ValueKey('compressor-gr-value'),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                      color: enabled ? accent : scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              LayoutBuilder(
+                builder: (context, constraints) => Stack(
+                  children: [
+                    Container(
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF080A0D),
+                        borderRadius: BorderRadius.circular(2),
+                        border: Border.all(color: scheme.outlineVariant),
+                      ),
+                    ),
+                    Container(
+                      width: constraints.maxWidth * fraction,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: enabled ? 0.82 : 0.25),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 4),
+              DefaultTextStyle(
+                style: TextStyle(
+                  color: scheme.onSurfaceVariant,
+                  fontSize: 8,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('0'),
+                    Text('-3'),
+                    Text('-6'),
+                    Text('-12'),
+                    Text('-24 dB'),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
 class _ModuleTabs extends StatelessWidget {
   const _ModuleTabs({
     required this.selected,
     required this.filterActive,
     required this.eqActive,
+    required this.compressorActive,
     required this.accent,
     required this.onSelected,
   });
@@ -552,6 +866,7 @@ class _ModuleTabs extends StatelessWidget {
   final _TrackFxModule selected;
   final bool filterActive;
   final bool eqActive;
+  final bool compressorActive;
   final Color accent;
   final ValueChanged<_TrackFxModule> onSelected;
 
@@ -580,6 +895,17 @@ class _ModuleTabs extends StatelessWidget {
               active: eqActive,
               accent: const Color(0xFF79B8FF),
               onTap: () => onSelected(_TrackFxModule.eq),
+            ),
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: _ModuleTab(
+              key: const ValueKey('track-fx-compressor-tab'),
+              label: 'COMP',
+              selected: selected == _TrackFxModule.compressor,
+              active: compressorActive,
+              accent: const Color(0xFFFFB45E),
+              onTap: () => onSelected(_TrackFxModule.compressor),
             ),
           ),
         ],
@@ -661,6 +987,7 @@ class _EffectHeader extends StatelessWidget {
     required this.toggleKey,
     required this.onToggle,
     this.onReset,
+    this.resetKey,
   });
 
   final String title;
@@ -669,6 +996,7 @@ class _EffectHeader extends StatelessWidget {
   final Key toggleKey;
   final VoidCallback onToggle;
   final VoidCallback? onReset;
+  final Key? resetKey;
 
   @override
   Widget build(BuildContext context) {
@@ -687,7 +1015,7 @@ class _EffectHeader extends StatelessWidget {
           ),
           if (onReset != null)
             TextButton(
-              key: const ValueKey('track-eq-reset'),
+              key: resetKey ?? const ValueKey('track-eq-reset'),
               onPressed: onReset,
               style: TextButton.styleFrom(
                 minimumSize: const Size(42, 24),

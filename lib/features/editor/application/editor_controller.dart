@@ -18,6 +18,7 @@ import '../domain/track_color.dart';
 import '../domain/track_mixer.dart';
 import '../domain/track_filter_fx.dart';
 import '../domain/track_eq_fx.dart';
+import '../domain/track_compressor_fx.dart';
 import '../domain/timeline_snapper.dart';
 import '../infrastructure/web_audio_engine.dart';
 import '../infrastructure/project_io/fldaw_project_codec.dart';
@@ -243,6 +244,9 @@ class EditorController extends Notifier<EditorState> {
   ProjectSnapshot? _eqEditStartSnapshot;
   String? _eqEditTrackId;
   TrackEqParameter? _eqEditParameter;
+  ProjectSnapshot? _compressorEditStartSnapshot;
+  String? _compressorEditTrackId;
+  TrackCompressorParameter? _compressorEditParameter;
   ProjectSnapshot? _trackColorEditStartSnapshot;
   String? _trackColorEditTrackId;
   int? _trackColorEditOriginalValue;
@@ -313,6 +317,9 @@ class EditorController extends Notifier<EditorState> {
     _eqEditStartSnapshot = null;
     _eqEditTrackId = null;
     _eqEditParameter = null;
+    _compressorEditStartSnapshot = null;
+    _compressorEditTrackId = null;
+    _compressorEditParameter = null;
     _trackColorEditStartSnapshot = null;
     _trackColorEditTrackId = null;
     _trackColorEditOriginalValue = null;
@@ -484,7 +491,8 @@ class EditorController extends Notifier<EditorState> {
           leftTrack.isMuted != rightTrack.isMuted ||
           leftTrack.isSolo != rightTrack.isSolo ||
           leftTrack.filterFx != rightTrack.filterFx ||
-          leftTrack.eqFx != rightTrack.eqFx) {
+          leftTrack.eqFx != rightTrack.eqFx ||
+          leftTrack.compressorFx != rightTrack.compressorFx) {
         return false;
       }
     }
@@ -2891,6 +2899,167 @@ class EditorController extends Notifier<EditorState> {
       ],
     );
     _audioEngine.syncTrackEqFx(state.tracks);
+  }
+
+  void toggleTrackCompressor(String trackId) {
+    final track = state.tracks
+        .where((track) => track.id == trackId)
+        .firstOrNull;
+    if (track == null) return;
+    final before = _captureProjectSnapshot();
+    _setTrackCompressorFx(
+      trackId,
+      track.compressorFx.copyWith(enabled: !track.compressorFx.enabled),
+    );
+    _recordEdit('Toggle Compressor', before);
+  }
+
+  void beginTrackCompressorChange(
+    String trackId,
+    TrackCompressorParameter parameter,
+  ) {
+    if (_compressorEditStartSnapshot != null ||
+        !state.tracks.any((track) => track.id == trackId)) {
+      return;
+    }
+    _compressorEditStartSnapshot = _captureProjectSnapshot();
+    _compressorEditTrackId = trackId;
+    _compressorEditParameter = parameter;
+  }
+
+  void previewTrackCompressorChange(
+    String trackId,
+    TrackCompressorParameter parameter,
+    double value,
+  ) {
+    if (_compressorEditTrackId != trackId ||
+        _compressorEditParameter != parameter) {
+      return;
+    }
+    _audioEngine.syncTrackCompressorFx([
+      for (final track in state.tracks)
+        track.id == trackId
+            ? track.copyWith(
+                compressorFx: _compressorWithParameter(
+                  track.compressorFx,
+                  parameter,
+                  value,
+                ),
+              )
+            : track,
+    ]);
+  }
+
+  void commitTrackCompressorChange(
+    String trackId,
+    TrackCompressorParameter parameter,
+    double value,
+  ) {
+    if (_compressorEditTrackId != trackId ||
+        _compressorEditParameter != parameter) {
+      return;
+    }
+    final before = _compressorEditStartSnapshot;
+    _compressorEditStartSnapshot = null;
+    _compressorEditTrackId = null;
+    _compressorEditParameter = null;
+    final track = state.tracks
+        .where((track) => track.id == trackId)
+        .firstOrNull;
+    if (track == null || before == null) return;
+    _setTrackCompressorFx(
+      trackId,
+      _compressorWithParameter(track.compressorFx, parameter, value),
+    );
+    _recordEdit(_compressorParameterHistoryLabel(parameter), before);
+  }
+
+  void resetTrackCompressorParameter(
+    String trackId,
+    TrackCompressorParameter parameter,
+  ) {
+    final track = state.tracks
+        .where((track) => track.id == trackId)
+        .firstOrNull;
+    if (track == null) return;
+    final before = _compressorEditTrackId == trackId
+        ? _compressorEditStartSnapshot
+        : _captureProjectSnapshot();
+    _compressorEditStartSnapshot = null;
+    _compressorEditTrackId = null;
+    _compressorEditParameter = null;
+    final defaultValue = switch (parameter) {
+      TrackCompressorParameter.threshold => defaultCompressorThresholdDb,
+      TrackCompressorParameter.ratio => defaultCompressorRatio,
+      TrackCompressorParameter.attack => defaultCompressorAttackSeconds,
+      TrackCompressorParameter.release => defaultCompressorReleaseSeconds,
+      TrackCompressorParameter.makeupGain => defaultCompressorMakeupGainDb,
+    };
+    _setTrackCompressorFx(
+      trackId,
+      _compressorWithParameter(track.compressorFx, parameter, defaultValue),
+    );
+    if (before != null) {
+      _recordEdit(_compressorParameterHistoryLabel(parameter), before);
+    }
+  }
+
+  void resetTrackCompressor(String trackId) {
+    final track = state.tracks
+        .where((track) => track.id == trackId)
+        .firstOrNull;
+    if (track == null) return;
+    final reset = const TrackCompressorFx().copyWith(
+      enabled: track.compressorFx.enabled,
+    );
+    if (reset == track.compressorFx) return;
+    final before = _captureProjectSnapshot();
+    _setTrackCompressorFx(trackId, reset);
+    _recordEdit('Reset Compressor', before);
+  }
+
+  TrackCompressorFx _compressorWithParameter(
+    TrackCompressorFx compressor,
+    TrackCompressorParameter parameter,
+    double value,
+  ) {
+    return switch (parameter) {
+      TrackCompressorParameter.threshold => compressor.copyWith(
+        thresholdDb: value,
+      ),
+      TrackCompressorParameter.ratio => compressor.copyWith(ratio: value),
+      TrackCompressorParameter.attack => compressor.copyWith(
+        attackSeconds: value,
+      ),
+      TrackCompressorParameter.release => compressor.copyWith(
+        releaseSeconds: value,
+      ),
+      TrackCompressorParameter.makeupGain => compressor.copyWith(
+        makeupGainDb: value,
+      ),
+    };
+  }
+
+  String _compressorParameterHistoryLabel(TrackCompressorParameter parameter) {
+    return switch (parameter) {
+      TrackCompressorParameter.threshold => 'Change Compressor Threshold',
+      TrackCompressorParameter.ratio => 'Change Compressor Ratio',
+      TrackCompressorParameter.attack => 'Change Compressor Attack',
+      TrackCompressorParameter.release => 'Change Compressor Release',
+      TrackCompressorParameter.makeupGain => 'Change Compressor Makeup Gain',
+    };
+  }
+
+  void _setTrackCompressorFx(String trackId, TrackCompressorFx compressorFx) {
+    state = state.copyWith(
+      tracks: [
+        for (final track in state.tracks)
+          track.id == trackId
+              ? track.copyWith(compressorFx: compressorFx)
+              : track,
+      ],
+    );
+    _audioEngine.syncTrackCompressorFx(state.tracks);
   }
 
   void setTempoBpm(double bpm) {

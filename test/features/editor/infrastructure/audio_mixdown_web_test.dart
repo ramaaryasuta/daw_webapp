@@ -9,6 +9,7 @@ import 'package:daw_webapp/features/editor/domain/audio_clip.dart';
 import 'package:daw_webapp/features/editor/domain/daw_track.dart';
 import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
+import 'package:daw_webapp/features/editor/domain/track_compressor_fx.dart';
 import 'package:daw_webapp/features/editor/infrastructure/audio_mixdown_service.dart';
 import 'package:daw_webapp/features/editor/infrastructure/wav_encoder.dart';
 import 'package:daw_webapp/features/editor/infrastructure/web_audio_engine.dart';
@@ -58,6 +59,7 @@ void main() {
     double fadeOut = 0,
     TrackFilterFx filterFx = const TrackFilterFx(),
     TrackEqFx eqFx = const TrackEqFx(),
+    TrackCompressorFx compressorFx = const TrackCompressorFx(),
   }) {
     return DawTrack(
       id: id,
@@ -68,6 +70,7 @@ void main() {
       isSolo: isSolo,
       filterFx: filterFx,
       eqFx: eqFx,
+      compressorFx: compressorFx,
       clips: [
         AudioClip(
           id: 'clip-$id',
@@ -345,6 +348,69 @@ void main() {
           midFrequencyHz: 1800,
           midQ: 2.5,
           highGainDb: 4,
+        ),
+      ),
+    ]);
+    final after = engine.currentPositionSeconds;
+
+    expect(engine.isPlaying, isTrue);
+    expect(after, greaterThanOrEqualTo(before));
+    engine.pause();
+  });
+
+  test('offline WAV applies compressor, makeup, and global bypass', () async {
+    final dry = _leftChannelRms(
+      (await mixdown.generateWavExport([track('comp-dry')])).wavBytes,
+    );
+    const compressor = TrackCompressorFx(
+      enabled: true,
+      thresholdDb: -40,
+      ratio: 20,
+      attackSeconds: 0.001,
+      releaseSeconds: 0.02,
+    );
+    final compressed = _leftChannelRms(
+      (await mixdown.generateWavExport([
+        track('comp-wet', compressorFx: compressor),
+      ])).wavBytes,
+    );
+    final withMakeup = _leftChannelRms(
+      (await mixdown.generateWavExport([
+        track(
+          'comp-makeup',
+          compressorFx: compressor.copyWith(makeupGainDb: 6),
+        ),
+      ])).wavBytes,
+    );
+    final bypassed = _leftChannelRms(
+      (await mixdown.generateWavExport([
+        track(
+          'comp-bypass',
+          compressorFx: compressor.copyWith(enabled: false, makeupGainDb: 6),
+        ),
+      ])).wavBytes,
+    );
+
+    expect(compressed / dry, lessThan(0.7));
+    expect(withMakeup / compressed, closeTo(math.pow(10, 6 / 20), 0.08));
+    expect(bypassed / dry, closeTo(1, 0.01));
+  });
+
+  test('live Compressor changes keep transport running', () async {
+    final dryTrack = track('live-compressor');
+    await engine.play(tracks: [dryTrack], fromSeconds: 0);
+    await Future<void>.delayed(const Duration(milliseconds: 15));
+    final before = engine.currentPositionSeconds;
+
+    engine.syncTrackCompressorFx([
+      dryTrack.copyWith(
+        compressorFx: const TrackCompressorFx(
+          enabled: true,
+          thresholdDb: -30,
+          ratio: 8,
+          attackSeconds: 0.005,
+          releaseSeconds: 0.1,
+          makeupGainDb: 3,
         ),
       ),
     ]);

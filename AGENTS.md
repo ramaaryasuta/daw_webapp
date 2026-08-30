@@ -1,68 +1,195 @@
-# DAW Flutter Web
+# DAW Flutter Web — Agent Instructions
 
-## Stack
+## Project
 
+This is a Flutter Web digital audio workstation.
+
+Main stack:
 - Flutter Web
-- Riverpod without code generation
+- Riverpod
 - go_router
 - desktop_drop
-- file_picker
-- package:web
-- Web Audio API
+- Web Audio API / dart:js_interop
+- IndexedDB persistence
 
-## Architecture
+This is an existing mature project.
+Inspect and extend the current architecture instead of rebuilding features from
+scratch.
 
-Feature-first architecture.
+---
 
-Editor:
+## Architecture Principles
 
-lib/features/editor/
-- application/
-- domain/
-- infrastructure/
-- presentation/
+Preserve existing stable systems unless the requested task requires changes.
 
-## Audio architecture
+Important existing architecture includes:
+- stable Track / Clip / Audio Source IDs
+- shared timeline coordinate system
+- horizontal and vertical scrolling
+- Web Audio playback scheduling
+- per-track mixer routing
+- Track FX rack
+- offline WAV export
+- Undo / Redo
+- .fldawproj Save / Open
+- IndexedDB autosave / recovery
+- project dirty-state tracking
 
-Flutter/Riverpod state must not contain Web Audio API browser objects.
+Prefer stable IDs over list indexes.
 
-EditorState stores:
-- track metadata
-- playhead
-- mute/solo/volume
-- waveform peak data
+New persistent entities must use the existing centralized collision-safe ID
+generator.
 
-WebAudioEngine stores:
-- AudioContext
-- AudioBuffer
-- AudioBufferSourceNode
-- GainNode
+Do not regenerate valid persistent IDs when loading projects.
 
-Audio playback must use AudioContext.currentTime for scheduling.
-Do not use Flutter Timer as the audio clock.
+Do not place large new feature implementations entirely inside editor_page.dart
+when a dedicated model/controller/service/widget would be clearer.
 
-Flutter Timer may only be used to update the visual playhead.
+Reuse existing helpers and architecture before creating parallel systems.
 
-## Import
+---
 
-Audio can be imported through:
-- File Picker
-- Drag and drop using desktop_drop
+## Audio Architecture
 
-Both should go through AudioImportService.
+Preserve the current Web Audio graph unless the task explicitly requires a
+routing change.
 
-Supported initially:
-- WAV
-- MP3
+Runtime Web Audio objects must not be serialized.
 
-## Current goal
+Persistent project state and runtime audio state must remain separated.
 
-Build a simple multi-track DAW:
-1. Import multiple audio tracks
-2. Waveform
-3. Synchronized playback
-4. Play/pause/stop
-5. Volume/mute/solo
-6. Timeline seek
-7. Drag clips
-8. Timeline zoom/scroll
+Do not decode or duplicate audio unnecessarily.
+
+Shared clips may reference the same Audio Source.
+
+Live playback and offline WAV export should use equivalent processing semantics.
+
+Web Audio timing must use the audio clock, not Dart Timer-based audio scheduling.
+
+---
+
+## UI Direction
+
+The UI should feel like a compact desktop DAW.
+
+Prefer:
+- compact controls
+- thin borders
+- restrained surfaces
+- small border radius
+- anchored floating panels
+- DAW-style knobs and mixer controls
+- clear active/bypass states
+
+Avoid:
+- oversized Material UI
+- excessive rounded cards
+- mobile-style control layouts
+- unnecessary permanent controls in track headers
+
+Do not block the native browser context menu unless explicitly required.
+
+---
+
+## Persistent Feature Requirements
+
+When adding new persistent project state, integrate it with:
+
+- authoritative project model
+- Undo / Redo where appropriate
+- dirty state
+- IndexedDB autosave / recovery
+- .fldawproj Save / Open
+- backward-compatible defaults for older projects
+
+Runtime state, selection, hover state, Web Audio nodes, meters, and temporary drag
+previews must not be serialized.
+
+---
+
+## Validation Efficiency
+
+Use focused validation appropriate to the change.
+
+Do not repeatedly retry validation methods that are already known to fail
+deterministically because of this project's environment or tooling.
+
+If validation method A is a known environment/tooling failure and method B is
+the established working equivalent, use method B directly on future tasks.
+
+Do not claim method A passed.
+
+It may be reported as:
+
+"Known environment limitation — not retried; equivalent validation performed
+with <method B>."
+
+Retry a failed command only when:
+- the failure may be caused by the current code change, or
+- something was changed that could fix that exact failure.
+
+Do not repeatedly rerun an unchanged failing command.
+
+Preferred validation order:
+
+1. Targeted tests for changed logic when useful and available.
+2. flutter analyze --no-pub
+3. Browser runtime validation when Web Audio, JS interop, pointer interaction,
+   or browser behavior changed.
+4. flutter build web --no-pub only when build-level verification is genuinely
+   useful.
+
+Do not automatically run the entire Flutter test suite for every small feature.
+
+Do not weaken tests, add skips, suppress real errors, or change assertions just
+to produce green output.
+
+If something cannot be verified using a working method, report it as BLOCKED,
+not PASSED.
+
+Avoid unrelated environment troubleshooting and retry loops.
+
+---
+
+## Browser Testing Cleanup
+
+Browser testing must not leave generated artifacts in the repository.
+
+Do not leave:
+- Chrome profile directories
+- .meter-chrome-profile-* directories
+- temporary .fldawproj files
+- generated WAV test files
+- screenshots
+- logs
+- disposable browser test artifacts
+
+Use a system temporary directory for browser profiles when possible.
+
+Do not run flutter clean unless explicitly requested.
+
+Before finishing:
+
+git status --short
+
+Do not delete source files, project assets, user audio, Pub cache, FVM, or the
+Flutter SDK as cleanup.
+
+---
+
+## Task Scope
+
+Work only on the requested task.
+
+Before implementation, inspect the minimum relevant existing architecture.
+
+Avoid broad refactoring unless it is necessary to implement or fix the requested
+behavior.
+
+Preserve stable existing behavior and avoid regressions.
+
+Keep the final report concise:
+- important files changed
+- implementation approach
+- validation performed
+- anything blocked or not verified

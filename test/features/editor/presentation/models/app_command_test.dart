@@ -241,6 +241,26 @@ void main() {
     expect(command.usageSteps, hasLength(5));
   });
 
+  test('Help commands document Track Compressor controls', () {
+    final command = EditorCommands.all.singleWhere(
+      (command) => command.title == 'Track Compressor',
+    );
+
+    expect(command.shortcutParts, ['Track Actions', 'Track FX', 'Compressor']);
+    expect(
+      command.searchTerms,
+      containsAll([
+        'compressor',
+        'compression',
+        'threshold',
+        'ratio',
+        'gain reduction',
+        'makeup',
+      ]),
+    );
+    expect(command.usageSteps, hasLength(5));
+  });
+
   test('Help commands define the track reorder handle gesture once', () {
     final matches = EditorCommands.all.where(
       (command) => command.title == 'Reorder Track',

@@ -7,6 +7,7 @@ import 'package:daw_webapp/features/editor/domain/daw_track.dart';
 import 'package:daw_webapp/features/editor/domain/track_color.dart';
 import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
+import 'package:daw_webapp/features/editor/domain/track_compressor_fx.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -70,6 +71,14 @@ void main() {
           midQ: 1.8,
           highGainDb: 2.5,
         ),
+        compressorFx: const TrackCompressorFx(
+          enabled: true,
+          thresholdDb: -22,
+          ratio: 5,
+          attackSeconds: 0.015,
+          releaseSeconds: 0.3,
+          makeupGainDb: 2,
+        ),
         clips: [
           AudioClip(
             id: 'clip-a',
@@ -112,6 +121,7 @@ void main() {
       expect(duplicate.isSolo, source.isSolo);
       expect(duplicate.filterFx, source.filterFx);
       expect(duplicate.eqFx, source.eqFx);
+      expect(duplicate.compressorFx, source.compressorFx);
       expect(duplicate.clips.map((clip) => clip.id), ['clip-10', 'clip-11']);
       expect(duplicate.clips.map((clip) => clip.id).toSet(), hasLength(2));
       for (var index = 0; index < source.clips.length; index++) {

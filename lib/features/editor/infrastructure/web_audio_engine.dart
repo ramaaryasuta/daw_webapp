@@ -13,6 +13,7 @@ import '../domain/musical_timing.dart';
 import '../domain/track_mixer.dart';
 import '../domain/track_filter_fx.dart';
 import '../domain/track_eq_fx.dart';
+import '../domain/track_compressor_fx.dart';
 import 'web_metronome_scheduler.dart';
 
 class DecodedAudioInfo {
@@ -69,6 +70,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
   final Map<String, _StereoMeterTap> _trackMeterTaps = {};
   final Map<String, _TrackFilterRuntime> _trackFilters = {};
   final Map<String, _TrackEqRuntime> _trackEqs = {};
+  final Map<String, _TrackCompressorRuntime> _trackCompressors = {};
 
   bool _isPlaying = false;
   double _masterVolumeDb = unityMasterVolumeDb;
@@ -108,6 +110,10 @@ class WebAudioEngine implements AudioMeterPeakSource {
           entry.key: entry.value.readPeak(),
       },
       master: _masterMeterTap.readPeak(),
+      compressorReductionDb: {
+        for (final entry in _trackCompressors.entries)
+          entry.key: entry.value.reductionDb,
+      },
     );
   }
 
@@ -316,21 +322,28 @@ class WebAudioEngine implements AudioMeterPeakSource {
         );
         _trackFilters[track.id]!.update(track.filterFx, this);
         _trackEqs[track.id]!.update(track.eqFx, this);
+        _trackCompressors[track.id]!.update(track.compressorFx, this);
         continue;
       }
 
       final filter = _TrackFilterRuntime.create(_audioContext, track.filterFx);
       final eq = _TrackEqRuntime.create(_audioContext, track.eqFx);
+      final compressor = _TrackCompressorRuntime.create(
+        _audioContext,
+        track.compressorFx,
+      );
       final gain = _audioContext.createGain();
       final panner = _audioContext.createStereoPanner();
       gain.gain.value = effectiveTrackGain(track, hasSolo: hasSolo);
       panner.pan.value = clampTrackPan(track.pan);
       filter.output.connect(eq.input);
-      eq.output.connect(gain);
+      eq.output.connect(compressor.input);
+      compressor.output.connect(gain);
       gain.connect(panner);
       panner.connect(_masterMix);
       _trackFilters[track.id] = filter;
       _trackEqs[track.id] = eq;
+      _trackCompressors[track.id] = compressor;
       _trackGains[track.id] = gain;
       _trackPanners[track.id] = panner;
       _trackMeterTaps[track.id] = _StereoMeterTap.create(_audioContext, panner);
@@ -570,6 +583,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
       }
       _trackFilters[track.id]?.update(track.filterFx, this);
       _trackEqs[track.id]?.update(track.eqFx, this);
+      _trackCompressors[track.id]?.update(track.compressorFx, this);
     }
     _scheduledTracks = List<DawTrack>.unmodifiable(tracks);
   }
@@ -584,6 +598,13 @@ class WebAudioEngine implements AudioMeterPeakSource {
   void syncTrackEqFx(List<DawTrack> tracks) {
     for (final track in tracks) {
       _trackEqs[track.id]?.update(track.eqFx, this);
+    }
+    _scheduledTracks = List<DawTrack>.unmodifiable(tracks);
+  }
+
+  void syncTrackCompressorFx(List<DawTrack> tracks) {
+    for (final track in tracks) {
+      _trackCompressors[track.id]?.update(track.compressorFx, this);
     }
     _scheduledTracks = List<DawTrack>.unmodifiable(tracks);
   }
@@ -661,6 +682,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
     final meterTap = _trackMeterTaps.remove(trackId);
     final filter = _trackFilters.remove(trackId);
     final eq = _trackEqs.remove(trackId);
+    final compressor = _trackCompressors.remove(trackId);
 
     if (gain != null) {
       try {
@@ -677,6 +699,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
     meterTap?.dispose();
     filter?.dispose();
     eq?.dispose();
+    compressor?.dispose();
   }
 
   void _disposeAllTrackMixerNodes() {
@@ -688,6 +711,9 @@ class WebAudioEngine implements AudioMeterPeakSource {
     }
     for (final eq in _trackEqs.values) {
       eq.dispose();
+    }
+    for (final compressor in _trackCompressors.values) {
+      compressor.dispose();
     }
     for (final gain in _trackGains.values) {
       try {
@@ -701,6 +727,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
     }
     _trackFilters.clear();
     _trackEqs.clear();
+    _trackCompressors.clear();
     _trackGains.clear();
     _trackPanners.clear();
     _trackMeterTaps.clear();
@@ -1022,6 +1049,96 @@ class _TrackEqRuntime {
     engine._smoothAudioParamTo(
       high.gain,
       settings.enabled ? settings.highGainDb : 0,
+    );
+  }
+
+  void dispose() {
+    for (final node in nodes) {
+      try {
+        node.disconnect();
+      } catch (_) {}
+    }
+  }
+}
+
+class _TrackCompressorRuntime {
+  _TrackCompressorRuntime({
+    required this.input,
+    required this.output,
+    required this.compressor,
+    required this.makeupGain,
+    required this.dryGain,
+    required this.wetGain,
+    required this.nodes,
+    required this.enabled,
+  });
+
+  factory _TrackCompressorRuntime.create(
+    web.BaseAudioContext context,
+    TrackCompressorFx settings,
+  ) {
+    final input = context.createGain();
+    final output = context.createGain();
+    final compressor = context.createDynamicsCompressor()
+      ..threshold.value = settings.thresholdDb
+      ..ratio.value = settings.ratio
+      ..attack.value = settings.attackSeconds
+      ..release.value = settings.releaseSeconds;
+    final makeupGain = context.createGain()
+      ..gain.value = compressorMakeupDbToLinear(settings.makeupGainDb);
+    final dryGain = context.createGain()..gain.value = settings.enabled ? 0 : 1;
+    final wetGain = context.createGain()..gain.value = settings.enabled ? 1 : 0;
+
+    input.connect(dryGain);
+    dryGain.connect(output);
+    input.connect(compressor);
+    compressor.connect(makeupGain);
+    makeupGain.connect(wetGain);
+    wetGain.connect(output);
+
+    return _TrackCompressorRuntime(
+      input: input,
+      output: output,
+      compressor: compressor,
+      makeupGain: makeupGain,
+      dryGain: dryGain,
+      wetGain: wetGain,
+      nodes: [input, output, compressor, makeupGain, dryGain, wetGain],
+      enabled: settings.enabled,
+    );
+  }
+
+  final web.GainNode input;
+  final web.GainNode output;
+  final web.DynamicsCompressorNode compressor;
+  final web.GainNode makeupGain;
+  final web.GainNode dryGain;
+  final web.GainNode wetGain;
+  final List<web.AudioNode> nodes;
+  bool enabled;
+
+  double get reductionDb {
+    if (!enabled) return 0;
+    final reduction = compressor.reduction;
+    if (!reduction.isFinite) return 0;
+    return reduction.clamp(-24.0, 0.0);
+  }
+
+  void update(TrackCompressorFx settings, WebAudioEngine engine) {
+    enabled = settings.enabled;
+    engine._smoothAudioParamTo(compressor.threshold, settings.thresholdDb);
+    engine._smoothAudioParamTo(compressor.ratio, settings.ratio);
+    engine._smoothAudioParamTo(compressor.attack, settings.attackSeconds);
+    engine._smoothAudioParamTo(compressor.release, settings.releaseSeconds);
+    engine._smoothGainTo(
+      makeupGain,
+      compressorMakeupDbToLinear(settings.makeupGainDb),
+    );
+    _TrackFilterRuntime._setBypassPair(
+      dry: dryGain,
+      wet: wetGain,
+      enabled: settings.enabled,
+      engine: engine,
     );
   }
 

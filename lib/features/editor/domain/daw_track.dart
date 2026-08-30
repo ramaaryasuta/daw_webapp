@@ -2,6 +2,7 @@ import 'audio_clip.dart';
 import 'track_color.dart';
 import 'track_filter_fx.dart';
 import 'track_eq_fx.dart';
+import 'track_compressor_fx.dart';
 
 const int maximumTrackNameLength = 80;
 
@@ -17,6 +18,7 @@ class DawTrack {
     this.isSolo = false,
     this.filterFx = const TrackFilterFx(),
     this.eqFx = const TrackEqFx(),
+    this.compressorFx = const TrackCompressorFx(),
   }) : colorValue = 0xFF000000 | (colorValue & 0x00FFFFFF),
        pan = pan != pan ? 0 : (pan < -1 ? -1 : (pan > 1 ? 1 : pan));
 
@@ -35,6 +37,7 @@ class DawTrack {
   final bool isSolo;
   final TrackFilterFx filterFx;
   final TrackEqFx eqFx;
+  final TrackCompressorFx compressorFx;
 
   double get endTimeSeconds {
     var end = 0.0;
@@ -57,6 +60,7 @@ class DawTrack {
     bool? isSolo,
     TrackFilterFx? filterFx,
     TrackEqFx? eqFx,
+    TrackCompressorFx? compressorFx,
   }) {
     return DawTrack(
       id: id ?? this.id,
@@ -69,6 +73,7 @@ class DawTrack {
       isSolo: isSolo ?? this.isSolo,
       filterFx: filterFx ?? this.filterFx,
       eqFx: eqFx ?? this.eqFx,
+      compressorFx: compressorFx ?? this.compressorFx,
     );
   }
 }

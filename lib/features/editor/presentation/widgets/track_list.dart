@@ -82,6 +82,7 @@ class _TrackHeaderListState extends ConsumerState<TrackHeaderList> {
               trackFxRack: TrackFilterFxRack(
                 key: ValueKey('track-filter-fx-${track.id}'),
                 trackId: track.id,
+                meterController: widget.meterController,
               ),
               onReorderStarted: () => widget.reorderController.start(
                 trackId: track.id,

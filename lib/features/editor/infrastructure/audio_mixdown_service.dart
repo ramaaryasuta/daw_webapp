@@ -8,6 +8,7 @@ import '../domain/audio_clip.dart';
 import '../domain/daw_track.dart';
 import '../domain/track_mixer.dart';
 import '../domain/track_eq_fx.dart';
+import '../domain/track_compressor_fx.dart';
 import 'audio_render_duration.dart';
 import 'generated_export.dart';
 import 'wav_encoder.dart';
@@ -122,6 +123,20 @@ class AudioMixdownService implements AudioExportGenerator {
         lowEq.connect(midEq);
         midEq.connect(highEq);
         filterTail = highEq;
+      }
+      if (track.compressorFx.enabled) {
+        final compressor = offlineContext.createDynamicsCompressor()
+          ..threshold.value = track.compressorFx.thresholdDb
+          ..ratio.value = track.compressorFx.ratio
+          ..attack.value = track.compressorFx.attackSeconds
+          ..release.value = track.compressorFx.releaseSeconds;
+        final makeupGain = offlineContext.createGain()
+          ..gain.value = compressorMakeupDbToLinear(
+            track.compressorFx.makeupGainDb,
+          );
+        filterTail.connect(compressor);
+        compressor.connect(makeupGain);
+        filterTail = makeupGain;
       }
       gain.gain.value = gainValue;
       panner.pan.value = clampTrackPan(track.pan);

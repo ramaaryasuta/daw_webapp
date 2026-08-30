@@ -171,6 +171,7 @@ class FldawProjectCodec {
             pan: snapshot.tracks[index].pan,
             filterFx: snapshot.tracks[index].filterFx,
             eqFx: snapshot.tracks[index].eqFx,
+            compressorFx: snapshot.tracks[index].compressorFx,
           ),
       ],
       clips: [
@@ -283,6 +284,7 @@ class FldawProjectCodec {
           isSolo: track.solo,
           filterFx: track.filterFx,
           eqFx: track.eqFx,
+          compressorFx: track.compressorFx,
         ),
       );
     }

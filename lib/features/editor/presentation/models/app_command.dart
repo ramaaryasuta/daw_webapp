@@ -289,6 +289,32 @@ abstract final class EditorCommands {
     ],
   );
 
+  static const trackCompressor = AppCommand(
+    title: 'Track Compressor',
+    description:
+        'Control track dynamics by reducing louder signals and optionally restoring level with makeup gain.',
+    shortcutParts: ['Track Actions', 'Track FX', 'Compressor'],
+    category: AppCommandCategory.mixer,
+    searchTerms: [
+      'compressor',
+      'compression',
+      'dynamics',
+      'threshold',
+      'ratio',
+      'attack',
+      'release',
+      'gain reduction',
+      'makeup',
+    ],
+    usageSteps: [
+      'Enable Compressor.',
+      'Lower Threshold until gain reduction appears.',
+      'Increase Ratio for stronger compression.',
+      'Adjust Attack and Release for response speed.',
+      'Use Makeup Gain to restore output level.',
+    ],
+  );
+
   static const reorderTrack = AppCommand(
     title: 'Reorder Track',
     description: 'Change the vertical order of an audio track.',
@@ -456,6 +482,7 @@ abstract final class EditorCommands {
     duplicateTrack,
     trackFilterFx,
     trackEqFx,
+    trackCompressor,
     deleteTrack,
     reorderTrack,
     trackMixerControls,

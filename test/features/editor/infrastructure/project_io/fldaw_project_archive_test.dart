@@ -12,6 +12,7 @@ import 'package:daw_webapp/features/editor/domain/timeline_marker.dart';
 import 'package:daw_webapp/features/editor/domain/timeline_section.dart';
 import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
+import 'package:daw_webapp/features/editor/domain/track_compressor_fx.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/fldaw_project_archive.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/fldaw_project_codec.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/fldaw_project_io_service.dart';
@@ -87,6 +88,14 @@ void main() {
             midFrequencyHz: 2200,
             midQ: 2.5,
             highGainDb: 4,
+          ),
+          compressorFx: const TrackCompressorFx(
+            enabled: true,
+            thresholdDb: -26,
+            ratio: 6,
+            attackSeconds: 0.012,
+            releaseSeconds: 0.32,
+            makeupGainDb: 2.5,
           ),
           clips: [
             AudioClip(
@@ -178,6 +187,10 @@ void main() {
     expect(restored.tracks.single.isMuted, isTrue);
     expect(restored.tracks.single.filterFx, snapshot.tracks.single.filterFx);
     expect(restored.tracks.single.eqFx, snapshot.tracks.single.eqFx);
+    expect(
+      restored.tracks.single.compressorFx,
+      snapshot.tracks.single.compressorFx,
+    );
     expect(restored.tracks.single.clips.map((clip) => clip.id), [
       'clip-a',
       'clip-b',

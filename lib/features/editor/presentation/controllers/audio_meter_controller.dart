@@ -45,6 +45,7 @@ class AudioMeterController extends ChangeNotifier {
 
   final AudioMeterPeakSource _peakSource;
   final Map<String, _StereoBallistics> _tracks = {};
+  final Map<String, _GainReductionBallistics> _compressors = {};
   final _StereoBallistics _master = _StereoBallistics();
   late final Ticker _ticker = Ticker(_onTick);
 
@@ -55,6 +56,9 @@ class AudioMeterController extends ChangeNotifier {
 
   StereoMeterLevel levelForTrack(String trackId) =>
       _tracks[trackId]?.level ?? StereoMeterLevel.silence;
+
+  double compressorReductionForTrack(String trackId) =>
+      _compressors[trackId]?.reductionDb ?? 0;
 
   void setTransportActive(bool active) {
     _transportActive = active;
@@ -70,7 +74,9 @@ class AudioMeterController extends ChangeNotifier {
   }
 
   bool get _isAtRest =>
-      _master.isAtRest && _tracks.values.every((track) => track.isAtRest);
+      _master.isAtRest &&
+      _tracks.values.every((track) => track.isAtRest) &&
+      _compressors.values.every((compressor) => compressor.isAtRest);
 
   void _onTick(Duration elapsed) {
     final previousElapsed = _lastElapsed;
@@ -99,6 +105,21 @@ class AudioMeterController extends ChangeNotifier {
       }
     }
 
+    for (final entry in peaks.compressorReductionDb.entries) {
+      final compressor = _compressors.putIfAbsent(
+        entry.key,
+        _GainReductionBallistics.new,
+      );
+      changed = compressor.update(entry.value, deltaSeconds) || changed;
+    }
+
+    for (final trackId in _compressors.keys.toList()) {
+      if (peaks.compressorReductionDb.containsKey(trackId)) continue;
+      final compressor = _compressors[trackId]!;
+      changed = compressor.update(0, deltaSeconds) || changed;
+      if (compressor.isAtRest) _compressors.remove(trackId);
+    }
+
     if (changed) {
       notifyListeners();
     }
@@ -112,7 +133,30 @@ class AudioMeterController extends ChangeNotifier {
   void dispose() {
     _ticker.dispose();
     _tracks.clear();
+    _compressors.clear();
     super.dispose();
+  }
+}
+
+class _GainReductionBallistics {
+  static const double _returnSeconds = 0.22;
+  double reductionDb = 0;
+
+  bool get isAtRest => reductionDb.abs() < 0.01;
+
+  bool update(double rawReductionDb, double deltaSeconds) {
+    final previous = reductionDb;
+    final target = rawReductionDb.isFinite
+        ? rawReductionDb.clamp(-24.0, 0.0)
+        : 0.0;
+    if (target < reductionDb) {
+      reductionDb = target;
+    } else {
+      final release = math.exp(-deltaSeconds / _returnSeconds);
+      reductionDb = target + (reductionDb - target) * release;
+    }
+    if (reductionDb.abs() < 0.01) reductionDb = 0;
+    return previous != reductionDb;
   }
 }
 

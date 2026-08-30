@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../../domain/musical_timing.dart';
 import '../../domain/track_filter_fx.dart';
 import '../../domain/track_eq_fx.dart';
+import '../../domain/track_compressor_fx.dart';
 
 const String fldawProjectFormat = 'fldawproj';
 const int fldawProjectFormatVersion = 1;
@@ -283,6 +284,7 @@ class ProjectTrackDto {
     required this.pan,
     this.filterFx = const TrackFilterFx(),
     this.eqFx = const TrackEqFx(),
+    this.compressorFx = const TrackCompressorFx(),
   });
 
   final String id;
@@ -295,6 +297,7 @@ class ProjectTrackDto {
   final double pan;
   final TrackFilterFx filterFx;
   final TrackEqFx eqFx;
+  final TrackCompressorFx compressorFx;
 
   Map<String, Object?> toJson() => {
     'id': id,
@@ -326,6 +329,14 @@ class ProjectTrackDto {
       'midQ': eqFx.midQ,
       'highGainDb': eqFx.highGainDb,
     },
+    'compressorFx': {
+      'enabled': compressorFx.enabled,
+      'thresholdDb': compressorFx.thresholdDb,
+      'ratio': compressorFx.ratio,
+      'attackSeconds': compressorFx.attackSeconds,
+      'releaseSeconds': compressorFx.releaseSeconds,
+      'makeupGainDb': compressorFx.makeupGainDb,
+    },
   };
 
   factory ProjectTrackDto.fromJson(Map<String, Object?> json) =>
@@ -340,7 +351,48 @@ class ProjectTrackDto {
         pan: _boundedNumber(json, 'pan', -1, 1),
         filterFx: _trackFilterFx(json),
         eqFx: _trackEqFx(json),
+        compressorFx: _trackCompressorFx(json),
       );
+}
+
+TrackCompressorFx _trackCompressorFx(Map<String, Object?> trackJson) {
+  if (!trackJson.containsKey('compressorFx')) {
+    return const TrackCompressorFx();
+  }
+  final json = _requiredMap(trackJson, 'compressorFx');
+  return TrackCompressorFx(
+    enabled: _requiredBool(json, 'enabled'),
+    thresholdDb: _boundedNumber(
+      json,
+      'thresholdDb',
+      minimumCompressorThresholdDb,
+      maximumCompressorThresholdDb,
+    ),
+    ratio: _boundedNumber(
+      json,
+      'ratio',
+      minimumCompressorRatio,
+      maximumCompressorRatio,
+    ),
+    attackSeconds: _boundedNumber(
+      json,
+      'attackSeconds',
+      minimumCompressorAttackSeconds,
+      maximumCompressorAttackSeconds,
+    ),
+    releaseSeconds: _boundedNumber(
+      json,
+      'releaseSeconds',
+      minimumCompressorReleaseSeconds,
+      maximumCompressorReleaseSeconds,
+    ),
+    makeupGainDb: _boundedNumber(
+      json,
+      'makeupGainDb',
+      minimumCompressorMakeupGainDb,
+      maximumCompressorMakeupGainDb,
+    ),
+  );
 }
 
 TrackEqFx _trackEqFx(Map<String, Object?> trackJson) {
