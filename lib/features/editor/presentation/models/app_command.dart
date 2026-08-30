@@ -350,6 +350,36 @@ abstract final class EditorCommands {
         'Delay before Compressor sounds different from Compressor before Delay.',
   );
 
+  static const trackReverb = AppCommand(
+    title: 'Track Reverb',
+    description:
+        'Add a sense of room or space with adjustable pre-delay, decay, damping, and mix.',
+    shortcutParts: ['Track Actions', 'Track FX', 'Reverb'],
+    category: AppCommandCategory.mixer,
+    searchTerms: [
+      'reverb',
+      'room',
+      'hall',
+      'space',
+      'decay',
+      'damping',
+      'wet',
+      'dry',
+      'predelay',
+      'ambience',
+      'fx',
+    ],
+    usageSteps: [
+      'Enable Reverb.',
+      'Increase Decay for a larger or longer space.',
+      'Use Pre-Delay to separate the source from the room.',
+      'Lower Damping for a darker tail.',
+      'Adjust Mix.',
+      'Reorder Reverb in the FX Chain to change processing behavior.',
+    ],
+    tip: _trackFxKnobTip,
+  );
+
   static const reorderTrackFx = AppCommand(
     title: 'Reorder Track FX',
     description:
@@ -367,6 +397,7 @@ abstract final class EditorCommands {
       'eq',
       'compressor',
       'delay',
+      'reverb',
     ],
     usageSteps: [
       'Open Track FX.',
@@ -548,6 +579,7 @@ abstract final class EditorCommands {
     trackEqFx,
     trackCompressor,
     trackDelay,
+    trackReverb,
     reorderTrackFx,
     deleteTrack,
     reorderTrack,

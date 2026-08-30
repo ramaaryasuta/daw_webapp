@@ -10,6 +10,7 @@ import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_compressor_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_delay_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_fx_chain.dart';
+import 'package:daw_webapp/features/editor/domain/track_reverb_fx.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -88,11 +89,19 @@ void main() {
           feedback: 0.55,
           mix: 0.3,
         ),
+        reverbFx: const TrackReverbFx(
+          enabled: true,
+          preDelaySeconds: 0.065,
+          decaySeconds: 3.4,
+          dampingHz: 6400,
+          mix: 0.38,
+        ),
         fxChainOrder: const [
           TrackFxType.eq,
           TrackFxType.delay,
           TrackFxType.compressor,
           TrackFxType.filter,
+          TrackFxType.reverb,
         ],
         clips: [
           AudioClip(
@@ -138,6 +147,7 @@ void main() {
       expect(duplicate.eqFx, source.eqFx);
       expect(duplicate.compressorFx, source.compressorFx);
       expect(duplicate.delayFx, source.delayFx);
+      expect(duplicate.reverbFx, source.reverbFx);
       expect(duplicate.fxChainOrder, source.fxChainOrder);
       expect(duplicate.clips.map((clip) => clip.id), ['clip-10', 'clip-11']);
       expect(duplicate.clips.map((clip) => clip.id).toSet(), hasLength(2));

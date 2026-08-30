@@ -278,6 +278,20 @@ void main() {
     expect(command.searchTerms, containsAll(['delay', 'echo', 'feedback']));
   });
 
+  test('Help commands document Track Reverb controls and ordering', () {
+    final command = EditorCommands.all.firstWhere(
+      (command) => command.title == 'Track Reverb',
+    );
+
+    expect(command.shortcutParts, ['Track Actions', 'Track FX', 'Reverb']);
+    expect(command.description, contains('pre-delay'));
+    expect(command.usageSteps, hasLength(6));
+    expect(
+      command.searchTerms,
+      containsAll(['reverb', 'room', 'hall', 'decay', 'damping', 'ambience']),
+    );
+  });
+
   test('Help commands document Track FX chain reordering', () {
     final command = EditorCommands.all.singleWhere(
       (command) => command.title == 'Reorder Track FX',

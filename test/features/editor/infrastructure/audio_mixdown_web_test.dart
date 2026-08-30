@@ -12,6 +12,7 @@ import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_compressor_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_delay_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_fx_chain.dart';
+import 'package:daw_webapp/features/editor/domain/track_reverb_fx.dart';
 import 'package:daw_webapp/features/editor/infrastructure/audio_mixdown_service.dart';
 import 'package:daw_webapp/features/editor/infrastructure/wav_encoder.dart';
 import 'package:daw_webapp/features/editor/infrastructure/web_audio_engine.dart';
@@ -63,6 +64,7 @@ void main() {
     TrackEqFx eqFx = const TrackEqFx(),
     TrackCompressorFx compressorFx = const TrackCompressorFx(),
     TrackDelayFx delayFx = const TrackDelayFx(),
+    TrackReverbFx reverbFx = const TrackReverbFx(),
     List<TrackFxType> fxChainOrder = defaultTrackFxChainOrder,
   }) {
     return DawTrack(
@@ -76,6 +78,7 @@ void main() {
       eqFx: eqFx,
       compressorFx: compressorFx,
       delayFx: delayFx,
+      reverbFx: reverbFx,
       fxChainOrder: fxChainOrder,
       clips: [
         AudioClip(
@@ -473,6 +476,7 @@ void main() {
             TrackFxType.compressor,
             TrackFxType.filter,
             TrackFxType.delay,
+            TrackFxType.reverb,
           ],
         ),
       ])).wavBytes,
@@ -488,6 +492,7 @@ void main() {
             TrackFxType.eq,
             TrackFxType.filter,
             TrackFxType.delay,
+            TrackFxType.reverb,
           ],
         ),
       ])).wavBytes,
@@ -517,6 +522,53 @@ void main() {
     );
   });
 
+  test('offline WAV includes a deterministic stereo Reverb tail', () async {
+    const reverb = TrackReverbFx(
+      enabled: true,
+      preDelaySeconds: 0.02,
+      decaySeconds: 0.2,
+      dampingHz: 8000,
+      mix: 1,
+    );
+    final arrangement = [track('reverb-tail', reverbFx: reverb)];
+    final first = await mixdown.generateWavExport(arrangement);
+    final second = await mixdown.generateWavExport(arrangement);
+    final expected = durationSeconds + estimateReverbTailSeconds(reverb);
+
+    expect(first.durationSeconds, closeTo(expected, 1 / sampleRate));
+    expect(first.wavBytes, orderedEquals(second.wavBytes));
+    final samples = _leftChannelSamples(first.wavBytes);
+    final tailStart = (durationSeconds * sampleRate).ceil();
+    expect(
+      samples.skip(tailStart).any((sample) => sample.abs() > 0.0005),
+      isTrue,
+    );
+  });
+
+  test('Delay and Reverb export allowances combine conservatively', () async {
+    const delay = TrackDelayFx(
+      enabled: true,
+      timeSeconds: 0.02,
+      feedback: 0.5,
+      mix: 0.5,
+    );
+    const reverb = TrackReverbFx(
+      enabled: true,
+      preDelaySeconds: 0.02,
+      decaySeconds: 0.2,
+      mix: 0.5,
+    );
+    final generated = await mixdown.generateWavExport([
+      track('combined-tail', delayFx: delay, reverbFx: reverb),
+    ]);
+    final expected =
+        durationSeconds +
+        estimateDelayTailSeconds(delay, 120) +
+        estimateReverbTailSeconds(reverb);
+
+    expect(generated.durationSeconds, closeTo(expected, 1 / sampleRate));
+  });
+
   test('repeated live Track FX reorder keeps transport running', () async {
     final liveTrack = track(
       'live-order',
@@ -540,6 +592,7 @@ void main() {
                   TrackFxType.filter,
                   TrackFxType.eq,
                   TrackFxType.delay,
+                  TrackFxType.reverb,
                 ]
               : defaultTrackFxChainOrder,
         ),

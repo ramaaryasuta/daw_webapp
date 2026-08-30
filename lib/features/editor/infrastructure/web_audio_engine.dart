@@ -15,7 +15,9 @@ import '../domain/track_filter_fx.dart';
 import '../domain/track_eq_fx.dart';
 import '../domain/track_compressor_fx.dart';
 import '../domain/track_delay_fx.dart';
+import '../domain/track_reverb_fx.dart';
 import '../domain/track_fx_chain.dart';
+import 'reverb_impulse_buffer_web.dart';
 import 'web_metronome_scheduler.dart';
 
 class DecodedAudioInfo {
@@ -74,6 +76,8 @@ class WebAudioEngine implements AudioMeterPeakSource {
   final Map<String, _TrackEqRuntime> _trackEqs = {};
   final Map<String, _TrackCompressorRuntime> _trackCompressors = {};
   final Map<String, _TrackDelayRuntime> _trackDelays = {};
+  final Map<String, _TrackReverbRuntime> _trackReverbs = {};
+  final Map<int, web.AudioBuffer> _reverbIrCache = {};
   final Map<String, web.GainNode> _trackFxInputs = {};
   final Map<String, List<TrackFxType>> _trackFxOrders = {};
 
@@ -335,6 +339,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
         _trackEqs[track.id]!.update(track.eqFx, this);
         _trackCompressors[track.id]!.update(track.compressorFx, this);
         _trackDelays[track.id]!.update(track.delayFx, _tempoBpm, this);
+        _trackReverbs[track.id]!.update(track.reverbFx, this);
         _rebuildTrackFxRoutingIfNeeded(track);
         continue;
       }
@@ -351,6 +356,11 @@ class WebAudioEngine implements AudioMeterPeakSource {
         track.delayFx,
         _tempoBpm,
       );
+      final reverb = _TrackReverbRuntime.create(
+        _audioContext,
+        track.reverbFx,
+        this,
+      );
       final gain = _audioContext.createGain();
       final panner = _audioContext.createStereoPanner();
       gain.gain.value = effectiveTrackGain(track, hasSolo: hasSolo);
@@ -362,6 +372,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
       _trackEqs[track.id] = eq;
       _trackCompressors[track.id] = compressor;
       _trackDelays[track.id] = delay;
+      _trackReverbs[track.id] = reverb;
       _trackGains[track.id] = gain;
       _trackPanners[track.id] = panner;
       _trackMeterTaps[track.id] = _StereoMeterTap.create(_audioContext, panner);
@@ -578,6 +589,9 @@ class WebAudioEngine implements AudioMeterPeakSource {
     for (final delay in _trackDelays.values) {
       delay.resetTail();
     }
+    for (final reverb in _trackReverbs.values) {
+      reverb.resetTail();
+    }
     _scheduledTracks = const [];
     _contextStartTime = 0;
   }
@@ -624,6 +638,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
       _trackEqs[track.id]?.update(track.eqFx, this);
       _trackCompressors[track.id]?.update(track.compressorFx, this);
       _trackDelays[track.id]?.update(track.delayFx, _tempoBpm, this);
+      _trackReverbs[track.id]?.update(track.reverbFx, this);
       _rebuildTrackFxRoutingIfNeeded(track);
     }
     _scheduledTracks = List<DawTrack>.unmodifiable(tracks);
@@ -661,6 +676,17 @@ class WebAudioEngine implements AudioMeterPeakSource {
     );
   }
 
+  void syncTrackReverbFx(List<DawTrack> tracks) {
+    for (final track in tracks) {
+      _trackReverbs[track.id]?.update(track.reverbFx, this);
+    }
+    _scheduledTracks = List<DawTrack>.unmodifiable(tracks);
+    _projectDurationSeconds = calculateProjectRenderDurationSeconds(
+      tracks,
+      bpm: _tempoBpm,
+    );
+  }
+
   void _rebuildTrackFxRoutingIfNeeded(DawTrack track) {
     final currentOrder = _trackFxOrders[track.id];
     if (currentOrder == null ||
@@ -676,12 +702,14 @@ class WebAudioEngine implements AudioMeterPeakSource {
     final eq = _trackEqs[trackId];
     final compressor = _trackCompressors[trackId];
     final delay = _trackDelays[trackId];
+    final reverb = _trackReverbs[trackId];
     if (fxInput == null ||
         gain == null ||
         filter == null ||
         eq == null ||
         compressor == null ||
-        delay == null) {
+        delay == null ||
+        reverb == null) {
       return;
     }
 
@@ -690,6 +718,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
       TrackFxType.eq: eq,
       TrackFxType.compressor: compressor,
       TrackFxType.delay: delay,
+      TrackFxType.reverb: reverb,
     };
     try {
       fxInput.disconnect();
@@ -764,6 +793,26 @@ class WebAudioEngine implements AudioMeterPeakSource {
     parameter.linearRampToValueAtTime(targetValue, now + _mixerRampSeconds);
   }
 
+  web.AudioBuffer _reverbImpulseBuffer(double decaySeconds) {
+    final key =
+        (_audioContext.sampleRate * clampReverbDecaySeconds(decaySeconds))
+            .ceil();
+    final cached = _reverbIrCache.remove(key);
+    if (cached != null) {
+      _reverbIrCache[key] = cached;
+      return cached;
+    }
+    final created = createReverbImpulseBuffer(
+      _audioContext,
+      decaySeconds: decaySeconds,
+    );
+    _reverbIrCache[key] = created;
+    while (_reverbIrCache.length > 6) {
+      _reverbIrCache.remove(_reverbIrCache.keys.first);
+    }
+    return created;
+  }
+
   void removeTrack(String trackId) {
     final sources = _activeSources.remove(trackId);
 
@@ -785,6 +834,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
     final eq = _trackEqs.remove(trackId);
     final compressor = _trackCompressors.remove(trackId);
     final delay = _trackDelays.remove(trackId);
+    final reverb = _trackReverbs.remove(trackId);
     final fxInput = _trackFxInputs.remove(trackId);
     _trackFxOrders.remove(trackId);
 
@@ -811,6 +861,7 @@ class WebAudioEngine implements AudioMeterPeakSource {
     eq?.dispose();
     compressor?.dispose();
     delay?.dispose();
+    reverb?.dispose();
   }
 
   void _disposeAllTrackMixerNodes() {
@@ -828,6 +879,9 @@ class WebAudioEngine implements AudioMeterPeakSource {
     }
     for (final delay in _trackDelays.values) {
       delay.dispose();
+    }
+    for (final reverb in _trackReverbs.values) {
+      reverb.dispose();
     }
     for (final fxInput in _trackFxInputs.values) {
       try {
@@ -848,6 +902,8 @@ class WebAudioEngine implements AudioMeterPeakSource {
     _trackEqs.clear();
     _trackCompressors.clear();
     _trackDelays.clear();
+    _trackReverbs.clear();
+    _reverbIrCache.clear();
     _trackFxInputs.clear();
     _trackFxOrders.clear();
     _trackGains.clear();
@@ -1399,6 +1455,138 @@ class _TrackDelayRuntime implements _TrackFxRuntimeModule {
       wetInput,
       delayNode,
       feedbackGain,
+      wetGain,
+    ]) {
+      try {
+        node.disconnect();
+      } catch (_) {}
+    }
+  }
+}
+
+class _TrackReverbRuntime implements _TrackFxRuntimeModule {
+  _TrackReverbRuntime._({
+    required this.context,
+    required this.engine,
+    required this.input,
+    required this.output,
+    required this.dryGain,
+    required this.wetInput,
+    required this.settings,
+  });
+
+  factory _TrackReverbRuntime.create(
+    web.BaseAudioContext context,
+    TrackReverbFx settings,
+    WebAudioEngine engine,
+  ) {
+    final input = context.createGain();
+    final output = context.createGain();
+    final dryGain = context.createGain();
+    final wetInput = context.createGain();
+    input.connect(dryGain);
+    dryGain.connect(output);
+    input.connect(wetInput);
+    final runtime = _TrackReverbRuntime._(
+      context: context,
+      engine: engine,
+      input: input,
+      output: output,
+      dryGain: dryGain,
+      wetInput: wetInput,
+      settings: settings,
+    );
+    runtime._createWetBranch();
+    runtime._setImmediateValues();
+    return runtime;
+  }
+
+  final web.BaseAudioContext context;
+  final WebAudioEngine engine;
+  @override
+  final web.GainNode input;
+  @override
+  final web.GainNode output;
+  final web.GainNode dryGain;
+  final web.GainNode wetInput;
+  late web.DelayNode preDelay;
+  late web.ConvolverNode convolver;
+  late web.BiquadFilterNode damping;
+  late web.GainNode wetGain;
+  TrackReverbFx settings;
+
+  void _createWetBranch() {
+    preDelay = context.createDelay(maximumReverbPreDelaySeconds);
+    convolver = context.createConvolver()
+      ..normalize = false
+      ..buffer = engine._reverbImpulseBuffer(settings.decaySeconds);
+    damping = context.createBiquadFilter()
+      ..type = 'lowpass'
+      ..Q.value = 0.707;
+    wetGain = context.createGain();
+    wetInput.connect(preDelay);
+    preDelay.connect(convolver);
+    convolver.connect(damping);
+    damping.connect(wetGain);
+    wetGain.connect(output);
+  }
+
+  void _setImmediateValues() {
+    final enabled = settings.enabled;
+    preDelay.delayTime.value = clampReverbPreDelaySeconds(
+      settings.preDelaySeconds,
+    );
+    damping.frequency.value = clampReverbDampingHz(settings.dampingHz);
+    dryGain.gain.value = enabled ? reverbDryGain(settings.mix) : 1;
+    wetInput.gain.value = enabled ? 1 : 0;
+    wetGain.gain.value = enabled ? reverbWetGain(settings.mix) : 0;
+  }
+
+  void update(TrackReverbFx next, WebAudioEngine engine) {
+    final mustResetTail =
+        next.enabled != settings.enabled ||
+        next.decaySeconds != settings.decaySeconds;
+    settings = next;
+    if (mustResetTail) {
+      resetTail();
+      return;
+    }
+    final enabled = settings.enabled;
+    engine._smoothAudioParamTo(
+      preDelay.delayTime,
+      clampReverbPreDelaySeconds(settings.preDelaySeconds),
+    );
+    engine._smoothAudioParamTo(
+      damping.frequency,
+      clampReverbDampingHz(settings.dampingHz),
+    );
+    engine._smoothGainTo(dryGain, enabled ? reverbDryGain(settings.mix) : 1);
+    engine._smoothGainTo(wetInput, enabled ? 1 : 0);
+    engine._smoothGainTo(wetGain, enabled ? reverbWetGain(settings.mix) : 0);
+  }
+
+  void resetTail() {
+    try {
+      wetInput.disconnect();
+    } catch (_) {}
+    for (final node in [preDelay, convolver, damping, wetGain]) {
+      try {
+        node.disconnect();
+      } catch (_) {}
+    }
+    _createWetBranch();
+    _setImmediateValues();
+  }
+
+  void dispose() {
+    for (final node in [
+      input,
+      output,
+      dryGain,
+      wetInput,
+      preDelay,
+      convolver,
+      damping,
       wetGain,
     ]) {
       try {

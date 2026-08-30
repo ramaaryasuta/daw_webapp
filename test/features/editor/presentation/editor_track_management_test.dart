@@ -7,6 +7,7 @@ import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_delay_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_fx_chain.dart';
+import 'package:daw_webapp/features/editor/domain/track_reverb_fx.dart';
 import 'package:daw_webapp/features/editor/presentation/editor_page.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/audio_level_meter.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/daw_interaction_hint.dart';
@@ -18,7 +19,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('Delay edits are atomic and duplicate with chain position', () async {
+  test('tail FX edits are atomic and duplicate with chain position', () async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
     final controller = container.read(editorControllerProvider.notifier);
@@ -53,17 +54,45 @@ void main() {
       TrackFxType.compressor,
       TrackFxType.eq,
       TrackFxType.filter,
+      TrackFxType.reverb,
     ]);
 
     expect(
       container.read(editorControllerProvider).history.past,
       hasLength(historyBeforeDrag + 2),
     );
+    controller.toggleTrackReverb(trackId);
+    final historyBeforeReverbDrag = container
+        .read(editorControllerProvider)
+        .history
+        .past
+        .length;
+    controller.beginTrackReverbChange(trackId, TrackReverbParameter.decay);
+    controller.previewTrackReverbChange(
+      trackId,
+      TrackReverbParameter.decay,
+      3.2,
+    );
+    controller.previewTrackReverbChange(
+      trackId,
+      TrackReverbParameter.decay,
+      4.6,
+    );
+    controller.commitTrackReverbChange(
+      trackId,
+      TrackReverbParameter.decay,
+      4.6,
+    );
+    expect(
+      container.read(editorControllerProvider).history.past,
+      hasLength(historyBeforeReverbDrag + 1),
+    );
     final duplicateId = await controller.duplicateTrack(trackId);
     final tracks = container.read(editorControllerProvider).tracks;
     final source = tracks.firstWhere((track) => track.id == trackId);
     final duplicate = tracks.firstWhere((track) => track.id == duplicateId);
     expect(duplicate.delayFx, source.delayFx);
+    expect(duplicate.reverbFx, source.reverbFx);
     expect(duplicate.fxChainOrder, source.fxChainOrder);
   });
 
@@ -284,9 +313,9 @@ void main() {
     );
     expect(cutoffSemantics.value, isNotEmpty);
     expect(find.byKey(const ValueKey('track-fx-chain')), findsOneWidget);
-    expect(find.byTooltip('Drag to reorder effect'), findsNWidgets(4));
+    expect(find.byTooltip('Drag to reorder effect'), findsNWidgets(5));
     expect(
-      find.bySemanticsLabel('FILTER, effect slot 1 of 4, bypassed'),
+      find.bySemanticsLabel('FILTER, effect slot 1 of 5, bypassed'),
       findsOneWidget,
     );
 
@@ -315,6 +344,7 @@ void main() {
         TrackFxType.filter,
         TrackFxType.eq,
         TrackFxType.delay,
+        TrackFxType.reverb,
       ],
     );
     expect(
@@ -339,6 +369,7 @@ void main() {
         TrackFxType.filter,
         TrackFxType.eq,
         TrackFxType.delay,
+        TrackFxType.reverb,
       ],
     );
 
@@ -373,6 +404,20 @@ void main() {
         syncToBpm: true,
         syncDivision: DelaySyncDivision.dottedEighth,
       ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('track-fx-reverb-tab')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('track-reverb-tail')), findsOneWidget);
+    expect(find.bySemanticsLabel('Reverb pre-delay'), findsOneWidget);
+    expect(find.bySemanticsLabel('Reverb decay'), findsOneWidget);
+    expect(find.bySemanticsLabel('Reverb damping'), findsOneWidget);
+    expect(find.bySemanticsLabel('Reverb mix'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('track-reverb-toggle')));
+    await tester.pump();
+    expect(
+      container.read(editorControllerProvider).tracks.single.reverbFx.enabled,
+      isTrue,
     );
 
     await tester.tap(find.byKey(const ValueKey('track-fx-filter-tab')));

@@ -20,6 +20,7 @@ import '../domain/track_filter_fx.dart';
 import '../domain/track_eq_fx.dart';
 import '../domain/track_compressor_fx.dart';
 import '../domain/track_delay_fx.dart';
+import '../domain/track_reverb_fx.dart';
 import '../domain/track_fx_chain.dart';
 import '../domain/timeline_snapper.dart';
 import '../infrastructure/web_audio_engine.dart';
@@ -252,6 +253,9 @@ class EditorController extends Notifier<EditorState> {
   ProjectSnapshot? _delayEditStartSnapshot;
   String? _delayEditTrackId;
   TrackDelayParameter? _delayEditParameter;
+  ProjectSnapshot? _reverbEditStartSnapshot;
+  String? _reverbEditTrackId;
+  TrackReverbParameter? _reverbEditParameter;
   ProjectSnapshot? _trackColorEditStartSnapshot;
   String? _trackColorEditTrackId;
   int? _trackColorEditOriginalValue;
@@ -328,6 +332,9 @@ class EditorController extends Notifier<EditorState> {
     _delayEditStartSnapshot = null;
     _delayEditTrackId = null;
     _delayEditParameter = null;
+    _reverbEditStartSnapshot = null;
+    _reverbEditTrackId = null;
+    _reverbEditParameter = null;
     _trackColorEditStartSnapshot = null;
     _trackColorEditTrackId = null;
     _trackColorEditOriginalValue = null;
@@ -501,7 +508,8 @@ class EditorController extends Notifier<EditorState> {
           leftTrack.filterFx != rightTrack.filterFx ||
           leftTrack.eqFx != rightTrack.eqFx ||
           leftTrack.compressorFx != rightTrack.compressorFx ||
-          leftTrack.delayFx != rightTrack.delayFx) {
+          leftTrack.delayFx != rightTrack.delayFx ||
+          leftTrack.reverbFx != rightTrack.reverbFx) {
         return false;
       }
       if (!hasSameTrackFxChainOrder(
@@ -3257,6 +3265,152 @@ class EditorController extends Notifier<EditorState> {
       ],
     );
     _audioEngine.syncTrackDelayFx(state.tracks);
+  }
+
+  void toggleTrackReverb(String trackId) {
+    final track = state.tracks
+        .where((candidate) => candidate.id == trackId)
+        .firstOrNull;
+    if (track == null) return;
+    final before = _captureProjectSnapshot();
+    _setTrackReverbFx(
+      trackId,
+      track.reverbFx.copyWith(enabled: !track.reverbFx.enabled),
+    );
+    _recordEdit('Toggle Reverb', before);
+  }
+
+  void beginTrackReverbChange(String trackId, TrackReverbParameter parameter) {
+    if (_reverbEditStartSnapshot != null ||
+        !state.tracks.any((track) => track.id == trackId)) {
+      return;
+    }
+    _reverbEditStartSnapshot = _captureProjectSnapshot();
+    _reverbEditTrackId = trackId;
+    _reverbEditParameter = parameter;
+  }
+
+  void previewTrackReverbChange(
+    String trackId,
+    TrackReverbParameter parameter,
+    double value,
+  ) {
+    if (_reverbEditTrackId != trackId || _reverbEditParameter != parameter) {
+      return;
+    }
+    // The knob and visualization preview Decay locally. The exact final value
+    // is sent on commit so dragging never allocates a stream of large IRs.
+    if (parameter == TrackReverbParameter.decay) return;
+    _audioEngine.syncTrackReverbFx([
+      for (final track in state.tracks)
+        track.id == trackId
+            ? track.copyWith(
+                reverbFx: _reverbWithParameter(
+                  track.reverbFx,
+                  parameter,
+                  value,
+                ),
+              )
+            : track,
+    ]);
+  }
+
+  void commitTrackReverbChange(
+    String trackId,
+    TrackReverbParameter parameter,
+    double value,
+  ) {
+    if (_reverbEditTrackId != trackId || _reverbEditParameter != parameter) {
+      return;
+    }
+    final before = _reverbEditStartSnapshot;
+    _reverbEditStartSnapshot = null;
+    _reverbEditTrackId = null;
+    _reverbEditParameter = null;
+    final track = state.tracks
+        .where((candidate) => candidate.id == trackId)
+        .firstOrNull;
+    if (track == null || before == null) return;
+    _setTrackReverbFx(
+      trackId,
+      _reverbWithParameter(track.reverbFx, parameter, value),
+    );
+    _recordEdit(_reverbParameterHistoryLabel(parameter), before);
+  }
+
+  void resetTrackReverbParameter(
+    String trackId,
+    TrackReverbParameter parameter,
+  ) {
+    final track = state.tracks
+        .where((candidate) => candidate.id == trackId)
+        .firstOrNull;
+    if (track == null) return;
+    final before = _reverbEditTrackId == trackId
+        ? _reverbEditStartSnapshot
+        : _captureProjectSnapshot();
+    _reverbEditStartSnapshot = null;
+    _reverbEditTrackId = null;
+    _reverbEditParameter = null;
+    final defaultValue = switch (parameter) {
+      TrackReverbParameter.preDelay => defaultReverbPreDelaySeconds,
+      TrackReverbParameter.decay => defaultReverbDecaySeconds,
+      TrackReverbParameter.damping => defaultReverbDampingHz,
+      TrackReverbParameter.mix => defaultReverbMix,
+    };
+    _setTrackReverbFx(
+      trackId,
+      _reverbWithParameter(track.reverbFx, parameter, defaultValue),
+    );
+    if (before != null) {
+      _recordEdit(_reverbParameterHistoryLabel(parameter), before);
+    }
+  }
+
+  void resetTrackReverb(String trackId) {
+    final track = state.tracks
+        .where((candidate) => candidate.id == trackId)
+        .firstOrNull;
+    if (track == null) return;
+    final reset = const TrackReverbFx().copyWith(
+      enabled: track.reverbFx.enabled,
+    );
+    if (reset == track.reverbFx) return;
+    final before = _captureProjectSnapshot();
+    _setTrackReverbFx(trackId, reset);
+    _recordEdit('Reset Reverb', before);
+  }
+
+  TrackReverbFx _reverbWithParameter(
+    TrackReverbFx reverb,
+    TrackReverbParameter parameter,
+    double value,
+  ) {
+    return switch (parameter) {
+      TrackReverbParameter.preDelay => reverb.copyWith(preDelaySeconds: value),
+      TrackReverbParameter.decay => reverb.copyWith(decaySeconds: value),
+      TrackReverbParameter.damping => reverb.copyWith(dampingHz: value),
+      TrackReverbParameter.mix => reverb.copyWith(mix: value),
+    };
+  }
+
+  String _reverbParameterHistoryLabel(TrackReverbParameter parameter) {
+    return switch (parameter) {
+      TrackReverbParameter.preDelay => 'Change Reverb Pre-Delay',
+      TrackReverbParameter.decay => 'Change Reverb Decay',
+      TrackReverbParameter.damping => 'Change Reverb Damping',
+      TrackReverbParameter.mix => 'Change Reverb Mix',
+    };
+  }
+
+  void _setTrackReverbFx(String trackId, TrackReverbFx reverbFx) {
+    state = state.copyWith(
+      tracks: [
+        for (final track in state.tracks)
+          track.id == trackId ? track.copyWith(reverbFx: reverbFx) : track,
+      ],
+    );
+    _audioEngine.syncTrackReverbFx(state.tracks);
   }
 
   void setTempoBpm(double bpm) {

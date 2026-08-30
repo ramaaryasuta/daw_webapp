@@ -11,6 +11,7 @@ import '../../domain/track_filter_fx.dart';
 import '../../domain/track_eq_fx.dart';
 import '../../domain/track_compressor_fx.dart';
 import '../../domain/track_delay_fx.dart';
+import '../../domain/track_reverb_fx.dart';
 import '../../domain/track_fx_chain.dart';
 import '../controllers/audio_meter_controller.dart';
 import '../editor_shortcut_policy.dart';
@@ -35,6 +36,7 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
   TrackEqFx? _eqPreview;
   TrackCompressorFx? _compressorPreview;
   TrackDelayFx? _delayPreview;
+  TrackReverbFx? _reverbPreview;
   TrackFxType _selectedModule = TrackFxType.filter;
 
   @override
@@ -53,6 +55,7 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
     final eq = _eqPreview ?? track.eqFx;
     final compressor = _compressorPreview ?? track.compressorFx;
     final delay = _delayPreview ?? track.delayFx;
+    final reverb = _reverbPreview ?? track.reverbFx;
     final bpm = ref.watch(tempoControllerProvider.select((state) => state.bpm));
     final colorScheme = Theme.of(context).colorScheme;
     final accent = Color(track.colorValue);
@@ -77,7 +80,8 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
                       filter.enabled ||
                       eq.enabled ||
                       compressor.enabled ||
-                      delay.enabled,
+                      delay.enabled ||
+                      reverb.enabled,
                   accent: accent,
                 ),
                 Divider(height: 1, color: colorScheme.outlineVariant),
@@ -88,6 +92,7 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
                   eqActive: eq.enabled,
                   compressorActive: compressor.enabled,
                   delayActive: delay.enabled,
+                  reverbActive: reverb.enabled,
                   accent: accent,
                   onSelected: (module) => setState(() {
                     _selectedModule = module;
@@ -95,6 +100,7 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
                     _eqPreview = null;
                     _compressorPreview = null;
                     _delayPreview = null;
+                    _reverbPreview = null;
                   }),
                   onReorder: (oldIndex, newIndex) =>
                       _reorderFx(track.fxChainOrder, oldIndex, newIndex),
@@ -489,7 +495,7 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
                       ),
                     ),
                   ),
-                ] else ...[
+                ] else if (_selectedModule == TrackFxType.delay) ...[
                   _EffectHeader(
                     title: 'DELAY',
                     enabled: delay.enabled,
@@ -621,6 +627,107 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                ] else ...[
+                  _EffectHeader(
+                    title: 'REVERB',
+                    enabled: reverb.enabled,
+                    accent: const Color(0xFFB99AF4),
+                    toggleKey: const ValueKey('track-reverb-toggle'),
+                    onToggle: () => ref
+                        .read(editorControllerProvider.notifier)
+                        .toggleTrackReverb(widget.trackId),
+                    onReset: () => ref
+                        .read(editorControllerProvider.notifier)
+                        .resetTrackReverb(widget.trackId),
+                    resetKey: const ValueKey('track-reverb-reset'),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 9),
+                    child: Container(
+                      height: 96,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF121018),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: colorScheme.outlineVariant),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x44000000),
+                            blurRadius: 4,
+                            offset: Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: CustomPaint(
+                          key: const ValueKey('track-reverb-tail'),
+                          painter: _ReverbTailPainter(
+                            reverb: reverb,
+                            accent: const Color(0xFFB99AF4),
+                            gridColor: colorScheme.outlineVariant,
+                          ),
+                          child: const SizedBox.expand(),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Divider(height: 1, color: colorScheme.outlineVariant),
+                  AnimatedOpacity(
+                    duration: const Duration(milliseconds: 100),
+                    opacity: reverb.enabled ? 1 : 0.48,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(5, 10, 5, 12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          _reverbKnob(
+                            track: track,
+                            reverb: reverb,
+                            parameter: TrackReverbParameter.preDelay,
+                            label: 'PRE-DELAY',
+                            value: reverb.preDelaySeconds,
+                            minimum: minimumReverbPreDelaySeconds,
+                            maximum: maximumReverbPreDelaySeconds,
+                            valueLabel: formatReverbPreDelay(
+                              reverb.preDelaySeconds,
+                            ),
+                          ),
+                          _reverbKnob(
+                            track: track,
+                            reverb: reverb,
+                            parameter: TrackReverbParameter.decay,
+                            label: 'DECAY',
+                            value: reverb.decaySeconds,
+                            minimum: minimumReverbDecaySeconds,
+                            maximum: maximumReverbDecaySeconds,
+                            logarithmic: true,
+                            valueLabel: formatReverbDecay(reverb.decaySeconds),
+                          ),
+                          _reverbKnob(
+                            track: track,
+                            reverb: reverb,
+                            parameter: TrackReverbParameter.damping,
+                            label: 'DAMPING',
+                            value: reverb.dampingHz,
+                            minimum: minimumReverbDampingHz,
+                            maximum: maximumReverbDampingHz,
+                            logarithmic: true,
+                            valueLabel: formatReverbDamping(reverb.dampingHz),
+                          ),
+                          _reverbKnob(
+                            track: track,
+                            reverb: reverb,
+                            parameter: TrackReverbParameter.mix,
+                            label: 'MIX',
+                            value: reverb.mix,
+                            minimum: minimumReverbMix,
+                            maximum: maximumReverbMix,
+                            valueLabel: formatReverbMix(reverb.mix),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -826,6 +933,75 @@ class _TrackFilterFxRackState extends ConsumerState<TrackFilterFxRack> {
     );
   }
 
+  Widget _reverbKnob({
+    required DawTrack track,
+    required TrackReverbFx reverb,
+    required TrackReverbParameter parameter,
+    required String label,
+    required double value,
+    required double minimum,
+    required double maximum,
+    required String valueLabel,
+    bool logarithmic = false,
+  }) {
+    final hint = switch (parameter) {
+      TrackReverbParameter.preDelay => 'Adds space before the reverb begins',
+      TrackReverbParameter.decay => 'Controls how long the reverb tail lasts',
+      TrackReverbParameter.damping => 'Reduces high frequencies in the reverb',
+      TrackReverbParameter.mix => 'Blend dry and reverberated signal',
+    };
+    return Tooltip(
+      message: hint,
+      child: _RotaryKnob(
+        key: ValueKey('$parameter-knob'),
+        label: label,
+        semanticLabel: switch (parameter) {
+          TrackReverbParameter.preDelay => 'Reverb pre-delay',
+          TrackReverbParameter.decay => 'Reverb decay',
+          TrackReverbParameter.damping => 'Reverb damping',
+          TrackReverbParameter.mix => 'Reverb mix',
+        },
+        value: value,
+        minimum: minimum,
+        maximum: maximum,
+        logarithmic: logarithmic,
+        valueLabel: valueLabel,
+        valueFormatter: switch (parameter) {
+          TrackReverbParameter.preDelay => formatReverbPreDelay,
+          TrackReverbParameter.decay => formatReverbDecay,
+          TrackReverbParameter.damping => formatReverbDamping,
+          TrackReverbParameter.mix => formatReverbMix,
+        },
+        active: reverb.enabled,
+        accent: const Color(0xFFB99AF4),
+        onChangeStart: () => ref
+            .read(editorControllerProvider.notifier)
+            .beginTrackReverbChange(widget.trackId, parameter),
+        onChanged: (value) {
+          final base = _reverbPreview ?? track.reverbFx;
+          setState(
+            () => _reverbPreview = _withReverbParameter(base, parameter, value),
+          );
+          ref
+              .read(editorControllerProvider.notifier)
+              .previewTrackReverbChange(widget.trackId, parameter, value);
+        },
+        onChangeEnd: (value) {
+          ref
+              .read(editorControllerProvider.notifier)
+              .commitTrackReverbChange(widget.trackId, parameter, value);
+          if (mounted) setState(() => _reverbPreview = null);
+        },
+        onReset: () {
+          ref
+              .read(editorControllerProvider.notifier)
+              .resetTrackReverbParameter(widget.trackId, parameter);
+          setState(() => _reverbPreview = null);
+        },
+      ),
+    );
+  }
+
   void _beginParameter(TrackFilterParameter parameter) {
     ref
         .read(editorControllerProvider.notifier)
@@ -916,6 +1092,19 @@ TrackDelayFx _withDelayParameter(
     TrackDelayParameter.time => delay.copyWith(timeSeconds: value),
     TrackDelayParameter.feedback => delay.copyWith(feedback: value),
     TrackDelayParameter.mix => delay.copyWith(mix: value),
+  };
+}
+
+TrackReverbFx _withReverbParameter(
+  TrackReverbFx reverb,
+  TrackReverbParameter parameter,
+  double value,
+) {
+  return switch (parameter) {
+    TrackReverbParameter.preDelay => reverb.copyWith(preDelaySeconds: value),
+    TrackReverbParameter.decay => reverb.copyWith(decaySeconds: value),
+    TrackReverbParameter.damping => reverb.copyWith(dampingHz: value),
+    TrackReverbParameter.mix => reverb.copyWith(mix: value),
   };
 }
 
@@ -1247,6 +1436,115 @@ class _DelayRepeatsPainter extends CustomPainter {
       oldDelegate.gridColor != gridColor;
 }
 
+class _ReverbTailPainter extends CustomPainter {
+  const _ReverbTailPainter({
+    required this.reverb,
+    required this.accent,
+    required this.gridColor,
+  });
+
+  final TrackReverbFx reverb;
+  final Color accent;
+  final Color gridColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final gridPaint = Paint()
+      ..color = gridColor.withValues(alpha: 0.28)
+      ..strokeWidth = 1;
+    for (var index = 1; index < 4; index++) {
+      final y = size.height * index / 4;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+
+    final baseline = size.height * 0.56;
+    final transientX = 19.0;
+    final preDelayWidth =
+        10 +
+        (clampReverbPreDelaySeconds(reverb.preDelaySeconds) /
+                maximumReverbPreDelaySeconds) *
+            48;
+    final tailStart = transientX + preDelayWidth;
+    final decayProgress =
+        math.log(
+          clampReverbDecaySeconds(reverb.decaySeconds) /
+              minimumReverbDecaySeconds,
+        ) /
+        math.log(maximumReverbDecaySeconds / minimumReverbDecaySeconds);
+    final tailEnd =
+        tailStart +
+        (size.width - tailStart - 12) * (0.32 + decayProgress * 0.68);
+    final dampingBrightness =
+        math.log(
+          clampReverbDampingHz(reverb.dampingHz) / minimumReverbDampingHz,
+        ) /
+        math.log(maximumReverbDampingHz / minimumReverbDampingHz);
+    final mix = clampReverbMix(reverb.mix);
+    final activeAlpha = reverb.enabled ? 1.0 : 0.34;
+    final tailColor = accent.withValues(
+      alpha:
+          activeAlpha * (0.22 + dampingBrightness * 0.42) * (0.35 + mix * 0.65),
+    );
+
+    canvas.drawCircle(
+      Offset(transientX, baseline),
+      4,
+      Paint()..color = accent.withValues(alpha: activeAlpha * 0.9),
+    );
+    canvas.drawLine(
+      Offset(transientX + 6, baseline),
+      Offset(tailStart - 3, baseline),
+      Paint()
+        ..color = accent.withValues(alpha: activeAlpha * 0.34)
+        ..strokeWidth = 1.2,
+    );
+
+    final fillPath = Path()..moveTo(tailStart, baseline);
+    const points = 52;
+    for (var index = 0; index <= points; index++) {
+      final progress = index / points;
+      final x = tailStart + (tailEnd - tailStart) * progress;
+      final envelope = math.pow(1 - progress, 1.35).toDouble();
+      final ripple =
+          math.sin(progress * math.pi * 18) * 0.14 +
+          math.sin(progress * math.pi * 31) * 0.07;
+      final height = (21 + mix * 17) * envelope * (1 + ripple);
+      fillPath.lineTo(x, baseline - height);
+    }
+    for (var index = points; index >= 0; index--) {
+      final progress = index / points;
+      final x = tailStart + (tailEnd - tailStart) * progress;
+      final envelope = math.pow(1 - progress, 1.35).toDouble();
+      final ripple = math.sin(progress * math.pi * 23) * 0.12;
+      final height = (13 + mix * 13) * envelope * (1 + ripple);
+      fillPath.lineTo(x, baseline + height);
+    }
+    fillPath.close();
+    canvas.drawPath(fillPath, Paint()..color = tailColor);
+
+    final outline = Path()..moveTo(tailStart, baseline - 2);
+    for (var index = 0; index <= points; index++) {
+      final progress = index / points;
+      final x = tailStart + (tailEnd - tailStart) * progress;
+      final envelope = math.pow(1 - progress, 1.35).toDouble();
+      outline.lineTo(x, baseline - (21 + mix * 17) * envelope);
+    }
+    canvas.drawPath(
+      outline,
+      Paint()
+        ..color = accent.withValues(alpha: activeAlpha * 0.76)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.35,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _ReverbTailPainter oldDelegate) =>
+      oldDelegate.reverb != reverb ||
+      oldDelegate.accent != accent ||
+      oldDelegate.gridColor != gridColor;
+}
+
 class _FxChainSlots extends StatelessWidget {
   const _FxChainSlots({
     required this.order,
@@ -1255,6 +1553,7 @@ class _FxChainSlots extends StatelessWidget {
     required this.eqActive,
     required this.compressorActive,
     required this.delayActive,
+    required this.reverbActive,
     required this.accent,
     required this.onSelected,
     required this.onReorder,
@@ -1266,6 +1565,7 @@ class _FxChainSlots extends StatelessWidget {
   final bool eqActive;
   final bool compressorActive;
   final bool delayActive;
+  final bool reverbActive;
   final Color accent;
   final ValueChanged<TrackFxType> onSelected;
   final void Function(int oldIndex, int newIndex) onReorder;
@@ -1309,12 +1609,14 @@ class _FxChainSlots extends StatelessWidget {
                 TrackFxType.eq => eqActive,
                 TrackFxType.compressor => compressorActive,
                 TrackFxType.delay => delayActive,
+                TrackFxType.reverb => reverbActive,
               };
               final effectAccent = switch (effect) {
                 TrackFxType.filter => accent,
                 TrackFxType.eq => const Color(0xFF79B8FF),
                 TrackFxType.compressor => const Color(0xFFFFB45E),
                 TrackFxType.delay => const Color(0xFF7CD7C4),
+                TrackFxType.reverb => const Color(0xFFB99AF4),
               };
               return Padding(
                 key: ValueKey('track-fx-slot-${effect.name}'),

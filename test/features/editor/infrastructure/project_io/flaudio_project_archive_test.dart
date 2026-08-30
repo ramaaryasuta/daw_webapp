@@ -15,6 +15,7 @@ import 'package:daw_webapp/features/editor/domain/track_eq_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_compressor_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_delay_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_fx_chain.dart';
+import 'package:daw_webapp/features/editor/domain/track_reverb_fx.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/flaudio_project_archive.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/flaudio_project_codec.dart';
 import 'package:daw_webapp/features/editor/infrastructure/project_io/flaudio_project_io_service.dart';
@@ -110,11 +111,19 @@ void main() {
             feedback: 0.58,
             mix: 0.32,
           ),
+          reverbFx: const TrackReverbFx(
+            enabled: true,
+            preDelaySeconds: 0.045,
+            decaySeconds: 2.7,
+            dampingHz: 7200,
+            mix: 0.28,
+          ),
           fxChainOrder: const [
             TrackFxType.compressor,
             TrackFxType.eq,
             TrackFxType.filter,
             TrackFxType.delay,
+            TrackFxType.reverb,
           ],
           clips: [
             AudioClip(
@@ -211,6 +220,7 @@ void main() {
       snapshot.tracks.single.compressorFx,
     );
     expect(restored.tracks.single.delayFx, snapshot.tracks.single.delayFx);
+    expect(restored.tracks.single.reverbFx, snapshot.tracks.single.reverbFx);
     expect(
       restored.tracks.single.fxChainOrder,
       snapshot.tracks.single.fxChainOrder,

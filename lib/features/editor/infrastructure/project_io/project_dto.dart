@@ -5,6 +5,7 @@ import '../../domain/track_filter_fx.dart';
 import '../../domain/track_eq_fx.dart';
 import '../../domain/track_compressor_fx.dart';
 import '../../domain/track_delay_fx.dart';
+import '../../domain/track_reverb_fx.dart';
 import '../../domain/track_fx_chain.dart';
 
 const String flaudioProjectFormat = 'flaudioproject';
@@ -289,6 +290,7 @@ class ProjectTrackDto {
     this.eqFx = const TrackEqFx(),
     this.compressorFx = const TrackCompressorFx(),
     this.delayFx = const TrackDelayFx(),
+    this.reverbFx = const TrackReverbFx(),
     this.fxChainOrder = defaultTrackFxChainOrder,
   });
 
@@ -304,6 +306,7 @@ class ProjectTrackDto {
   final TrackEqFx eqFx;
   final TrackCompressorFx compressorFx;
   final TrackDelayFx delayFx;
+  final TrackReverbFx reverbFx;
   final List<TrackFxType> fxChainOrder;
 
   Map<String, Object?> toJson() => {
@@ -353,6 +356,13 @@ class ProjectTrackDto {
       'feedback': delayFx.feedback,
       'mix': delayFx.mix,
     },
+    'reverbFx': {
+      'enabled': reverbFx.enabled,
+      'preDelaySeconds': reverbFx.preDelaySeconds,
+      'decaySeconds': reverbFx.decaySeconds,
+      'dampingHz': reverbFx.dampingHz,
+      'mix': reverbFx.mix,
+    },
   };
 
   factory ProjectTrackDto.fromJson(Map<String, Object?> json) =>
@@ -370,6 +380,7 @@ class ProjectTrackDto {
         eqFx: _trackEqFx(json),
         compressorFx: _trackCompressorFx(json),
         delayFx: _trackDelayFx(json),
+        reverbFx: _trackReverbFx(json),
       );
 }
 
@@ -394,21 +405,54 @@ List<TrackFxType> _trackFxChainOrder(Map<String, Object?> trackJson) {
     }
     order.add(effect);
   }
-  final legacyOrder =
-      order.length == 3 &&
-      order.toSet().length == 3 &&
-      order.toSet().containsAll(const [
-        TrackFxType.filter,
-        TrackFxType.eq,
-        TrackFxType.compressor,
-      ]);
-  if (legacyOrder) {
+  final uniqueOrder = order.toSet();
+  final hasStableCore = uniqueOrder.containsAll(const [
+    TrackFxType.filter,
+    TrackFxType.eq,
+    TrackFxType.compressor,
+  ]);
+  if (uniqueOrder.length != order.length || !hasStableCore) {
+    _invalid('fxChainOrder must contain each built-in effect exactly once.');
+  }
+  if (!uniqueOrder.contains(TrackFxType.delay)) {
     order.add(TrackFxType.delay);
+  }
+  if (!uniqueOrder.contains(TrackFxType.reverb)) {
+    order.add(TrackFxType.reverb);
   }
   if (!isValidTrackFxChainOrder(order)) {
     _invalid('fxChainOrder must contain each built-in effect exactly once.');
   }
   return List<TrackFxType>.unmodifiable(order);
+}
+
+TrackReverbFx _trackReverbFx(Map<String, Object?> trackJson) {
+  if (!trackJson.containsKey('reverbFx')) {
+    return const TrackReverbFx();
+  }
+  final json = _requiredMap(trackJson, 'reverbFx');
+  return TrackReverbFx(
+    enabled: _requiredBool(json, 'enabled'),
+    preDelaySeconds: _boundedNumber(
+      json,
+      'preDelaySeconds',
+      minimumReverbPreDelaySeconds,
+      maximumReverbPreDelaySeconds,
+    ),
+    decaySeconds: _boundedNumber(
+      json,
+      'decaySeconds',
+      minimumReverbDecaySeconds,
+      maximumReverbDecaySeconds,
+    ),
+    dampingHz: _boundedNumber(
+      json,
+      'dampingHz',
+      minimumReverbDampingHz,
+      maximumReverbDampingHz,
+    ),
+    mix: _boundedNumber(json, 'mix', minimumReverbMix, maximumReverbMix),
+  );
 }
 
 TrackDelayFx _trackDelayFx(Map<String, Object?> trackJson) {

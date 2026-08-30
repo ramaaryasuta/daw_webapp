@@ -10,9 +10,11 @@ import '../domain/track_mixer.dart';
 import '../domain/track_eq_fx.dart';
 import '../domain/track_compressor_fx.dart';
 import '../domain/track_delay_fx.dart';
+import '../domain/track_reverb_fx.dart';
 import '../domain/track_fx_chain.dart';
 import 'audio_render_duration.dart';
 import 'generated_export.dart';
+import 'reverb_impulse_buffer_web.dart';
 import 'wav_encoder.dart';
 import 'web_audio_engine.dart';
 
@@ -175,6 +177,42 @@ class AudioMixdownService implements AudioExportGenerator {
               delayNode.connect(feedbackGain);
               feedbackGain.connect(delayNode);
               fxTail = delayOutput;
+            }
+            break;
+          case TrackFxType.reverb:
+            if (track.reverbFx.enabled) {
+              final reverbInput = offlineContext.createGain();
+              final reverbOutput = offlineContext.createGain();
+              final dryGain = offlineContext.createGain()
+                ..gain.value = reverbDryGain(track.reverbFx.mix);
+              final preDelay =
+                  offlineContext.createDelay(maximumReverbPreDelaySeconds)
+                    ..delayTime.value = clampReverbPreDelaySeconds(
+                      track.reverbFx.preDelaySeconds,
+                    );
+              final convolver = offlineContext.createConvolver()
+                ..normalize = false
+                ..buffer = createReverbImpulseBuffer(
+                  offlineContext,
+                  decaySeconds: track.reverbFx.decaySeconds,
+                );
+              final damping = offlineContext.createBiquadFilter()
+                ..type = 'lowpass'
+                ..frequency.value = clampReverbDampingHz(
+                  track.reverbFx.dampingHz,
+                )
+                ..Q.value = 0.707;
+              final wetGain = offlineContext.createGain()
+                ..gain.value = reverbWetGain(track.reverbFx.mix);
+              fxTail.connect(reverbInput);
+              reverbInput.connect(dryGain);
+              dryGain.connect(reverbOutput);
+              reverbInput.connect(preDelay);
+              preDelay.connect(convolver);
+              convolver.connect(damping);
+              damping.connect(wetGain);
+              wetGain.connect(reverbOutput);
+              fxTail = reverbOutput;
             }
             break;
         }

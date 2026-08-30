@@ -8,6 +8,7 @@ import 'package:daw_webapp/features/editor/domain/track_filter_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_compressor_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_delay_fx.dart';
 import 'package:daw_webapp/features/editor/domain/track_fx_chain.dart';
+import 'package:daw_webapp/features/editor/domain/track_reverb_fx.dart';
 import 'package:daw_webapp/features/editor/domain/timeline_marker.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -110,6 +111,7 @@ void main() {
             TrackFxType.delay,
             TrackFxType.eq,
             TrackFxType.filter,
+            TrackFxType.reverb,
           ],
         ),
       ],
@@ -163,6 +165,42 @@ void main() {
     expect(
       history.undo(after)!.snapshot.tracks.single.delayFx,
       const TrackDelayFx(),
+    );
+  });
+
+  test('Reverb metadata participates in project history', () {
+    const track = DawTrack(id: 'track-1', name: 'Vocals', clips: []);
+    final before = ProjectSnapshot(
+      tracks: const [track],
+      bpm: 120,
+      selectedTrackId: track.id,
+    );
+    final after = ProjectSnapshot(
+      tracks: [
+        track.copyWith(
+          reverbFx: const TrackReverbFx(
+            enabled: true,
+            preDelaySeconds: 0.08,
+            decaySeconds: 4.5,
+            dampingHz: 4200,
+            mix: 0.4,
+          ),
+        ),
+      ],
+      bpm: 120,
+      selectedTrackId: track.id,
+    );
+
+    final history = EditorHistory().record(
+      label: 'Change Reverb Decay',
+      before: before,
+      after: after,
+    );
+
+    expect(history.past.single.label, 'Change Reverb Decay');
+    expect(
+      history.undo(after)!.snapshot.tracks.single.reverbFx,
+      const TrackReverbFx(),
     );
   });
 
