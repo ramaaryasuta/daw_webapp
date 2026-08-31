@@ -23,6 +23,8 @@ class DawRotaryKnob extends StatefulWidget {
     required this.onChangeEnd,
     required this.onReset,
     this.hint,
+    this.diameter = 48,
+    this.showCenterTick = false,
   });
 
   final String label;
@@ -40,14 +42,19 @@ class DawRotaryKnob extends StatefulWidget {
   final ValueChanged<double> onChangeEnd;
   final VoidCallback onReset;
   final DawInteractionHintData? hint;
+  final double diameter;
+  final bool showCenterTick;
 
   @override
   State<DawRotaryKnob> createState() => _DawRotaryKnobState();
 }
 
 class _DawRotaryKnobState extends State<DawRotaryKnob> {
+  final FocusNode _focusNode = FocusNode(debugLabel: 'daw-rotary-knob');
   late double _normalized;
   bool _dragging = false;
+  bool _hovered = false;
+  bool _focused = false;
 
   @override
   void initState() {
@@ -64,6 +71,12 @@ class _DawRotaryKnobState extends State<DawRotaryKnob> {
   }
 
   @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return DawInteractionHint(
@@ -76,10 +89,31 @@ class _DawRotaryKnobState extends State<DawRotaryKnob> {
         decreasedValue: _adjustedValueLabel(-.02),
         onIncrease: () => _adjustBy(.02),
         onDecrease: () => _adjustBy(-.02),
-        child: MouseRegion(
-          cursor: SystemMouseCursors.resizeUpDown,
+        child: FocusableActionDetector(
+          focusNode: _focusNode,
+          shortcuts: const {
+            SingleActivator(LogicalKeyboardKey.arrowUp): _KnobNudgeIntent(1),
+            SingleActivator(LogicalKeyboardKey.arrowRight): _KnobNudgeIntent(1),
+            SingleActivator(LogicalKeyboardKey.arrowDown): _KnobNudgeIntent(-1),
+            SingleActivator(LogicalKeyboardKey.arrowLeft): _KnobNudgeIntent(-1),
+          },
+          actions: {
+            _KnobNudgeIntent: CallbackAction<_KnobNudgeIntent>(
+              onInvoke: (intent) {
+                final step = HardwareKeyboard.instance.isShiftPressed
+                    ? .005
+                    : .02;
+                _adjustBy(intent.direction * step);
+                return null;
+              },
+            ),
+          },
+          onShowFocusHighlight: (focused) => setState(() => _focused = focused),
+          onShowHoverHighlight: (hovered) => setState(() => _hovered = hovered),
+          mouseCursor: SystemMouseCursors.resizeUpDown,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
+            onTapDown: (_) => _focusNode.requestFocus(),
             onDoubleTap: widget.onReset,
             onVerticalDragStart: (_) {
               _dragging = true;
@@ -103,7 +137,7 @@ class _DawRotaryKnobState extends State<DawRotaryKnob> {
             onVerticalDragEnd: (_) => _finishDrag(),
             onVerticalDragCancel: _finishDrag,
             child: SizedBox(
-              width: 68,
+              width: math.max(56, widget.diameter + 16),
               child: Column(
                 children: [
                   Text(
@@ -120,10 +154,13 @@ class _DawRotaryKnobState extends State<DawRotaryKnob> {
                       normalized: _normalized,
                       active: widget.active,
                       accent: widget.accent,
+                      hovered: _hovered,
+                      focused: _focused,
+                      showCenterTick: widget.showCenterTick,
                       bodyColor: scheme.surfaceContainerHighest,
                       inactiveColor: scheme.outline,
                     ),
-                    child: const SizedBox.square(dimension: 48),
+                    child: SizedBox.square(dimension: widget.diameter),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -182,11 +219,20 @@ class _DawRotaryKnobState extends State<DawRotaryKnob> {
   }
 }
 
+class _KnobNudgeIntent extends Intent {
+  const _KnobNudgeIntent(this.direction);
+
+  final double direction;
+}
+
 class _DawKnobPainter extends CustomPainter {
   const _DawKnobPainter({
     required this.normalized,
     required this.active,
     required this.accent,
+    required this.hovered,
+    required this.focused,
+    required this.showCenterTick,
     required this.bodyColor,
     required this.inactiveColor,
   });
@@ -194,6 +240,9 @@ class _DawKnobPainter extends CustomPainter {
   final double normalized;
   final bool active;
   final Color accent;
+  final bool hovered;
+  final bool focused;
+  final bool showCenterTick;
   final Color bodyColor;
   final Color inactiveColor;
 
@@ -202,7 +251,9 @@ class _DawKnobPainter extends CustomPainter {
     final center = size.center(Offset.zero);
     const start = math.pi * 0.75;
     const sweep = math.pi * 1.5;
-    final arcRect = Rect.fromCircle(center: center, radius: 21);
+    final outerRadius = size.shortestSide / 2 - 3;
+    final bodyRadius = size.shortestSide * .344;
+    final arcRect = Rect.fromCircle(center: center, radius: outerRadius);
     canvas.drawArc(
       arcRect,
       start,
@@ -224,18 +275,44 @@ class _DawKnobPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round
         ..strokeWidth = 2.2,
     );
+    if (showCenterTick) {
+      final centerAngle = start + sweep * .5;
+      canvas.drawLine(
+        center +
+            Offset(math.cos(centerAngle), math.sin(centerAngle)) *
+                (outerRadius + 1),
+        center +
+            Offset(math.cos(centerAngle), math.sin(centerAngle)) *
+                (outerRadius + 4),
+        Paint()
+          ..color = inactiveColor.withValues(alpha: .92)
+          ..strokeWidth = 1.2,
+      );
+    }
+    if (focused || hovered) {
+      canvas.drawCircle(
+        center,
+        outerRadius + 2,
+        Paint()
+          ..color = focused
+              ? Colors.white.withValues(alpha: .82)
+              : inactiveColor.withValues(alpha: .58)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = focused ? 1.2 : .8,
+      );
+    }
     canvas.drawCircle(
       center,
-      16.5,
+      bodyRadius,
       Paint()
         ..shader = const RadialGradient(
           center: Alignment(-0.28, -0.32),
           colors: [Color(0xFF50545C), Color(0xFF1A1C20)],
-        ).createShader(Rect.fromCircle(center: center, radius: 17)),
+        ).createShader(Rect.fromCircle(center: center, radius: bodyRadius)),
     );
     canvas.drawCircle(
       center,
-      16.5,
+      bodyRadius,
       Paint()
         ..color = const Color(0xFF060708)
         ..style = PaintingStyle.stroke
@@ -243,8 +320,8 @@ class _DawKnobPainter extends CustomPainter {
     );
     final angle = start + sweep * normalized;
     canvas.drawLine(
-      center + Offset(math.cos(angle), math.sin(angle)) * 6,
-      center + Offset(math.cos(angle), math.sin(angle)) * 13,
+      center + Offset(math.cos(angle), math.sin(angle)) * (bodyRadius * .36),
+      center + Offset(math.cos(angle), math.sin(angle)) * (bodyRadius * .79),
       Paint()
         ..color = active ? accent : const Color(0xFF9A9DA3)
         ..strokeCap = StrokeCap.round
@@ -257,6 +334,9 @@ class _DawKnobPainter extends CustomPainter {
       oldDelegate.normalized != normalized ||
       oldDelegate.active != active ||
       oldDelegate.accent != accent ||
+      oldDelegate.hovered != hovered ||
+      oldDelegate.focused != focused ||
+      oldDelegate.showCenterTick != showCenterTick ||
       oldDelegate.bodyColor != bodyColor ||
       oldDelegate.inactiveColor != inactiveColor;
 }

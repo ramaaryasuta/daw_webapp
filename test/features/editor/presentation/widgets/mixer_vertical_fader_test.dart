@@ -1,6 +1,7 @@
 import 'package:daw_webapp/features/editor/domain/track_mixer.dart';
 import 'package:daw_webapp/features/editor/presentation/widgets/mixer_vertical_fader.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -80,5 +81,50 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(resetCount, 1);
+  });
+
+  testWidgets('keyboard nudges are focused and committed atomically', (
+    tester,
+  ) async {
+    var value = -6.0;
+    var starts = 0;
+    var commits = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 72,
+              height: 260,
+              child: MixerVerticalFader(
+                valueDb: value,
+                minimumDb: minimumTrackVolumeDb,
+                maximumDb: maximumTrackVolumeDb,
+                unityDb: unityTrackVolumeDb,
+                semanticLabel: 'Vocal volume',
+                valueFormatter: formatTrackVolumeDb,
+                onChangeStart: () => starts++,
+                onChanged: (next) => value = next,
+                onChangeEnd: (next) {
+                  value = next;
+                  commits++;
+                },
+                onReset: () => value = unityTrackVolumeDb,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(MixerVerticalFader));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(FocusManager.instance.primaryFocus?.debugLabel, 'mixer-fader');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pump();
+
+    expect(value, -5);
+    expect(starts, 1);
+    expect(commits, 1);
   });
 }

@@ -55,7 +55,9 @@ class _MixerWorkspaceState extends ConsumerState<MixerWorkspace> {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final masterWidth = constraints.maxWidth < 420 ? 108.0 : 128.0;
+          final compactHeight = constraints.maxHeight < 520;
+          final masterWidth = constraints.maxWidth < 700 ? 112.0 : 124.0;
+          final anyTrackSoloed = state.tracks.any((track) => track.isSolo);
           return Row(
             children: [
               Expanded(
@@ -67,7 +69,7 @@ class _MixerWorkspaceState extends ConsumerState<MixerWorkspace> {
                   child: SingleChildScrollView(
                     controller: _channelScrollController,
                     scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.fromLTRB(10, 10, 12, 16),
+                    padding: const EdgeInsets.fromLTRB(10, 9, 10, 15),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -79,7 +81,7 @@ class _MixerWorkspaceState extends ConsumerState<MixerWorkspace> {
                           Padding(
                             padding: const EdgeInsets.only(right: 5),
                             child: SizedBox(
-                              width: 112,
+                              width: compactHeight ? 102 : 108,
                               child: _TrackChannelStrip(
                                 key: ValueKey(
                                   'mixer-channel-${state.tracks[index].id}',
@@ -89,6 +91,8 @@ class _MixerWorkspaceState extends ConsumerState<MixerWorkspace> {
                                 selected:
                                     state.selectedTrackId ==
                                     state.tracks[index].id,
+                                anyTrackSoloed: anyTrackSoloed,
+                                compact: compactHeight,
                                 meterController: widget.meterController,
                                 onSelect: () => controller.selectTrack(
                                   state.tracks[index].id,
@@ -101,14 +105,30 @@ class _MixerWorkspaceState extends ConsumerState<MixerWorkspace> {
                   ),
                 ),
               ),
-              Container(width: 1, color: colors.outline.withValues(alpha: .82)),
+              Container(
+                width: 5,
+                decoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(
+                      color: colors.outline.withValues(alpha: .9),
+                    ),
+                  ),
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.black.withValues(alpha: .24),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
               SizedBox(
                 width: masterWidth,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(7, 10, 8, 16),
+                  padding: const EdgeInsets.fromLTRB(7, 9, 8, 15),
                   child: _MasterChannelStrip(
                     volumeDb: state.masterVolumeDb,
                     limiter: state.masterLimiter,
+                    compact: compactHeight,
                     meterController: widget.meterController,
                   ),
                 ),
@@ -121,12 +141,14 @@ class _MixerWorkspaceState extends ConsumerState<MixerWorkspace> {
   }
 }
 
-class _TrackChannelStrip extends ConsumerWidget {
+class _TrackChannelStrip extends ConsumerStatefulWidget {
   const _TrackChannelStrip({
     super.key,
     required this.track,
     required this.number,
     required this.selected,
+    required this.anyTrackSoloed,
+    required this.compact,
     required this.meterController,
     required this.onSelect,
   });
@@ -134,232 +156,321 @@ class _TrackChannelStrip extends ConsumerWidget {
   final DawTrack track;
   final int number;
   final bool selected;
+  final bool anyTrackSoloed;
+  final bool compact;
   final AudioMeterController meterController;
   final VoidCallback onSelect;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_TrackChannelStrip> createState() => _TrackChannelStripState();
+}
+
+class _TrackChannelStripState extends ConsumerState<_TrackChannelStrip> {
+  final FocusNode _focusNode = FocusNode(debugLabel: 'mixer-channel');
+  bool _hovered = false;
+  bool _focused = false;
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final controller = ref.read(editorControllerProvider.notifier);
     final colors = Theme.of(context).colorScheme;
-    final accent = Color(track.colorValue);
-    final activeFxCount = _activeFxCount(track);
+    final accent = Color(widget.track.colorValue);
+    final activeFxCount = _activeFxCount(widget.track);
+    final subdued =
+        widget.track.isMuted || (widget.anyTrackSoloed && !widget.track.isSolo);
+    final surface = widget.selected
+        ? Color.alphaBlend(
+            accent.withValues(alpha: .085),
+            colors.surfaceContainerLow,
+          )
+        : _hovered
+        ? Color.alphaBlend(
+            colors.onSurface.withValues(alpha: .035),
+            colors.surfaceContainerLow,
+          )
+        : colors.surfaceContainerLow;
 
     return Semantics(
       container: true,
-      selected: selected,
-      label: 'Mixer channel $number, ${track.name}',
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTap: onSelect,
-        child: Container(
-          decoration: BoxDecoration(
-            color: selected
-                ? Color.alphaBlend(
-                    accent.withValues(alpha: .08),
-                    colors.surfaceContainerLow,
-                  )
-                : colors.surfaceContainerLow,
-            border: Border.all(
-              color: selected
-                  ? accent.withValues(alpha: .82)
-                  : colors.outlineVariant,
-              width: selected ? 1.4 : 1,
-            ),
-            borderRadius: BorderRadius.circular(4),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x52000000),
-                blurRadius: 4,
-                offset: Offset(0, 2),
-              ),
-            ],
+      selected: widget.selected,
+      label: 'Mixer channel ${widget.number}, ${widget.track.name}',
+      child: FocusableActionDetector(
+        focusNode: _focusNode,
+        shortcuts: const {
+          SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+          SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+        },
+        actions: {
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              widget.onSelect();
+              return null;
+            },
           ),
-          child: Column(
-            children: [
-              Container(height: 3, color: accent.withValues(alpha: .9)),
-              SizedBox(
-                height: 54,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(7, 7, 7, 5),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: 19,
-                        child: Text(
-                          number.toString().padLeft(2, '0'),
-                          style: TextStyle(
-                            color: colors.onSurfaceVariant,
-                            fontSize: 8,
-                            fontWeight: FontWeight.w700,
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                          ),
-                        ),
+        },
+        onShowFocusHighlight: (focused) => setState(() => _focused = focused),
+        onShowHoverHighlight: (hovered) => setState(() => _hovered = hovered),
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () {
+            _focusNode.requestFocus();
+            widget.onSelect();
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            decoration: BoxDecoration(
+              color: surface,
+              border: Border.all(
+                color: _focused
+                    ? colors.onSurface.withValues(alpha: .9)
+                    : widget.selected
+                    ? accent.withValues(alpha: .82)
+                    : _hovered
+                    ? colors.outline.withValues(alpha: .85)
+                    : colors.outlineVariant,
+                width: _focused || widget.selected ? 1.4 : 1,
+              ),
+              borderRadius: BorderRadius.circular(4),
+              boxShadow: widget.selected
+                  ? [
+                      BoxShadow(
+                        color: accent.withValues(alpha: .12),
+                        blurRadius: 7,
                       ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Tooltip(
-                          message: track.name,
-                          child: Text(
-                            track.name.toUpperCase(),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                      const BoxShadow(
+                        color: Color(0x52000000),
+                        blurRadius: 4,
+                        offset: Offset(0, 2),
+                      ),
+                    ]
+                  : const [
+                      BoxShadow(
+                        color: Color(0x52000000),
+                        blurRadius: 4,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+            ),
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 140),
+              opacity: subdued ? .76 : 1,
+              child: Column(
+                children: [
+                  Container(height: 3, color: accent.withValues(alpha: .9)),
+                  SizedBox(
+                    height: widget.compact ? 42 : 47,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(7, 5, 7, 4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            widget.number.toString().padLeft(2, '0'),
                             style: TextStyle(
-                              color: colors.onSurface,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              height: 1.25,
-                              letterSpacing: .35,
+                              color: colors.onSurfaceVariant,
+                              fontSize: 7.5,
+                              fontWeight: FontWeight.w700,
+                              height: 1,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
                             ),
                           ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Divider(height: 1, color: colors.outlineVariant),
-              SizedBox(
-                height: 34,
-                child: Center(
-                  child: _MixerFxRackButton(
-                    trackId: track.id,
-                    trackName: track.name,
-                    activeFxCount: activeFxCount,
-                    accent: accent,
-                    meterController: meterController,
-                    onOpen: onSelect,
-                  ),
-                ),
-              ),
-              Divider(height: 1, color: colors.outlineVariant),
-              Expanded(
-                child: Container(
-                  margin: const EdgeInsets.fromLTRB(6, 6, 6, 3),
-                  padding: const EdgeInsets.symmetric(horizontal: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF11141A),
-                    border: Border.all(
-                      color: colors.outlineVariant.withValues(alpha: .72),
-                    ),
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      SizedBox(
-                        width: 25,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: TrackStereoMeter(
-                            controller: meterController,
-                            trackId: track.id,
-                            width: 22,
-                            height: double.infinity,
-                            semanticLabel: '${track.name} stereo level',
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Container(
+                                width: 4,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: accent,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Tooltip(
+                                  message: widget.track.name,
+                                  child: Text(
+                                    widget.track.name.toUpperCase(),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: colors.onSurface,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w800,
+                                      height: 1.25,
+                                      letterSpacing: .35,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
+                        ],
                       ),
-                      Expanded(
-                        child: MixerVerticalFader(
-                          key: ValueKey('mixer-fader-${track.id}'),
-                          valueDb: track.volumeDb,
-                          minimumDb: minimumTrackVolumeDb,
-                          maximumDb: maximumTrackVolumeDb,
-                          unityDb: unityTrackVolumeDb,
-                          semanticLabel: '${track.name} volume',
-                          valueFormatter: formatTrackVolumeDb,
-                          accent: accent,
-                          onChangeStart: () {
-                            onSelect();
-                            controller.beginVolumeChange(track.id);
+                    ),
+                  ),
+                  Divider(height: 1, color: colors.outlineVariant),
+                  SizedBox(
+                    height: widget.compact ? 29 : 31,
+                    child: Center(
+                      child: _MixerFxRackButton(
+                        trackId: widget.track.id,
+                        trackName: widget.track.name,
+                        activeFxCount: activeFxCount,
+                        accent: accent,
+                        meterController: widget.meterController,
+                        onOpen: widget.onSelect,
+                      ),
+                    ),
+                  ),
+                  Divider(height: 1, color: colors.outlineVariant),
+                  Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.fromLTRB(6, 6, 6, 3),
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF11141A),
+                        border: Border.all(
+                          color: colors.outlineVariant.withValues(alpha: .72),
+                        ),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(
+                            width: 25,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: TrackStereoMeter(
+                                controller: widget.meterController,
+                                trackId: widget.track.id,
+                                width: 22,
+                                height: double.infinity,
+                                semanticLabel:
+                                    '${widget.track.name} stereo level',
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: MixerVerticalFader(
+                              key: ValueKey('mixer-fader-${widget.track.id}'),
+                              valueDb: widget.track.volumeDb,
+                              minimumDb: minimumTrackVolumeDb,
+                              maximumDb: maximumTrackVolumeDb,
+                              unityDb: unityTrackVolumeDb,
+                              semanticLabel: '${widget.track.name} volume',
+                              valueFormatter: formatTrackVolumeDb,
+                              accent: accent,
+                              onChangeStart: () {
+                                widget.onSelect();
+                                controller.beginVolumeChange(widget.track.id);
+                              },
+                              onChanged: (value) => controller.previewVolume(
+                                widget.track.id,
+                                value,
+                              ),
+                              onChangeEnd: (_) => controller.commitVolumeChange(
+                                widget.track.id,
+                              ),
+                              onReset: () =>
+                                  controller.resetVolume(widget.track.id),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Text(
+                    formatTrackVolumeDb(widget.track.volumeDb),
+                    key: ValueKey('mixer-volume-value-${widget.track.id}'),
+                    style: TextStyle(
+                      color: widget.track.volumeDb > 0
+                          ? const Color(0xFFF1C84B)
+                          : colors.onSurface,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  SizedBox(
+                    height: widget.compact ? 69 : 75,
+                    child: DawRotaryKnob(
+                      key: ValueKey('mixer-pan-${widget.track.id}'),
+                      label: 'PAN',
+                      semanticLabel: '${widget.track.name} pan',
+                      value: widget.track.pan,
+                      minimum: minimumTrackPan,
+                      maximum: maximumTrackPan,
+                      logarithmic: false,
+                      valueLabel: formatTrackPan(widget.track.pan),
+                      valueFormatter: formatTrackPan,
+                      active: widget.track.pan != centerTrackPan,
+                      accent: accent,
+                      diameter: widget.compact ? 36 : 40,
+                      showCenterTick: true,
+                      hint: const DawInteractionHintData(
+                        title: 'Drag vertically to adjust pan',
+                        detail:
+                            'Shift+drag · Fine control   Double-click · Center',
+                      ),
+                      onChangeStart: () {
+                        widget.onSelect();
+                        controller.beginPanChange(widget.track.id);
+                      },
+                      onChanged: (value) =>
+                          controller.previewPan(widget.track.id, value),
+                      onChangeEnd: (_) =>
+                          controller.commitPanChange(widget.track.id),
+                      onReset: () => controller.resetPan(widget.track.id),
+                    ),
+                  ),
+                  Divider(height: 1, color: colors.outlineVariant),
+                  SizedBox(
+                    height: widget.compact ? 32 : 35,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _MixerStateButton(
+                          key: ValueKey('mixer-mute-${widget.track.id}'),
+                          label: 'M',
+                          semanticLabel:
+                              '${widget.track.name} mute, ${widget.track.isMuted ? 'on' : 'off'}',
+                          active: widget.track.isMuted,
+                          activeColor: colors.error,
+                          onPressed: () {
+                            widget.onSelect();
+                            controller.toggleMute(widget.track.id);
                           },
-                          onChanged: (value) =>
-                              controller.previewVolume(track.id, value),
-                          onChangeEnd: (_) =>
-                              controller.commitVolumeChange(track.id),
-                          onReset: () => controller.resetVolume(track.id),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Text(
-                formatTrackVolumeDb(track.volumeDb),
-                key: ValueKey('mixer-volume-value-${track.id}'),
-                style: TextStyle(
-                  color: track.volumeDb > 0
-                      ? const Color(0xFFF1C84B)
-                      : colors.onSurface,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-              ),
-              const SizedBox(height: 3),
-              SizedBox(
-                height: 84,
-                child: DawRotaryKnob(
-                  key: ValueKey('mixer-pan-${track.id}'),
-                  label: 'PAN',
-                  semanticLabel: '${track.name} pan',
-                  value: track.pan,
-                  minimum: minimumTrackPan,
-                  maximum: maximumTrackPan,
-                  logarithmic: false,
-                  valueLabel: formatTrackPan(track.pan),
-                  valueFormatter: formatTrackPan,
-                  active: track.pan != centerTrackPan,
-                  accent: accent,
-                  hint: const DawInteractionHintData(
-                    title: 'Drag vertically to adjust pan',
-                    detail: 'Shift+drag · Fine control   Double-click · Center',
-                  ),
-                  onChangeStart: () {
-                    onSelect();
-                    controller.beginPanChange(track.id);
-                  },
-                  onChanged: (value) => controller.previewPan(track.id, value),
-                  onChangeEnd: (_) => controller.commitPanChange(track.id),
-                  onReset: () => controller.resetPan(track.id),
-                ),
-              ),
-              Divider(height: 1, color: colors.outlineVariant),
-              SizedBox(
-                height: 37,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _MixerStateButton(
-                      key: ValueKey('mixer-mute-${track.id}'),
-                      label: 'M',
-                      semanticLabel:
-                          '${track.name} mute, ${track.isMuted ? 'on' : 'off'}',
-                      active: track.isMuted,
-                      activeColor: colors.error,
-                      onPressed: () {
-                        onSelect();
-                        controller.toggleMute(track.id);
-                      },
+                        const SizedBox(width: 7),
+                        _MixerStateButton(
+                          key: ValueKey('mixer-solo-${widget.track.id}'),
+                          label: 'S',
+                          semanticLabel:
+                              '${widget.track.name} solo, ${widget.track.isSolo ? 'on' : 'off'}',
+                          active: widget.track.isSolo,
+                          activeColor: const Color(0xFFF1C84B),
+                          onPressed: () {
+                            widget.onSelect();
+                            controller.toggleSolo(widget.track.id);
+                          },
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 7),
-                    _MixerStateButton(
-                      key: ValueKey('mixer-solo-${track.id}'),
-                      label: 'S',
-                      semanticLabel:
-                          '${track.name} solo, ${track.isSolo ? 'on' : 'off'}',
-                      active: track.isSolo,
-                      activeColor: const Color(0xFFF1C84B),
-                      onPressed: () {
-                        onSelect();
-                        controller.toggleSolo(track.id);
-                      },
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -371,11 +482,13 @@ class _MasterChannelStrip extends ConsumerWidget {
   const _MasterChannelStrip({
     required this.volumeDb,
     required this.limiter,
+    required this.compact,
     required this.meterController,
   });
 
   final double volumeDb;
   final MasterLimiterSettings limiter;
+  final bool compact;
   final AudioMeterController meterController;
 
   @override
@@ -404,7 +517,7 @@ class _MasterChannelStrip extends ConsumerWidget {
         children: [
           Container(height: 3, color: accent.withValues(alpha: .78)),
           SizedBox(
-            height: 54,
+            height: compact ? 42 : 47,
             child: Center(
               child: Text(
                 'MASTER',
@@ -419,7 +532,7 @@ class _MasterChannelStrip extends ConsumerWidget {
           ),
           Divider(height: 1, color: colors.outline),
           SizedBox(
-            height: 34,
+            height: compact ? 29 : 31,
             child: Center(
               child: _MasterLimiterButton(
                 settings: limiter,
@@ -518,6 +631,8 @@ class _MixerStateButton extends StatelessWidget {
       child: InkWell(
         onTap: onPressed,
         borderRadius: BorderRadius.circular(3),
+        focusColor: colors.onSurface.withValues(alpha: .14),
+        hoverColor: colors.onSurface.withValues(alpha: .06),
         child: Container(
           width: 31,
           height: 23,
@@ -667,6 +782,8 @@ class _MixerFxRackButtonState extends State<_MixerFxRackButton> {
             key: ValueKey('mixer-fx-${widget.trackId}'),
             onTap: _toggle,
             borderRadius: BorderRadius.circular(3),
+            focusColor: colors.onSurface.withValues(alpha: .14),
+            hoverColor: colors.onSurface.withValues(alpha: .06),
             child: Container(
               height: 23,
               constraints: const BoxConstraints(minWidth: 48),
@@ -740,40 +857,72 @@ class _MasterLimiterButton extends ConsumerWidget {
           onReset: controller.resetMasterLimiter,
         ),
       ],
-      builder: (context, menuController, child) => Semantics(
-        button: true,
-        toggled: settings.enabled,
-        label: 'Master limiter, ${settings.enabled ? 'enabled' : 'bypassed'}',
-        child: InkWell(
-          key: const ValueKey('mixer-master-limiter-button'),
-          onTap: () => menuController.isOpen
-              ? menuController.close()
-              : menuController.open(),
-          borderRadius: BorderRadius.circular(3),
-          child: Container(
-            height: 23,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: settings.enabled
-                  ? colors.primaryContainer
-                  : colors.surfaceContainerHighest,
-              border: Border.all(
+      builder: (context, menuController, child) => DawInteractionHint(
+        data: DawInteractionHintData(
+          title: 'Open Master Limiter',
+          detail: settings.enabled ? 'Limiter enabled' : 'Limiter bypassed',
+          semanticsLabel:
+              'Master limiter, ${settings.enabled ? 'enabled' : 'bypassed'}',
+        ),
+        child: Semantics(
+          button: true,
+          toggled: settings.enabled,
+          label: 'Master limiter, ${settings.enabled ? 'enabled' : 'bypassed'}',
+          child: InkWell(
+            key: const ValueKey('mixer-master-limiter-button'),
+            onTap: () => menuController.isOpen
+                ? menuController.close()
+                : menuController.open(),
+            borderRadius: BorderRadius.circular(3),
+            focusColor: colors.onSurface.withValues(alpha: .12),
+            hoverColor: colors.onSurface.withValues(alpha: .06),
+            child: Container(
+              height: 23,
+              padding: const EdgeInsets.symmetric(horizontal: 7),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
                 color: settings.enabled
-                    ? colors.primary.withValues(alpha: .72)
-                    : colors.outlineVariant,
+                    ? colors.primaryContainer.withValues(alpha: .72)
+                    : colors.surfaceContainerHighest,
+                border: Border.all(
+                  color: settings.enabled
+                      ? colors.primary.withValues(alpha: .72)
+                      : colors.outlineVariant,
+                ),
+                borderRadius: BorderRadius.circular(3),
               ),
-              borderRadius: BorderRadius.circular(3),
-            ),
-            child: Text(
-              'LIM',
-              style: TextStyle(
-                color: settings.enabled
-                    ? colors.onPrimaryContainer
-                    : colors.onSurfaceVariant,
-                fontSize: 8,
-                fontWeight: FontWeight.w900,
-                letterSpacing: .55,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'LIMITER',
+                    style: TextStyle(
+                      color: settings.enabled
+                          ? colors.onPrimaryContainer
+                          : colors.onSurfaceVariant,
+                      fontSize: 7.5,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: .45,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Container(
+                    width: 5,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: settings.enabled ? colors.primary : colors.outline,
+                      shape: BoxShape.circle,
+                      boxShadow: settings.enabled
+                          ? [
+                              BoxShadow(
+                                color: colors.primary.withValues(alpha: .4),
+                                blurRadius: 3,
+                              ),
+                            ]
+                          : null,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

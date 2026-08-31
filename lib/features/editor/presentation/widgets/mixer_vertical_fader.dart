@@ -38,8 +38,11 @@ class MixerVerticalFader extends StatefulWidget {
 }
 
 class _MixerVerticalFaderState extends State<MixerVerticalFader> {
+  final FocusNode _focusNode = FocusNode(debugLabel: 'mixer-fader');
   late double _displayDb;
   bool _dragging = false;
+  bool _hovered = false;
+  bool _focused = false;
 
   @override
   void initState() {
@@ -53,6 +56,12 @@ class _MixerVerticalFaderState extends State<MixerVerticalFader> {
     if (!_dragging && oldWidget.valueDb != widget.valueDb) {
       _displayDb = _clamp(widget.valueDb);
     }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
   }
 
   @override
@@ -73,13 +82,38 @@ class _MixerVerticalFaderState extends State<MixerVerticalFader> {
         decreasedValue: widget.valueFormatter(_clamp(_displayDb - 1)),
         onIncrease: () => _nudge(1),
         onDecrease: () => _nudge(-1),
-        child: MouseRegion(
-          cursor: SystemMouseCursors.resizeUpDown,
+        child: FocusableActionDetector(
+          focusNode: _focusNode,
+          shortcuts: const {
+            SingleActivator(LogicalKeyboardKey.arrowUp): _FaderNudgeIntent(1),
+            SingleActivator(LogicalKeyboardKey.arrowRight): _FaderNudgeIntent(
+              1,
+            ),
+            SingleActivator(LogicalKeyboardKey.arrowDown): _FaderNudgeIntent(
+              -1,
+            ),
+            SingleActivator(LogicalKeyboardKey.arrowLeft): _FaderNudgeIntent(
+              -1,
+            ),
+          },
+          actions: {
+            _FaderNudgeIntent: CallbackAction<_FaderNudgeIntent>(
+              onInvoke: (intent) {
+                final step = HardwareKeyboard.instance.isShiftPressed ? .1 : 1;
+                _nudge(intent.direction * step);
+                return null;
+              },
+            ),
+          },
+          onShowFocusHighlight: (focused) => setState(() => _focused = focused),
+          onShowHoverHighlight: (hovered) => setState(() => _hovered = hovered),
+          mouseCursor: SystemMouseCursors.resizeUpDown,
           child: GestureDetector(
             key: widget.key == null
                 ? const ValueKey('mixer-vertical-fader')
                 : null,
             behavior: HitTestBehavior.opaque,
+            onTapDown: (_) => _focusNode.requestFocus(),
             onDoubleTap: _reset,
             onVerticalDragStart: (_) {
               _dragging = true;
@@ -108,6 +142,8 @@ class _MixerVerticalFaderState extends State<MixerVerticalFader> {
                 minimumDb: widget.minimumDb,
                 accent: widget.accent,
                 active: _dragging,
+                hovered: _hovered,
+                focused: _focused,
                 colors: colors,
               ),
               child: const SizedBox.expand(),
@@ -146,12 +182,20 @@ class _MixerVerticalFaderState extends State<MixerVerticalFader> {
       value.clamp(widget.minimumDb, widget.maximumDb).toDouble();
 }
 
+class _FaderNudgeIntent extends Intent {
+  const _FaderNudgeIntent(this.direction);
+
+  final double direction;
+}
+
 class _MixerFaderPainter extends CustomPainter {
   const _MixerFaderPainter({
     required this.valueDb,
     required this.minimumDb,
     required this.accent,
     required this.active,
+    required this.hovered,
+    required this.focused,
     required this.colors,
   });
 
@@ -159,6 +203,8 @@ class _MixerFaderPainter extends CustomPainter {
   final double minimumDb;
   final Color accent;
   final bool active;
+  final bool hovered;
+  final bool focused;
   final ColorScheme colors;
 
   static const _marks = <(double, String)>[
@@ -173,6 +219,21 @@ class _MixerFaderPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (focused || hovered) {
+      final highlight = RRect.fromRectAndRadius(
+        (Offset.zero & size).deflate(1),
+        const Radius.circular(3),
+      );
+      canvas.drawRRect(
+        highlight,
+        Paint()
+          ..color = focused
+              ? colors.onSurface.withValues(alpha: .72)
+              : colors.onSurface.withValues(alpha: .16)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = focused ? 1.2 : .8,
+      );
+    }
     const top = 8.0;
     const bottom = 8.0;
     final travel = math.max(1.0, size.height - top - bottom);
@@ -249,6 +310,8 @@ class _MixerFaderPainter extends CustomPainter {
       oldDelegate.valueDb != valueDb ||
       oldDelegate.accent != accent ||
       oldDelegate.active != active ||
+      oldDelegate.hovered != hovered ||
+      oldDelegate.focused != focused ||
       oldDelegate.colors != colors;
 }
 
