@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/timeline_ruler_mode.dart';
+import '../models/editor_workspace.dart';
 import '../controllers/audio_meter_controller.dart';
 import '../../domain/master_limiter.dart';
 import 'master_strip.dart';
@@ -21,6 +22,8 @@ class TransportBar extends StatelessWidget {
     required this.onStopPressed,
     required this.onLoopPressed,
     required this.onRulerModeChanged,
+    required this.workspace,
+    required this.onWorkspaceChanged,
     this.meterController,
     this.masterVolumeDb = 0,
     this.onMasterVolumeChangeStart,
@@ -41,6 +44,7 @@ class TransportBar extends StatelessWidget {
   final bool isLoopEnabled;
   final double positionSeconds;
   final TimelineRulerMode rulerMode;
+  final EditorWorkspace workspace;
   final AudioMeterController? meterController;
   final double masterVolumeDb;
   final MasterLimiterSettings masterLimiter;
@@ -49,6 +53,7 @@ class TransportBar extends StatelessWidget {
   final VoidCallback onStopPressed;
   final VoidCallback onLoopPressed;
   final ValueChanged<TimelineRulerMode> onRulerModeChanged;
+  final ValueChanged<EditorWorkspace> onWorkspaceChanged;
   final VoidCallback? onMasterVolumeChangeStart;
   final ValueChanged<double>? onMasterVolumeChanged;
   final ValueChanged<double>? onMasterVolumeChangeEnd;
@@ -150,6 +155,11 @@ class TransportBar extends StatelessWidget {
                               ),
                             ],
                           ),
+                        ),
+                        const SizedBox(width: 10),
+                        _WorkspaceSelector(
+                          workspace: workspace,
+                          onChanged: onWorkspaceChanged,
                         ),
                         const SizedBox(width: 12),
                         Container(
@@ -270,6 +280,114 @@ class TransportBar extends StatelessWidget {
     return '${minutes.toString().padLeft(2, '0')}:'
         '${secs.toString().padLeft(2, '0')}.'
         '${millis.toString().padLeft(3, '0')}';
+  }
+}
+
+class _WorkspaceSelector extends StatelessWidget {
+  const _WorkspaceSelector({required this.workspace, required this.onChanged});
+
+  final EditorWorkspace workspace;
+  final ValueChanged<EditorWorkspace> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      container: true,
+      label: 'Editor workspace',
+      child: Container(
+        key: const ValueKey('editor-workspace-selector'),
+        height: 32,
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerLow,
+          border: Border.all(color: colors.outlineVariant),
+          borderRadius: BorderRadius.circular(5),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _WorkspaceButton(
+              key: const ValueKey('workspace-arrange'),
+              label: 'ARRANGE',
+              icon: Icons.view_timeline_outlined,
+              selected: workspace == EditorWorkspace.arrange,
+              onPressed: () => onChanged(EditorWorkspace.arrange),
+            ),
+            _WorkspaceButton(
+              key: const ValueKey('workspace-mixer'),
+              label: 'MIXER',
+              icon: Icons.tune,
+              selected: workspace == EditorWorkspace.mixer,
+              onPressed: () => onChanged(EditorWorkspace.mixer),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceButton extends StatelessWidget {
+  const _WorkspaceButton({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onPressed,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      selected: selected,
+      button: true,
+      label: '$label workspace',
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(3),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 100),
+          height: 26,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? colors.primaryContainer.withValues(alpha: .72)
+                : Colors.transparent,
+            border: Border.all(
+              color: selected
+                  ? colors.primary.withValues(alpha: .55)
+                  : Colors.transparent,
+            ),
+            borderRadius: BorderRadius.circular(3),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 14),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  color: selected
+                      ? colors.onPrimaryContainer
+                      : colors.onSurfaceVariant,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: .7,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

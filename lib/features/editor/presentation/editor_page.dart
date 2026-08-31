@@ -36,6 +36,7 @@ import 'intents/play_pause_intent.dart';
 import 'intents/split_clip_intent.dart';
 import 'intents/toggle_loop_intent.dart';
 import 'models/app_command.dart';
+import 'models/editor_workspace.dart';
 import 'models/timeline_ruler_mode.dart';
 import 'widgets/commands_dialog.dart';
 import 'widgets/editor_menu_bar.dart';
@@ -43,6 +44,7 @@ import 'widgets/export_dialog.dart';
 import 'widgets/project_progress_dialog.dart';
 import 'widgets/project_recovery_dialog.dart';
 import 'widgets/save_project_dialog.dart';
+import 'widgets/mixer_workspace.dart';
 import 'widgets/track_header.dart';
 import 'widgets/track_list.dart';
 import 'widgets/timeline_ruler.dart';
@@ -83,6 +85,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   double? _lastPanZoomScale;
   DateTime? _lastTimelineInteraction;
   TimelineRulerMode _rulerMode = TimelineRulerMode.barsBeats;
+  EditorWorkspace _workspace = EditorWorkspace.arrange;
   _AutosaveStatus _autosaveStatus = _AutosaveStatus.idle;
   String? _autosaveError;
   Timer? _autosaveTimer;
@@ -1574,10 +1577,16 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                   masterVolumeDb: editorState.masterVolumeDb,
                   masterLimiter: editorState.masterLimiter,
                   rulerMode: _rulerMode,
+                  workspace: _workspace,
                   meterController: _audioMeterController,
                   onPlayPressed: controller.togglePlayback,
                   onStopPressed: controller.stop,
                   onLoopPressed: controller.toggleLoop,
+                  onWorkspaceChanged: (workspace) {
+                    if (_workspace != workspace) {
+                      setState(() => _workspace = workspace);
+                    }
+                  },
                   onMasterVolumeChangeStart: controller.beginMasterVolumeChange,
                   onMasterVolumeChanged: controller.previewMasterVolume,
                   onMasterVolumeChangeEnd: controller.commitMasterVolumeChange,
@@ -1598,332 +1607,343 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                 ),
 
                 Expanded(
-                  child: DropTarget(
-                    enable:
-                        !editorState.isImporting &&
-                        !_isProjectOperationInProgress,
-                    onDragEntered: (_) {
-                      if (!_isDraggingOverWorkspace) {
-                        setState(() {
-                          _isDraggingOverWorkspace = true;
-                        });
-                      }
-                    },
-                    onDragExited: (_) {
-                      if (_isDraggingOverWorkspace) {
-                        setState(() {
-                          _isDraggingOverWorkspace = false;
-                        });
-                      }
-                    },
-                    onDragDone: _handleDrop,
-                    child: Stack(
-                      children: [
-                        Positioned.fill(
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              final viewportWidth = math.max(
-                                0.0,
-                                constraints.maxWidth - trackHeaderWidth,
-                              );
-                              final scale = TimelineScale(
-                                editorState.pixelsPerSecond,
-                              );
-                              final gridMetrics = TimelineGridMetrics(
-                                transform: TimelineTransform(scale: scale),
-                              );
-                              return Row(
-                                children: [
-                                  SizedBox(
-                                    width: trackHeaderWidth,
-                                    child: Column(
-                                      children: [
-                                        _TrackHeaderCorner(
-                                          onAddPressed: _addAudioTrack,
+                  child: IndexedStack(
+                    index: _workspace.index,
+                    sizing: StackFit.expand,
+                    children: [
+                      DropTarget(
+                        enable:
+                            !editorState.isImporting &&
+                            !_isProjectOperationInProgress,
+                        onDragEntered: (_) {
+                          if (!_isDraggingOverWorkspace) {
+                            setState(() {
+                              _isDraggingOverWorkspace = true;
+                            });
+                          }
+                        },
+                        onDragExited: (_) {
+                          if (_isDraggingOverWorkspace) {
+                            setState(() {
+                              _isDraggingOverWorkspace = false;
+                            });
+                          }
+                        },
+                        onDragDone: _handleDrop,
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final viewportWidth = math.max(
+                                    0.0,
+                                    constraints.maxWidth - trackHeaderWidth,
+                                  );
+                                  final scale = TimelineScale(
+                                    editorState.pixelsPerSecond,
+                                  );
+                                  final gridMetrics = TimelineGridMetrics(
+                                    transform: TimelineTransform(scale: scale),
+                                  );
+                                  return Row(
+                                    children: [
+                                      SizedBox(
+                                        width: trackHeaderWidth,
+                                        child: Column(
+                                          children: [
+                                            _TrackHeaderCorner(
+                                              onAddPressed: _addAudioTrack,
+                                            ),
+                                            Expanded(
+                                              child: TrackHeaderList(
+                                                scrollController:
+                                                    _trackHeaderScrollController,
+                                                meterController:
+                                                    _audioMeterController,
+                                                reorderController:
+                                                    _trackReorderController,
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                        Expanded(
-                                          child: TrackHeaderList(
-                                            scrollController:
-                                                _trackHeaderScrollController,
-                                            meterController:
-                                                _audioMeterController,
-                                            reorderController:
-                                                _trackReorderController,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Expanded(
-                                    child: NotificationListener<ScrollNotification>(
-                                      onNotification:
-                                          _handleTimelineScrollNotification,
-                                      child: Scrollbar(
-                                        controller:
-                                            _horizontalTimelineController,
-                                        thumbVisibility: true,
-                                        notificationPredicate: (notification) {
-                                          return notification.metrics.axis ==
-                                              Axis.horizontal;
-                                        },
-                                        child: MouseRegion(
-                                          cursor: _isTimelinePanning
-                                              ? SystemMouseCursors.grabbing
-                                              : MouseCursor.defer,
-                                          child: Listener(
-                                            key: _timelineViewportKey,
-                                            behavior:
-                                                HitTestBehavior.translucent,
-                                            onPointerDown:
-                                                _handleTimelinePointerDown,
-                                            onPointerMove:
-                                                _handleTimelinePointerMove,
-                                            onPointerUp:
-                                                _handleTimelinePointerUp,
-                                            onPointerCancel:
-                                                _handleTimelinePointerCancel,
-                                            onPointerSignal:
-                                                _handleTimelinePointerSignal,
-                                            onPointerPanZoomStart:
-                                                _handleTimelinePanZoomStart,
-                                            onPointerPanZoomUpdate:
-                                                _handleTimelinePanZoomUpdate,
-                                            onPointerPanZoomEnd:
-                                                _handleTimelinePanZoomEnd,
-                                            child: SingleChildScrollView(
-                                              controller:
-                                                  _horizontalTimelineController,
-                                              scrollDirection: Axis.horizontal,
-                                              physics:
-                                                  const _ControlReservedScrollPhysics(),
-                                              child: ValueListenableBuilder<TimelineClipDragState?>(
-                                                valueListenable:
-                                                    _clipDragController,
-                                                builder: (context, dragState, _) {
-                                                  final previewDuration = math.max(
-                                                    editorState
-                                                        .timelineDurationSeconds,
-                                                    dragState
-                                                            ?.previewEndSeconds ??
-                                                        0.0,
-                                                  );
-                                                  final contentWidth = scale
-                                                      .timelineContentWidth(
-                                                        durationSeconds:
-                                                            previewDuration,
-                                                        viewportWidth:
-                                                            viewportWidth,
-                                                      );
-
-                                                  return SizedBox(
-                                                    width: contentWidth,
-                                                    height:
-                                                        constraints.maxHeight,
-                                                    child: ValueListenableBuilder<LoopRegion?>(
-                                                      valueListenable:
-                                                          _loopPreviewRegion,
-                                                      child: TimelineTrackList(
-                                                        viewportKey:
-                                                            _trackLaneViewportKey,
-                                                        scrollController:
-                                                            _trackLaneScrollController,
-                                                        gridMetrics:
-                                                            gridMetrics,
-                                                        clipDragController:
-                                                            _clipDragController,
-                                                        reorderController:
-                                                            _trackReorderController,
-                                                        scrollPhysics:
-                                                            const _ControlReservedScrollPhysics(),
-                                                        onSeek:
-                                                            _handleTimelineSeek,
-                                                      ),
-                                                      builder:
-                                                          (
-                                                            context,
-                                                            draftRegion,
-                                                            trackList,
-                                                          ) {
-                                                            final effectiveLoopRegion =
-                                                                draftRegion ??
-                                                                editorState
-                                                                    .loopRegion;
-                                                            return Column(
-                                                              children: [
-                                                                TimelineRuler(
-                                                                  playheadSeconds:
-                                                                      editorState
-                                                                          .playheadSeconds,
-                                                                  gridMetrics:
-                                                                      gridMetrics,
-                                                                  mode:
-                                                                      _rulerMode,
-                                                                  bpm: bpm,
-                                                                  timeSignature:
-                                                                      timeSignature,
-                                                                  loopRegion:
-                                                                      effectiveLoopRegion,
-                                                                  isLoopEnabled:
-                                                                      editorState
-                                                                          .isLoopEnabled,
-                                                                  snapSettings:
-                                                                      snapSettings,
-                                                                  markers:
-                                                                      editorState
-                                                                          .markers,
-                                                                  sections:
-                                                                      editorState
-                                                                          .sections,
-                                                                  selectedMarkerId:
-                                                                      editorState
-                                                                          .selectedMarkerId,
-                                                                  selectedSectionId:
-                                                                      editorState
-                                                                          .selectedSectionId,
-                                                                  onAddMarker:
-                                                                      _addMarker,
-                                                                  onSelectMarker:
-                                                                      _selectMarker,
-                                                                  onMarkerSeek:
-                                                                      _seekToMarker,
-                                                                  onMarkerMoveStart:
-                                                                      _beginMarkerMove,
-                                                                  onMarkerMovePreview:
-                                                                      controller
-                                                                          .previewMarkerMove,
-                                                                  onMarkerMoveEnd:
-                                                                      controller
-                                                                          .commitMarkerMove,
-                                                                  onMarkerMoveCancel:
-                                                                      controller
-                                                                          .cancelMarkerMove,
-                                                                  onMarkerRename:
-                                                                      controller
-                                                                          .renameMarker,
-                                                                  onMarkerColorSelected:
-                                                                      controller
-                                                                          .changeMarkerColor,
-                                                                  onMarkerDelete:
-                                                                      controller
-                                                                          .deleteMarker,
-                                                                  onAddSection:
-                                                                      controller
-                                                                          .addSection,
-                                                                  onSelectSection:
-                                                                      controller
-                                                                          .selectSection,
-                                                                  onSectionEditStart:
-                                                                      controller
-                                                                          .beginSectionEdit,
-                                                                  onSectionMovePreview:
-                                                                      controller
-                                                                          .previewSectionMove,
-                                                                  onSectionStartResizePreview:
-                                                                      controller
-                                                                          .previewSectionStartResize,
-                                                                  onSectionEndResizePreview:
-                                                                      controller
-                                                                          .previewSectionEndResize,
-                                                                  onSectionEditEnd:
-                                                                      (
-                                                                        sectionId,
-                                                                        isResize,
-                                                                      ) => controller.commitSectionEdit(
-                                                                        sectionId,
-                                                                        isResize:
-                                                                            isResize,
-                                                                      ),
-                                                                  onSectionEditCancel:
-                                                                      controller
-                                                                          .cancelSectionEdit,
-                                                                  onSectionRename:
-                                                                      controller
-                                                                          .renameSection,
-                                                                  onSectionColorSelected:
-                                                                      controller
-                                                                          .changeSectionColor,
-                                                                  onSectionDelete:
-                                                                      controller
-                                                                          .deleteSection,
-                                                                  onEmptySectionLaneTap:
-                                                                      controller
-                                                                          .clearSectionSelection,
-                                                                  onLoopRegionPreviewChanged:
-                                                                      (
-                                                                        region,
-                                                                      ) => _loopPreviewRegion.value =
-                                                                          region,
-                                                                  onLoopRegionChanged:
-                                                                      controller
-                                                                          .setLoopRegion,
-                                                                  onSeek:
-                                                                      _handleTimelineSeek,
-                                                                ),
-                                                                Expanded(
-                                                                  child: TimelineLoopOverlay(
-                                                                    gridMetrics:
-                                                                        gridMetrics,
-                                                                    playheadSeconds:
-                                                                        editorState
-                                                                            .playheadSeconds,
-                                                                    loopRegion:
-                                                                        effectiveLoopRegion,
-                                                                    isLoopEnabled:
-                                                                        editorState
-                                                                            .isLoopEnabled,
-                                                                    bpm: bpm,
-                                                                    timeSignature:
-                                                                        timeSignature,
-                                                                    snapSettings:
-                                                                        snapSettings,
-                                                                    rulerMode:
-                                                                        _rulerMode,
-                                                                    verticalScrollController:
-                                                                        _trackLaneScrollController,
-                                                                    markers:
-                                                                        editorState
-                                                                            .markers,
-                                                                    sections:
-                                                                        editorState
-                                                                            .sections,
-                                                                    selectedMarkerId:
-                                                                        editorState
-                                                                            .selectedMarkerId,
-                                                                    selectedSectionId:
-                                                                        editorState
-                                                                            .selectedSectionId,
-                                                                    child:
-                                                                        trackList!,
-                                                                  ),
-                                                                ),
-                                                              ],
-                                                            );
-                                                          },
-                                                    ),
-                                                  );
+                                      ),
+                                      Expanded(
+                                        child: NotificationListener<ScrollNotification>(
+                                          onNotification:
+                                              _handleTimelineScrollNotification,
+                                          child: Scrollbar(
+                                            controller:
+                                                _horizontalTimelineController,
+                                            thumbVisibility: true,
+                                            notificationPredicate:
+                                                (notification) {
+                                                  return notification
+                                                          .metrics
+                                                          .axis ==
+                                                      Axis.horizontal;
                                                 },
+                                            child: MouseRegion(
+                                              cursor: _isTimelinePanning
+                                                  ? SystemMouseCursors.grabbing
+                                                  : MouseCursor.defer,
+                                              child: Listener(
+                                                key: _timelineViewportKey,
+                                                behavior:
+                                                    HitTestBehavior.translucent,
+                                                onPointerDown:
+                                                    _handleTimelinePointerDown,
+                                                onPointerMove:
+                                                    _handleTimelinePointerMove,
+                                                onPointerUp:
+                                                    _handleTimelinePointerUp,
+                                                onPointerCancel:
+                                                    _handleTimelinePointerCancel,
+                                                onPointerSignal:
+                                                    _handleTimelinePointerSignal,
+                                                onPointerPanZoomStart:
+                                                    _handleTimelinePanZoomStart,
+                                                onPointerPanZoomUpdate:
+                                                    _handleTimelinePanZoomUpdate,
+                                                onPointerPanZoomEnd:
+                                                    _handleTimelinePanZoomEnd,
+                                                child: SingleChildScrollView(
+                                                  controller:
+                                                      _horizontalTimelineController,
+                                                  scrollDirection:
+                                                      Axis.horizontal,
+                                                  physics:
+                                                      const _ControlReservedScrollPhysics(),
+                                                  child: ValueListenableBuilder<TimelineClipDragState?>(
+                                                    valueListenable:
+                                                        _clipDragController,
+                                                    builder: (context, dragState, _) {
+                                                      final previewDuration = math.max(
+                                                        editorState
+                                                            .timelineDurationSeconds,
+                                                        dragState
+                                                                ?.previewEndSeconds ??
+                                                            0.0,
+                                                      );
+                                                      final contentWidth = scale
+                                                          .timelineContentWidth(
+                                                            durationSeconds:
+                                                                previewDuration,
+                                                            viewportWidth:
+                                                                viewportWidth,
+                                                          );
+
+                                                      return SizedBox(
+                                                        width: contentWidth,
+                                                        height: constraints
+                                                            .maxHeight,
+                                                        child: ValueListenableBuilder<LoopRegion?>(
+                                                          valueListenable:
+                                                              _loopPreviewRegion,
+                                                          child: TimelineTrackList(
+                                                            viewportKey:
+                                                                _trackLaneViewportKey,
+                                                            scrollController:
+                                                                _trackLaneScrollController,
+                                                            gridMetrics:
+                                                                gridMetrics,
+                                                            clipDragController:
+                                                                _clipDragController,
+                                                            reorderController:
+                                                                _trackReorderController,
+                                                            scrollPhysics:
+                                                                const _ControlReservedScrollPhysics(),
+                                                            onSeek:
+                                                                _handleTimelineSeek,
+                                                          ),
+                                                          builder:
+                                                              (
+                                                                context,
+                                                                draftRegion,
+                                                                trackList,
+                                                              ) {
+                                                                final effectiveLoopRegion =
+                                                                    draftRegion ??
+                                                                    editorState
+                                                                        .loopRegion;
+                                                                return Column(
+                                                                  children: [
+                                                                    TimelineRuler(
+                                                                      playheadSeconds:
+                                                                          editorState
+                                                                              .playheadSeconds,
+                                                                      gridMetrics:
+                                                                          gridMetrics,
+                                                                      mode:
+                                                                          _rulerMode,
+                                                                      bpm: bpm,
+                                                                      timeSignature:
+                                                                          timeSignature,
+                                                                      loopRegion:
+                                                                          effectiveLoopRegion,
+                                                                      isLoopEnabled:
+                                                                          editorState
+                                                                              .isLoopEnabled,
+                                                                      snapSettings:
+                                                                          snapSettings,
+                                                                      markers:
+                                                                          editorState
+                                                                              .markers,
+                                                                      sections:
+                                                                          editorState
+                                                                              .sections,
+                                                                      selectedMarkerId:
+                                                                          editorState
+                                                                              .selectedMarkerId,
+                                                                      selectedSectionId:
+                                                                          editorState
+                                                                              .selectedSectionId,
+                                                                      onAddMarker:
+                                                                          _addMarker,
+                                                                      onSelectMarker:
+                                                                          _selectMarker,
+                                                                      onMarkerSeek:
+                                                                          _seekToMarker,
+                                                                      onMarkerMoveStart:
+                                                                          _beginMarkerMove,
+                                                                      onMarkerMovePreview:
+                                                                          controller
+                                                                              .previewMarkerMove,
+                                                                      onMarkerMoveEnd:
+                                                                          controller
+                                                                              .commitMarkerMove,
+                                                                      onMarkerMoveCancel:
+                                                                          controller
+                                                                              .cancelMarkerMove,
+                                                                      onMarkerRename:
+                                                                          controller
+                                                                              .renameMarker,
+                                                                      onMarkerColorSelected:
+                                                                          controller
+                                                                              .changeMarkerColor,
+                                                                      onMarkerDelete:
+                                                                          controller
+                                                                              .deleteMarker,
+                                                                      onAddSection:
+                                                                          controller
+                                                                              .addSection,
+                                                                      onSelectSection:
+                                                                          controller
+                                                                              .selectSection,
+                                                                      onSectionEditStart:
+                                                                          controller
+                                                                              .beginSectionEdit,
+                                                                      onSectionMovePreview:
+                                                                          controller
+                                                                              .previewSectionMove,
+                                                                      onSectionStartResizePreview:
+                                                                          controller
+                                                                              .previewSectionStartResize,
+                                                                      onSectionEndResizePreview:
+                                                                          controller
+                                                                              .previewSectionEndResize,
+                                                                      onSectionEditEnd:
+                                                                          (
+                                                                            sectionId,
+                                                                            isResize,
+                                                                          ) => controller.commitSectionEdit(
+                                                                            sectionId,
+                                                                            isResize:
+                                                                                isResize,
+                                                                          ),
+                                                                      onSectionEditCancel:
+                                                                          controller
+                                                                              .cancelSectionEdit,
+                                                                      onSectionRename:
+                                                                          controller
+                                                                              .renameSection,
+                                                                      onSectionColorSelected:
+                                                                          controller
+                                                                              .changeSectionColor,
+                                                                      onSectionDelete:
+                                                                          controller
+                                                                              .deleteSection,
+                                                                      onEmptySectionLaneTap:
+                                                                          controller
+                                                                              .clearSectionSelection,
+                                                                      onLoopRegionPreviewChanged:
+                                                                          (
+                                                                            region,
+                                                                          ) => _loopPreviewRegion.value =
+                                                                              region,
+                                                                      onLoopRegionChanged:
+                                                                          controller
+                                                                              .setLoopRegion,
+                                                                      onSeek:
+                                                                          _handleTimelineSeek,
+                                                                    ),
+                                                                    Expanded(
+                                                                      child: TimelineLoopOverlay(
+                                                                        gridMetrics:
+                                                                            gridMetrics,
+                                                                        playheadSeconds:
+                                                                            editorState.playheadSeconds,
+                                                                        loopRegion:
+                                                                            effectiveLoopRegion,
+                                                                        isLoopEnabled:
+                                                                            editorState.isLoopEnabled,
+                                                                        bpm:
+                                                                            bpm,
+                                                                        timeSignature:
+                                                                            timeSignature,
+                                                                        snapSettings:
+                                                                            snapSettings,
+                                                                        rulerMode:
+                                                                            _rulerMode,
+                                                                        verticalScrollController:
+                                                                            _trackLaneScrollController,
+                                                                        markers:
+                                                                            editorState.markers,
+                                                                        sections:
+                                                                            editorState.sections,
+                                                                        selectedMarkerId:
+                                                                            editorState.selectedMarkerId,
+                                                                        selectedSectionId:
+                                                                            editorState.selectedSectionId,
+                                                                        child:
+                                                                            trackList!,
+                                                                      ),
+                                                                    ),
+                                                                  ],
+                                                                );
+                                                              },
+                                                        ),
+                                                      );
+                                                    },
+                                                  ),
+                                                ),
                                               ),
                                             ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
-                        ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ),
 
-                        Positioned.fill(
-                          child: AnimatedOpacity(
-                            opacity: _isDraggingOverWorkspace ? 1 : 0,
-                            duration: const Duration(milliseconds: 120),
-                            child: const _DropOverlay(),
-                          ),
+                            Positioned.fill(
+                              child: AnimatedOpacity(
+                                opacity: _isDraggingOverWorkspace ? 1 : 0,
+                                duration: const Duration(milliseconds: 120),
+                                child: const _DropOverlay(),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                      MixerWorkspace(
+                        meterController: _audioMeterController,
+                        onBackToArrange: () => setState(
+                          () => _workspace = EditorWorkspace.arrange,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],

@@ -9,23 +9,62 @@ class TrackStereoMeter extends StatelessWidget {
     super.key,
     required this.controller,
     required this.trackId,
+    this.width = 20,
+    this.height = 68,
+    this.semanticLabel,
   });
 
   final AudioMeterController controller;
   final String trackId;
+  final double width;
+  final double height;
+  final String? semanticLabel;
 
   @override
   Widget build(BuildContext context) {
     return IgnorePointer(
       child: Semantics(
-        label: 'Stereo level meter',
+        label: semanticLabel ?? 'Stereo level meter',
         child: SizedBox(
           key: ValueKey('track-level-meter-$trackId'),
-          width: 20,
-          height: 68,
+          width: width,
+          height: height,
           child: CustomPaint(
             painter: _TrackMeterPainter(
               level: () => controller.levelForTrack(trackId),
+              repaint: controller,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class MasterVerticalStereoMeter extends StatelessWidget {
+  const MasterVerticalStereoMeter({
+    super.key,
+    required this.controller,
+    this.width = 22,
+    this.height = 160,
+  });
+
+  final AudioMeterController controller;
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Semantics(
+        label: 'Master stereo level meter',
+        child: SizedBox(
+          key: const ValueKey('mixer-master-level-meter'),
+          width: width,
+          height: height,
+          child: CustomPaint(
+            painter: _TrackMeterPainter(
+              level: () => controller.masterLevel,
               repaint: controller,
             ),
           ),

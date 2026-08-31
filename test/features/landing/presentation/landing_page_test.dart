@@ -1,5 +1,6 @@
 import 'package:daw_webapp/app/router/route_names.dart';
 import 'package:daw_webapp/features/landing/presentation/landing_page.dart';
+import 'package:daw_webapp/features/landing/presentation/widgets/landing_sections.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -16,11 +17,27 @@ void main() {
 
     expect(find.text('A full DAW.\nRight in your browser.'), findsOneWidget);
     expect(find.text('No ads'), findsWidgets);
-
     await tester.tap(find.byKey(const ValueKey('hero-open-editor')));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('editor-destination')), findsOneWidget);
+  });
+
+  testWidgets('feature showcase includes Mixer and local WAV/MP3 export', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(child: FeatureShowcaseSection()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Dedicated Mixer'), findsWidgets);
+    expect(find.text('WAV & MP3 Export'), findsOneWidget);
+    expect(find.textContaining('No audio upload required'), findsOneWidget);
   });
 
   testWidgets('landing page has no overflow at a narrow viewport', (

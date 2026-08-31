@@ -504,6 +504,40 @@ abstract final class EditorCommands {
     tip: 'Double-click a volume or pan control to reset it.',
   );
 
+  static const mixerWorkspace = AppCommand(
+    title: 'Mixer',
+    description:
+        'Open a dedicated mixer workspace for controlling track levels, pan, meters, effects, and the Master output.',
+    shortcutParts: ['Editor > Mixer'],
+    category: AppCommandCategory.mixer,
+    searchTerms: [
+      'mixer',
+      'mix',
+      'channel strip',
+      'meter',
+      'master',
+      'console',
+    ],
+  );
+
+  static const mixerTrackFader = AppCommand(
+    title: 'Track Fader',
+    description: 'Adjust track volume.',
+    shortcutParts: ['Drag Mixer Fader'],
+    category: AppCommandCategory.mixer,
+    searchTerms: ['mixer', 'mix', 'fader', 'volume', 'level', 'channel strip'],
+    tip: 'Double-click the fader to return to 0 dB.',
+  );
+
+  static const mixerTrackPan = AppCommand(
+    title: 'Track Pan',
+    description: 'Place a track in the stereo field.',
+    shortcutParts: ['Drag Pan Knob'],
+    category: AppCommandCategory.mixer,
+    searchTerms: ['mixer', 'mix', 'pan', 'stereo', 'channel strip', 'console'],
+    tip: 'Double-click the Pan knob to return to center.',
+  );
+
   static const temporarilyDisableSnap = AppCommand(
     title: 'Temporarily Disable Snap',
     description: 'Temporarily move or trim freely without snapping.',
@@ -633,6 +667,9 @@ abstract final class EditorCommands {
     reorderTrackFx,
     deleteTrack,
     reorderTrack,
+    mixerWorkspace,
+    mixerTrackFader,
+    mixerTrackPan,
     trackMixerControls,
     playPause,
     toggleLoop,

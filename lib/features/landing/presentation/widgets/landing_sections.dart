@@ -928,13 +928,13 @@ class FeatureShowcaseSection extends StatelessWidget {
   const FeatureShowcaseSection({super.key});
 
   static const compactFeatures = [
-    'Fade & crossfade',
-    'Track volume & pan',
-    'Tempo & snapping',
-    'Markers & sections',
-    'Loop playback',
+    'Multi-track editing',
+    'Dedicated Mixer',
+    'Track FX chain',
+    'WAV & MP3 export',
+    'Local-first privacy',
+    'Portable projects',
     'Undo / Redo',
-    'WAV export',
     'Local autosave & recovery',
   ];
 
@@ -949,7 +949,7 @@ class FeatureShowcaseSection extends StatelessWidget {
           const _SectionTitle(
             title: 'Arrange. Shape. Mix.',
             subtitle:
-                'From the first clip to the final WAV, the workflow stays in one focused workspace.',
+                'From the first clip to the final mix, the workflow stays in one focused workspace.',
           ),
           const SizedBox(height: 42),
           LayoutBuilder(
@@ -1026,16 +1026,23 @@ class _FeatureDetails extends StatelessWidget {
         SizedBox(height: 27),
         _FeatureLine(
           number: '02',
+          title: 'Dedicated Mixer',
+          copy:
+              'Mix with channel faders, stereo pan, real-time meters, Track FX and Master processing in one workspace.',
+        ),
+        SizedBox(height: 27),
+        _FeatureLine(
+          number: '03',
           title: 'A real signal chain',
           copy:
               'Filter, 3-Band EQ, Compressor, Delay and Reverb in a reorderable Track FX rack.',
         ),
         SizedBox(height: 27),
         _FeatureLine(
-          number: '03',
-          title: 'Ready to leave the browser',
+          number: '04',
+          title: 'WAV & MP3 Export',
           copy:
-              'Shape the master, use the limiter, and export the result as a WAV.',
+              'Export lossless WAV or compact MP3 files with quality controls and optional metadata — processed locally in your browser. No audio upload required.',
         ),
       ],
     );

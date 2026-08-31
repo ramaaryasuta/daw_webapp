@@ -90,9 +90,17 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('commands-category-Mixer')));
     await tester.pump();
     expect(find.text('Track Mixer Controls'), findsOneWidget);
+    expect(find.byKey(const ValueKey('command-row-Mixer')), findsOneWidget);
+    expect(find.text('Track Fader'), findsOneWidget);
+    expect(find.text('Track Pan'), findsOneWidget);
     expect(find.text('Play / Pause'), findsNothing);
 
-    await tester.tap(find.byKey(const ValueKey('commands-category-Project')));
+    final projectCategory = find.byKey(
+      const ValueKey('commands-category-Project'),
+    );
+    await tester.ensureVisible(projectCategory);
+    await tester.pump();
+    await tester.tap(projectCategory);
     await tester.pump();
     expect(find.text('Save Project'), findsOneWidget);
     expect(find.text('Open Project'), findsOneWidget);

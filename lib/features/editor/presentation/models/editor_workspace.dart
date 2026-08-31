@@ -1,0 +1,1 @@
+enum EditorWorkspace { arrange, mixer }
